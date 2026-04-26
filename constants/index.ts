@@ -11,6 +11,29 @@ export const MIN_TOUCH_TARGET = 48;
 export const ACTIVE_ROUTE_COLOR = "#E63946";
 export const INACTIVE_ROUTE_COLOR = "#94A3B8";
 
+// Per-segment muted palette for collection route rendering
+export const SEGMENT_COLORS_LIGHT = [
+  "#C65A4A",
+  "#4F7D9A",
+  "#5E8C6A",
+  "#C9A24A",
+  "#B17458",
+  "#7A669B",
+  "#4E6E7D",
+  "#8A7A3D",
+] as const;
+
+export const SEGMENT_COLORS_DARK = [
+  "#D97868",
+  "#6EA0BC",
+  "#78A982",
+  "#D8B75D",
+  "#C98B6E",
+  "#9A86BD",
+  "#6F95A4",
+  "#A99850",
+] as const;
+
 // Max points before downsampling elevation chart
 export const ELEVATION_CHART_MAX_POINTS = 500;
 

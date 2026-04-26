@@ -8,11 +8,13 @@ import { useRouteStore } from "@/store/routeStore";
 import { useSettingsStore } from "@/store/settingsStore";
 import { usePoiStore } from "@/store/poiStore";
 import { useClimbStore } from "@/store/climbStore";
+import { useColorScheme } from "nativewind";
 import { PANEL_MODES } from "@/constants";
 import { computeSliceAscent, computeSliceDescent, extractRouteSlice } from "@/utils/geo";
 import { formatDistance, formatElevation } from "@/utils/formatters";
 import { climbDifficultyColor } from "@/constants/climbHelpers";
 import { stitchPOIs } from "@/services/stitchingService";
+import { profileSegmentsFromStitchedSegments } from "@/utils/profileSegments";
 import UpcomingElevation from "./UpcomingElevation";
 import ElevationProfile from "@/components/elevation/ElevationProfile";
 import type { PanelMode, POI, ActiveRouteData, Climb } from "@/types";
@@ -41,11 +43,16 @@ interface ProfileTabContentProps {
 
 export default function ProfileTabContent({ activeData, width, height }: ProfileTabContentProps) {
   const colors = useThemeColors();
+  const { colorScheme } = useColorScheme();
   const { bottom: safeBottom } = useSafeAreaInsets();
   const activeRoutePoints = activeData?.points ?? null;
   const activeId = activeData?.id ?? null;
   const activeRouteIds = useMemo(() => activeData?.routeIds ?? [], [activeData?.routeIds]);
   const activeSegments = activeData?.segments ?? null;
+  const profileSegments = useMemo(
+    () => profileSegmentsFromStitchedSegments(activeSegments, colorScheme),
+    [activeSegments, colorScheme],
+  );
   const activeTotalDistance = activeData?.totalDistanceMeters ?? 0;
 
   const panelMode = usePanelStore((s) => s.panelMode);
@@ -267,6 +274,7 @@ export default function ProfileTabContent({ activeData, width, height }: Profile
             showLegend={false}
             distanceOffsetMeters={climbSlice!.offsetMeters}
             climbs={climbsForChart}
+            profileSegments={profileSegments}
             fitToWidth
           />
         ) : (
@@ -279,6 +287,7 @@ export default function ProfileTabContent({ activeData, width, height }: Profile
             height={chartHeight}
             pois={poisForChart}
             climbs={climbsForChart}
+            profileSegments={profileSegments}
             fitToWidth
             onPOIPress={(poi) => {
               const raw = usePoiStore.getState().pois[poi.routeId]?.find((p) => p.id === poi.id);

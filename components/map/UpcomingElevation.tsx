@@ -4,6 +4,7 @@ import { Text } from "@/components/ui/text";
 import ElevationProfile from "@/components/elevation/ElevationProfile";
 import { extractRouteSlice } from "@/utils/geo";
 import { LOOK_BACK_RATIO } from "@/constants";
+import type { ProfileSegment } from "@/components/elevation/ElevationProfile";
 import type { RoutePoint, UnitSystem, POI, Climb } from "@/types";
 
 interface UpcomingElevationProps {
@@ -20,6 +21,8 @@ interface UpcomingElevationProps {
   onPOIPress?: (poi: POI) => void;
   /** Climbs to render as shading */
   climbs?: Climb[];
+  /** Collection segment bands to render behind the profile */
+  profileSegments?: ProfileSegment[];
   /** Force fit-to-width — disables horizontal scrolling and the overview minimap */
   fitToWidth?: boolean;
 }
@@ -34,6 +37,7 @@ export default function UpcomingElevation({
   pois,
   onPOIPress,
   climbs,
+  profileSegments,
   fitToWidth,
 }: UpcomingElevationProps) {
   const { slicedPoints, currentIdxInSlice, offsetMeters, sliceEndDist } = useMemo(() => {
@@ -99,6 +103,13 @@ export default function UpcomingElevation({
     );
   }, [climbs, offsetMeters, sliceEndDist]);
 
+  const visibleProfileSegments = useMemo(() => {
+    if (!profileSegments) return undefined;
+    return profileSegments.filter(
+      (s) => s.endDistanceMeters >= offsetMeters && s.startDistanceMeters <= sliceEndDist,
+    );
+  }, [profileSegments, offsetMeters, sliceEndDist]);
+
   if (slicedPoints.length <= 1) {
     return (
       <View className="flex-1 items-center justify-center">
@@ -119,6 +130,7 @@ export default function UpcomingElevation({
       pois={visiblePOIs}
       onPOIPress={onPOIPress}
       climbs={visibleClimbs}
+      profileSegments={visibleProfileSegments}
       fitToWidth={fitToWidth}
     />
   );

@@ -16,6 +16,7 @@ import type { Collection, CollectionSegmentWithRoute, StitchedCollection } from 
 import { useMapStyle } from "@/hooks/useMapStyle";
 import { formatDistance, formatElevation } from "@/utils/formatters";
 import { computeBounds } from "@/utils/geo";
+import { profileSegmentsFromStitchedSegments } from "@/utils/profileSegments";
 import { stitchCollection } from "@/services/stitchingService";
 import ElevationProfile from "@/components/elevation/ElevationProfile";
 import RouteLayer from "@/components/map/RouteLayer";
@@ -25,6 +26,7 @@ import AddSegmentSheet from "@/components/collection/AddSegmentSheet";
 import CollectionOfflineSection from "@/components/collection/CollectionOfflineSection";
 import { getMapInspectHref } from "@/utils/mapInspect";
 import { Maximize2 } from "lucide-react-native";
+import { useColorScheme } from "nativewind";
 
 export default function CollectionDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -32,6 +34,7 @@ export default function CollectionDetailScreen() {
   const { width: screenWidth } = useWindowDimensions();
   const cameraRef = useRef<Camera>(null);
   const colors = useThemeColors();
+  const { colorScheme } = useColorScheme();
   const mapStyle = useMapStyle();
 
   const [collection, setCollection] = useState<Collection | null>(null);
@@ -272,6 +275,11 @@ export default function CollectionDetailScreen() {
     }));
   }, [stitched]);
 
+  const profileSegments = useMemo(
+    () => profileSegmentsFromStitchedSegments(stitched?.segments, colorScheme),
+    [stitched?.segments, colorScheme],
+  );
+
   if (loading) {
     return (
       <View className="flex-1 items-center justify-center bg-background">
@@ -405,6 +413,7 @@ export default function CollectionDetailScreen() {
                 width={chartWidth}
                 height={chartHeight}
                 segmentBoundaries={segmentBoundaries}
+                profileSegments={profileSegments}
                 climbs={collectionClimbs}
               />
             </View>

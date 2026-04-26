@@ -31,6 +31,14 @@ interface SegmentBoundary {
   label?: string;
 }
 
+export interface ProfileSegment {
+  startDistanceMeters: number;
+  endDistanceMeters: number;
+  lengthMeters: number;
+  name: string;
+  color: string;
+}
+
 interface ElevationProfileProps {
   points: RoutePoint[];
   units: UnitSystem;
@@ -44,12 +52,14 @@ interface ElevationProfileProps {
   onPOIPress?: (poi: POI) => void;
   /** Vertical boundary lines at segment junctions (for stitched collections) */
   segmentBoundaries?: SegmentBoundary[];
+  /** Colored stitched collection segments shown above the profile line. */
+  profileSegments?: ProfileSegment[];
   climbs?: Climb[];
   /** Force fit-to-width — disables horizontal scrolling and the overview minimap */
   fitToWidth?: boolean;
 }
 
-const PADDING = { top: 16, right: 16, bottom: 28, left: 48 };
+const PADDING = { top: 30, right: 16, bottom: 38, left: 48 };
 const BASE_INTERVAL_M = 100;
 const MAX_DETAIL_SAMPLES = 8000;
 // Scrolling kicks in when fit-to-width would produce less than this many px/km.
@@ -74,6 +84,18 @@ const X_LABEL_WIDTH = 48;
 const X_LABEL_HALF_WIDTH = X_LABEL_WIDTH / 2;
 // Target ~one X-axis tick per this many pixels of scrollable content.
 const X_TICK_TARGET_PX = 120;
+const SEGMENT_BOUNDARY_TOP_Y = 2;
+const SEGMENT_NAME_Y = PADDING.top - 15;
+const SEGMENT_TOP_LINE_Y = PADDING.top - 7;
+const SEGMENT_LENGTH_Y = PADDING.top + 7;
+const SEGMENT_TOP_LINE_WIDTH = 2.5;
+const SEGMENT_LABEL_SIDE_PADDING_PX = 8;
+const SEGMENT_LABEL_AVG_CHAR_PX = 6;
+const SEGMENT_LABEL_MIN_GAP_PX = 10;
+const SEGMENT_LENGTH_LABEL_MIN_WIDTH_PX = 42;
+const SEGMENT_BOUNDARY_LABEL_MIN_GAP_PX = 46;
+const SEGMENT_BOUNDARY_STROKE_WIDTH = 2;
+const SEGMENT_BOUNDARY_DASH = "4,3";
 
 type Sample = { distance: number; elevation: number };
 
@@ -212,6 +234,7 @@ export default function ElevationProfile({
   pois,
   onPOIPress,
   segmentBoundaries,
+  profileSegments,
   climbs,
   fitToWidth = false,
 }: ElevationProfileProps) {
@@ -291,6 +314,72 @@ export default function ElevationProfile({
     (d: number) => (totalMeters > 0 ? (d / totalMeters) * innerWidth : 0),
     [totalMeters, innerWidth],
   );
+
+  const visibleProfileSegments = useMemo(() => {
+    if (!profileSegments?.length || totalMeters <= 0) return [];
+
+    let lastLabelRight = -Infinity;
+
+    return profileSegments
+      .map((segment) => {
+        const startLocal = Math.max(0, segment.startDistanceMeters - distanceOffsetMeters);
+        const endLocal = Math.min(totalMeters, segment.endDistanceMeters - distanceOffsetMeters);
+        if (endLocal <= 0 || startLocal >= totalMeters || endLocal <= startLocal) return null;
+
+        const x1 = xScale(startLocal);
+        const x2 = xScale(endLocal);
+        const widthPx = x2 - x1;
+        const centerX = x1 + widthPx / 2;
+        const nameWidth =
+          segment.name.length * SEGMENT_LABEL_AVG_CHAR_PX + SEGMENT_LABEL_SIDE_PADDING_PX * 2;
+        const showLabel =
+          widthPx >= nameWidth &&
+          centerX - nameWidth / 2 >= lastLabelRight + SEGMENT_LABEL_MIN_GAP_PX;
+        const showLength = widthPx >= SEGMENT_LENGTH_LABEL_MIN_WIDTH_PX;
+
+        if (showLabel) lastLabelRight = centerX + nameWidth / 2;
+
+        return {
+          ...segment,
+          x1,
+          x2,
+          centerX,
+          widthPx,
+          showLabel,
+          showLength,
+        };
+      })
+      .filter((segment): segment is NonNullable<typeof segment> => segment != null);
+  }, [profileSegments, totalMeters, distanceOffsetMeters, xScale]);
+
+  const segmentBoundaryXLabels = useMemo(() => {
+    if (visibleProfileSegments.length === 0 || totalMeters <= 0) return [];
+
+    const labels: { value: number; x: number }[] = [];
+    const seen = new Set<string>();
+    for (const segment of visibleProfileSegments) {
+      for (const boundary of [
+        { value: segment.startDistanceMeters, x: segment.x1 },
+        { value: segment.endDistanceMeters, x: segment.x2 },
+      ]) {
+        if (boundary.x < 0 || boundary.x > innerWidth) continue;
+        const key = Math.round(boundary.value).toString();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        labels.push(boundary);
+      }
+    }
+
+    labels.sort((a, b) => a.x - b.x);
+    const visible: { value: number; x: number }[] = [];
+    let lastX = -Infinity;
+    for (const label of labels) {
+      if (label.x - lastX < SEGMENT_BOUNDARY_LABEL_MIN_GAP_PX) continue;
+      visible.push(label);
+      lastX = label.x;
+    }
+    return visible;
+  }, [visibleProfileSegments, totalMeters, innerWidth]);
   const yScale = useCallback(
     (e: number) =>
       PADDING.top + chartPlotHeight - ((e - yMin) / Math.max(1e-6, yMax - yMin)) * chartPlotHeight,
@@ -572,6 +661,20 @@ export default function ElevationProfile({
           <Path key={`climb-${region.id}`} d={region.fillPath} fill={region.color} opacity={0.2} />
         ))}
 
+        {visibleProfileSegments.map((segment) => (
+          <Line
+            key={`profile-segment-top-${segment.startDistanceMeters}-${segment.endDistanceMeters}`}
+            x1={segment.x1}
+            y1={SEGMENT_TOP_LINE_Y}
+            x2={segment.x2}
+            y2={SEGMENT_TOP_LINE_Y}
+            stroke={segment.color}
+            strokeWidth={SEGMENT_TOP_LINE_WIDTH}
+            strokeLinecap="round"
+            opacity={0.95}
+          />
+        ))}
+
         <Path
           d={linePath}
           stroke="url(#lineGrad)"
@@ -608,16 +711,74 @@ export default function ElevationProfile({
             <Line
               key={`seg-boundary-${b.distanceMeters}`}
               x1={bx}
-              y1={PADDING.top}
+              y1={SEGMENT_BOUNDARY_TOP_Y}
               x2={bx}
               y2={axisY}
               stroke={colors.border}
-              strokeWidth={1}
-              strokeDasharray="3,3"
-              opacity={0.6}
+              strokeWidth={SEGMENT_BOUNDARY_STROKE_WIDTH}
+              strokeDasharray={SEGMENT_BOUNDARY_DASH}
+              opacity={0.9}
             />
           );
         })}
+
+        {(!segmentBoundaries || segmentBoundaries.length === 0) &&
+          visibleProfileSegments.map((segment) => {
+            const boundaryXs = [
+              { key: "start", x: segment.x1 },
+              { key: "end", x: segment.x2 },
+            ];
+            return boundaryXs.map(({ key, x }) => {
+              if (x <= 0 || x >= innerWidth) return null;
+              return (
+                <Line
+                  key={`profile-segment-boundary-${segment.startDistanceMeters}-${key}`}
+                  x1={x}
+                  y1={SEGMENT_BOUNDARY_TOP_Y}
+                  x2={x}
+                  y2={axisY}
+                  stroke={colors.border}
+                  strokeWidth={SEGMENT_BOUNDARY_STROKE_WIDTH}
+                  strokeDasharray={SEGMENT_BOUNDARY_DASH}
+                  opacity={0.9}
+                />
+              );
+            });
+          })}
+
+        {visibleProfileSegments.map((segment) =>
+          segment.showLabel ? (
+            <SvgText
+              key={`profile-segment-label-${segment.startDistanceMeters}`}
+              x={segment.centerX}
+              y={SEGMENT_NAME_Y}
+              fontSize={10}
+              fontWeight="600"
+              fill={colors.textSecondary}
+              textAnchor="middle"
+              opacity={0.9}
+            >
+              {segment.name}
+            </SvgText>
+          ) : null,
+        )}
+
+        {visibleProfileSegments.map((segment) =>
+          segment.showLength ? (
+            <SvgText
+              key={`profile-segment-length-${segment.startDistanceMeters}`}
+              x={segment.centerX}
+              y={SEGMENT_LENGTH_Y}
+              fontSize={9}
+              fontWeight="500"
+              fill={colors.textTertiary}
+              textAnchor="middle"
+              opacity={0.9}
+            >
+              {formatDistance(segment.lengthMeters, units)}
+            </SvgText>
+          ) : null,
+        )}
 
         {poiMarkers.map((m) => (
           <G key={m.poi.id} onPress={onPOIPress ? () => onPOIPress(m.poi) : undefined}>
@@ -667,11 +828,13 @@ export default function ElevationProfile({
       currentPos,
       axisY,
       segmentBoundaries,
+      visibleProfileSegments,
       distanceOffsetMeters,
       totalMeters,
       xScale,
       poiMarkers,
       onPOIPress,
+      units,
     ],
   );
 
@@ -698,6 +861,20 @@ export default function ElevationProfile({
           }}
         >
           {formatDistance(l.value + distanceOffsetMeters, units)}
+        </Text>
+      ))}
+      {segmentBoundaryXLabels.map((l) => (
+        <Text
+          key={`seg-xl-${l.value}`}
+          className="font-barlow-sc-semibold text-[10px] text-foreground text-center"
+          style={{
+            position: "absolute",
+            left: l.x - X_LABEL_HALF_WIDTH,
+            bottom: 18,
+            width: X_LABEL_WIDTH,
+          }}
+        >
+          {formatDistance(l.value, units)}
         </Text>
       ))}
     </View>
