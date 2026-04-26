@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useCallback } from "react";
-import { View, TouchableOpacity, Pressable, Modal, ScrollView } from "react-native";
+import { View, TouchableOpacity, Pressable, Modal, ScrollView, PanResponder } from "react-native";
 import { Text } from "@/components/ui/text";
 import {
   Clock,
@@ -135,17 +135,6 @@ export default function POIFilterBar({ routeIds }: POIFilterBarProps) {
         contentContainerClassName="items-center px-3 py-1.5 gap-2"
       >
         <FilterChip
-          active={showOpenOnly}
-          onPress={toggleShowOpenOnly}
-          icon={<Clock size={14} color={showOpenOnly ? colors.positive : colors.textTertiary} />}
-          label="Open now"
-          accessibilityLabel={showOpenOnly ? "Show all POIs" : "Show only open POIs"}
-          activeTone="positive"
-        />
-
-        <View className="w-[1px] h-6 bg-border mx-0.5" />
-
-        <FilterChip
           active={waterEnabled}
           onPress={() => handleQuickToggle(["water"])}
           icon={<Droplets size={14} color={waterEnabled ? WATER_COLOR : colors.textTertiary} />}
@@ -191,6 +180,17 @@ export default function POIFilterBar({ routeIds }: POIFilterBarProps) {
           label="Categories"
           accessibilityLabel="Open category filters"
           accessibilityRoleOverride="button"
+        />
+
+        <View className="w-[1px] h-6 bg-border mx-0.5" />
+
+        <FilterChip
+          active={showOpenOnly}
+          onPress={toggleShowOpenOnly}
+          icon={<Clock size={14} color={showOpenOnly ? colors.positive : colors.textTertiary} />}
+          label="Open"
+          accessibilityLabel={showOpenOnly ? "Turn off open now filter" : "Show only open POIs"}
+          activeTone="positive"
         />
 
         {isCategoryFilterActive && (
@@ -297,6 +297,18 @@ function MoreFilterSheet({
   setAllCategories: (enabled: boolean) => void;
   enabledCategories: POICategory[];
 }) {
+  const dragResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_, gesture) =>
+          gesture.dy > 8 && Math.abs(gesture.dy) > Math.abs(gesture.dx),
+        onPanResponderRelease: (_, gesture) => {
+          if (gesture.dy > 48) onClose();
+        },
+      }),
+    [onClose],
+  );
+
   const handleReset = () => {
     setAllCategories(true);
   };
@@ -320,6 +332,7 @@ function MoreFilterSheet({
         <View
           className="rounded-t-2xl border-t border-border"
           style={{ backgroundColor: colors.surface }}
+          {...dragResponder.panHandlers}
         >
           <View className="items-center pt-2 pb-1">
             <View
