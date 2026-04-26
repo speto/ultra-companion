@@ -27,6 +27,7 @@ import { resolveActiveClimb } from "@/utils/climbSelect";
 import { snapToRoute } from "@/services/routeSnapping";
 import { useActiveRouteData, getActiveRouteDataImperative } from "@/hooks/useActiveRouteData";
 import { usePoiStore } from "@/store/poiStore";
+import { usePlaceStore } from "@/store/placeStore";
 import { useWaypointStore } from "@/store/waypointStore";
 import { useStarredStore } from "@/store/starredStore";
 import { useClimbStore } from "@/store/climbStore";
@@ -65,6 +66,7 @@ export default function MapScreen() {
   const setSnappedPosition = useRouteStore((s) => s.setSnappedPosition);
   const loadCollections = useCollectionStore((s) => s.loadCollections);
   const loadPOIs = usePoiStore((s) => s.loadPOIs);
+  const loadPlaces = usePlaceStore((s) => s.loadPlaces);
   const loadWaypoints = useWaypointStore((s) => s.loadWaypoints);
   const loadStarredItems = useStarredStore((s) => s.loadStarredItems);
   const computeETAForRoute = useEtaStore((s) => s.computeETAForRoute);
@@ -107,15 +109,16 @@ export default function MapScreen() {
     }
   }, [activeContextKey, setSelectedClimb]);
 
-  // Load POIs, waypoints, and climbs when active context changes
+  // Load POIs, waypoints, places, and climbs when active context changes
   useEffect(() => {
     if (activeRouteIds.length === 0) return;
     for (const routeId of activeRouteIds) {
       loadPOIs(routeId);
       loadWaypoints(routeId);
+      loadPlaces(routeId);
       loadClimbs(routeId);
     }
-  }, [activeRouteIds, activeRouteIdsKey, loadPOIs, loadWaypoints, loadClimbs]);
+  }, [activeRouteIds, activeRouteIdsKey, loadPOIs, loadWaypoints, loadPlaces, loadClimbs]);
 
   useEffect(() => {
     if (activeData && activeRoutePoints?.length) {
@@ -203,18 +206,22 @@ export default function MapScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [snappedPosition?.distanceAlongRouteMeters, activeData?.id, updateCurrentClimb]);
 
-  // Fly to selected POI
+  // Fly to selected POI/place
   const selectedPOI = usePoiStore((s) => s.selectedPOI);
+  const selectedPlace = usePlaceStore((s) => s.selectedPlace);
   useEffect(() => {
-    if (selectedPOI) {
+    const target =
+      selectedPlace ??
+      (selectedPOI ? { longitude: selectedPOI.longitude, latitude: selectedPOI.latitude } : null);
+    if (target) {
       setFollowUser(false);
       cameraRef.current?.setCamera({
-        centerCoordinate: [selectedPOI.longitude, selectedPOI.latitude],
+        centerCoordinate: [target.longitude, target.latitude],
         zoomLevel: 14,
         animationDuration: 500,
       });
     }
-  }, [selectedPOI, setFollowUser]);
+  }, [selectedPOI, selectedPlace, setFollowUser]);
 
   const handleLocate = useCallback(async () => {
     setFollowUser(true);
