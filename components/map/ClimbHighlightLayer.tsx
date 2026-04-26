@@ -9,8 +9,6 @@ interface ClimbHighlightLayerProps {
   points: RoutePoint[];
   /** Offset to add to climb distances (for collections) */
   distanceOffset?: number;
-  /** ID of the layer this group should render above (for explicit z-ordering). */
-  aboveLayerID?: string;
 }
 
 /**
@@ -21,7 +19,6 @@ export default function ClimbHighlightLayer({
   climb,
   points,
   distanceOffset = 0,
-  aboveLayerID,
 }: ClimbHighlightLayerProps) {
   const colors = useThemeColors();
   const climbStart = climb.startDistanceMeters + distanceOffset;
@@ -110,7 +107,6 @@ export default function ClimbHighlightLayer({
       {/* Outline for contrast */}
       <LineLayer
         id="climb-highlight-outline"
-        aboveLayerID={aboveLayerID}
         style={{
           lineColor: colors.surface,
           lineWidth: 8,
@@ -122,7 +118,6 @@ export default function ClimbHighlightLayer({
       {/* Smooth gradient-colored line */}
       <LineLayer
         id="climb-highlight-line"
-        aboveLayerID="climb-highlight-outline"
         style={{
           lineGradient: gradientExpr as any,
           lineWidth: 6,

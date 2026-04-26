@@ -11,8 +11,6 @@ interface RouteMarkerLayerProps {
   points: RoutePoint[];
   showDistanceMarkers: boolean;
   zoom: number;
-  /** ID of the layer this group should render above (for explicit z-ordering). */
-  aboveLayerID?: string;
 }
 
 const START_FINISH_SVGS = buildStartFinishBadgeSvgs();
@@ -45,7 +43,6 @@ export default function RouteMarkerLayer({
   points,
   showDistanceMarkers,
   zoom,
-  aboveLayerID,
 }: RouteMarkerLayerProps) {
   const sourceInput = useMemo(
     () =>
@@ -121,28 +118,24 @@ export default function RouteMarkerLayer({
       id="route-distance-marker-tails"
       filter={distanceFilter}
       style={distanceTailStyle}
-      aboveLayerID={aboveLayerID}
     />,
     <SymbolLayer
       key="distance-label"
       id="route-distance-marker-labels"
       filter={distanceFilter}
       style={distanceLabelStyle}
-      aboveLayerID="route-distance-marker-tails"
     />,
     <SymbolLayer
       key="start-icon"
       id="route-start-marker-icon"
       filter={startFilter}
       style={startIconStyle}
-      aboveLayerID="route-distance-marker-labels"
     />,
     <SymbolLayer
       key="finish-icon"
       id="route-finish-marker-icon"
       filter={finishFilter}
       style={finishIconStyle}
-      aboveLayerID="route-start-marker-icon"
     />,
   ];
 

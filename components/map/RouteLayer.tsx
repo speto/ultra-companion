@@ -26,8 +26,6 @@ interface RouteArrowLayerProps extends RouteLayerProps {
   showArrows?: boolean;
   /** Current map zoom, used to smooth arrow bearings more at overview scale. */
   zoom: number;
-  /** ID of the layer this arrow layer should render above (for explicit z-ordering). */
-  aboveLayerID?: string;
 }
 
 function getRouteColor(
@@ -72,11 +70,7 @@ export default function RouteLayer({ route, points, dimmed, colorOverride }: Rou
   return (
     <ShapeSource id={`route-source-${route.id}`} shape={geoJSON}>
       <LineLayer id={`route-outline-${route.id}`} style={outlineStyle} />
-      <LineLayer
-        id={`route-line-${route.id}`}
-        style={lineStyle}
-        aboveLayerID={`route-outline-${route.id}`}
-      />
+      <LineLayer id={`route-line-${route.id}`} style={lineStyle} />
     </ShapeSource>
   );
 }
@@ -88,7 +82,6 @@ export function RouteArrowLayer({
   colorOverride,
   showArrows = false,
   zoom,
-  aboveLayerID,
 }: RouteArrowLayerProps) {
   const colors = useThemeColors();
   const isActive = route.isActive;
@@ -147,12 +140,7 @@ export function RouteArrowLayer({
 
   return (
     <ShapeSource id={`route-arrows-${route.id}`} shape={arrowSource}>
-      <SymbolLayer
-        id={`route-arrow-layer-${route.id}`}
-        style={arrowStyle}
-        minZoomLevel={7}
-        aboveLayerID={aboveLayerID}
-      />
+      <SymbolLayer id={`route-arrow-layer-${route.id}`} style={arrowStyle} minZoomLevel={7} />
     </ShapeSource>
   );
 }
