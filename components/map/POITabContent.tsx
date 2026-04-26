@@ -41,6 +41,7 @@ export default function POITabContent({ activeData }: POITabContentProps) {
   const getVisiblePOIs = usePoiStore((s) => s.getVisiblePOIs);
   const allPois = usePoiStore((s) => s.pois);
   const enabledCategories = usePoiStore((s) => s.enabledCategories);
+  const showOpenOnly = usePoiStore((s) => s.showOpenOnly);
   const cumulativeTime = useEtaStore((s) => s.cumulativeTime);
   const isExpanded = usePanelStore((s) => s.isExpanded);
 
@@ -117,9 +118,9 @@ export default function POITabContent({ activeData }: POITabContentProps) {
       return stitchPOIs(segments, poisByRoute);
     }
     return routeIds.length > 0 ? getVisiblePOIs(routeIds[0]) : [];
-    // allPois/enabledCategories/starredPOIIds are reactivity triggers: getVisiblePOIs reads store via get() and is not itself reactive
+    // allPois/enabledCategories/showOpenOnly/starredPOIIds are reactivity triggers: getVisiblePOIs reads store via get() and is not itself reactive
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isExpanded, routeIds, segments, allPois, enabledCategories, starredPOIIds]);
+  }, [isExpanded, routeIds, segments, allPois, enabledCategories, showOpenOnly, starredPOIIds]);
 
   const sortedAllPOIs = useMemo(() => {
     if (currentDist == null) {

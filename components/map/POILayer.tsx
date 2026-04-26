@@ -15,6 +15,7 @@ interface POILayerProps {
 export default function POILayer({ routeIds }: POILayerProps) {
   const getVisiblePOIs = usePoiStore((s) => s.getVisiblePOIs);
   const enabledCategories = usePoiStore((s) => s.enabledCategories);
+  const showOpenOnly = usePoiStore((s) => s.showOpenOnly);
   const starredPOIIds = usePoiStore((s) => s.starredPOIIds);
   const allPois = usePoiStore((s) => s.pois);
   const setSelectedPOI = usePoiStore((s) => s.setSelectedPOI);
@@ -27,7 +28,7 @@ export default function POILayer({ routeIds }: POILayerProps) {
     }
     return combined;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [routeIds, allPois, enabledCategories, starredPOIIds]);
+  }, [routeIds, allPois, enabledCategories, showOpenOnly, starredPOIIds]);
 
   const geoJSON = useMemo(
     (): GeoJSON.FeatureCollection => ({

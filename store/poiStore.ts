@@ -402,13 +402,16 @@ export const usePoiStore = create<POIState>((set, get) => ({
     if (!all) return [];
     const enabled = new Set(state.enabledCategories);
     return all.filter((p) => {
-      // Always show starred POIs
+      if (state.showOpenOnly) {
+        if (!enabled.has(p.category)) return false;
+        const openingHours = p.tags.opening_hours;
+        if (!openingHours) return false;
+        const status = getOpeningHoursStatus(openingHours);
+        return status?.isOpen === true;
+      }
+      // Always show starred POIs outside Open now filtering
       if (state.starredPOIIds.has(p.id)) return true;
       if (!enabled.has(p.category)) return false;
-      if (state.showOpenOnly && p.tags?.opening_hours) {
-        const status = getOpeningHoursStatus(p.tags.opening_hours);
-        if (status && !status.isOpen) return false;
-      }
       return true;
     });
   },
