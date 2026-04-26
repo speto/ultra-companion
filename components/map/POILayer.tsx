@@ -32,9 +32,13 @@ export default function POILayer({ routeIds }: POILayerProps) {
   const colors = useThemeColors();
 
   const visiblePlaces = useMemo(() => {
+    if (panelTab !== "pois" && panelTab !== "waypoints") return [];
+
     const places: PlaceViewModel[] = [];
     for (const routeId of routeIds) {
-      places.push(...getVisiblePlaces(routeId));
+      if (panelTab === "pois") {
+        places.push(...getVisiblePlaces(routeId));
+      }
       if (panelTab === "waypoints") {
         places.push(
           ...(allPlaces[routeId] ?? []).filter((place) => place.entityType === "routeWaypoint"),

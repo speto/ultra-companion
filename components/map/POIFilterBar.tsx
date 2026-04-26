@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useCallback } from "react";
-import { View, TouchableOpacity, Pressable, Modal, ScrollView, PanResponder } from "react-native";
+import { View, TouchableOpacity, Pressable, Modal, ScrollView } from "react-native";
 import { Text } from "@/components/ui/text";
 import {
   Clock,
@@ -21,30 +21,40 @@ type RuntimeThemeColors = ReturnType<typeof useThemeColors>;
 
 const WATER_COLOR = POI_CATEGORIES.find((c) => c.key === "water")!.color;
 const FOOD_COLOR = POI_CATEGORIES.find((c) => c.key === "groceries")!.color;
-const SLEEP_COLOR = POI_CATEGORIES.find((c) => c.key === "shelter")!.color;
+const REST_COLOR = POI_CATEGORIES.find((c) => c.key === "shelter")!.color;
 const WC_COLOR = POI_CATEGORIES.find((c) => c.key === "toilet_shower")!.color;
 
 interface POIFilterBarProps {
   routeIds: string[];
 }
 
+/** Water-like categories toggled by the quick Water control */
+const WATER_CATEGORIES: POICategory[] = ["water", "cemetery"];
+
 /** Food-like categories toggled by the quick Food control */
 const FOOD_CATEGORIES: POICategory[] = ["groceries", "bakery", "gas_station"];
 
-/** Sleep/rest categories toggled by the quick Sleep control */
-const SLEEP_CATEGORIES: POICategory[] = ["shelter", "bus_stop", "sports", "school"];
+/** Sleep/rest categories toggled by the quick Rest control */
+const REST_CATEGORIES: POICategory[] = ["shelter", "bus_stop", "sports", "school"];
 
-/** Groups for the More sheet */
+/** Groups for the category sheet */
 const CATEGORY_GROUPS = [
   {
-    label: "Critical",
-    keys: ["water", "groceries", "bakery", "gas_station"] as POICategory[],
+    label: "Water",
+    keys: WATER_CATEGORIES,
   },
   {
-    label: "Services",
-    keys: ["toilet_shower", "shelter", "bus_stop"] as POICategory[],
+    label: "Food",
+    keys: ["groceries", "bakery", "gas_station"] as POICategory[],
   },
-  { label: "Other", keys: ["sports", "cemetery", "school"] as POICategory[] },
+  {
+    label: "Rest",
+    keys: ["shelter", "bus_stop", "sports", "school"] as POICategory[],
+  },
+  {
+    label: "WC",
+    keys: ["toilet_shower"] as POICategory[],
+  },
 ];
 
 export default function POIFilterBar({ routeIds }: POIFilterBarProps) {
@@ -111,13 +121,13 @@ export default function POIFilterBar({ routeIds }: POIFilterBarProps) {
     return false;
   }, [routeIds, allPois]);
 
-  const waterEnabled = isExactMatch(["water"]);
+  const waterEnabled = isExactMatch(WATER_CATEGORIES);
   const wcEnabled = isExactMatch(["toilet_shower"]);
   const foodEnabled = isExactMatch(FOOD_CATEGORIES);
-  const sleepEnabled = isExactMatch(SLEEP_CATEGORIES);
+  const restEnabled = isExactMatch(REST_CATEGORIES);
 
   const isCustomFilterActive =
-    isCategoryFilterActive && !waterEnabled && !wcEnabled && !foodEnabled && !sleepEnabled;
+    isCategoryFilterActive && !waterEnabled && !wcEnabled && !foodEnabled && !restEnabled;
 
   const getQuickAccessibilityLabel = (label: string, isActive: boolean) => {
     if (!isCategoryFilterActive) return `Show only ${label}`;
@@ -136,7 +146,7 @@ export default function POIFilterBar({ routeIds }: POIFilterBarProps) {
       >
         <FilterChip
           active={waterEnabled}
-          onPress={() => handleQuickToggle(["water"])}
+          onPress={() => handleQuickToggle(WATER_CATEGORIES)}
           icon={<Droplets size={14} color={waterEnabled ? WATER_COLOR : colors.textTertiary} />}
           label="Water"
           accessibilityLabel={getQuickAccessibilityLabel("Water", waterEnabled)}
@@ -153,11 +163,11 @@ export default function POIFilterBar({ routeIds }: POIFilterBarProps) {
         />
 
         <FilterChip
-          active={sleepEnabled}
-          onPress={() => handleQuickToggle(SLEEP_CATEGORIES)}
-          icon={<Moon size={14} color={sleepEnabled ? SLEEP_COLOR : colors.textTertiary} />}
-          label="Sleep"
-          accessibilityLabel={getQuickAccessibilityLabel("Sleep", sleepEnabled)}
+          active={restEnabled}
+          onPress={() => handleQuickToggle(REST_CATEGORIES)}
+          icon={<Moon size={14} color={restEnabled ? REST_COLOR : colors.textTertiary} />}
+          label="Rest"
+          accessibilityLabel={getQuickAccessibilityLabel("Rest", restEnabled)}
         />
 
         <FilterChip
@@ -297,18 +307,6 @@ function MoreFilterSheet({
   setAllCategories: (enabled: boolean) => void;
   enabledCategories: POICategory[];
 }) {
-  const dragResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onMoveShouldSetPanResponder: (_, gesture) =>
-          gesture.dy > 8 && Math.abs(gesture.dy) > Math.abs(gesture.dx),
-        onPanResponderRelease: (_, gesture) => {
-          if (gesture.dy > 48) onClose();
-        },
-      }),
-    [onClose],
-  );
-
   const handleReset = () => {
     setAllCategories(true);
   };
@@ -332,25 +330,31 @@ function MoreFilterSheet({
         <View
           className="rounded-t-2xl border-t border-border"
           style={{ backgroundColor: colors.surface }}
-          {...dragResponder.panHandlers}
         >
-          <View className="items-center pt-2 pb-1">
-            <View
-              className="rounded-full"
-              style={{ width: 32, height: 4, backgroundColor: colors.textTertiary, opacity: 0.5 }}
-            />
-          </View>
-
-          <View className="flex-row items-center justify-between px-4 pt-2 pb-4">
-            <Text className="text-lg font-barlow-semibold text-foreground">Categories</Text>
-            {isCategoryFilterActive && (
+          <View className="flex-row items-center justify-between px-4 pt-4 pb-4">
+            <View className="flex-1 min-h-[48px] justify-center">
+              <Text className="text-lg font-barlow-semibold text-foreground">Categories</Text>
+            </View>
+            <View className="flex-row items-center">
+              {isCategoryFilterActive && (
+                <TouchableOpacity
+                  onPress={handleReset}
+                  className="min-h-[48px] px-3 items-center justify-center mr-2"
+                  accessibilityLabel="Clear category filters"
+                  accessibilityRole="button"
+                >
+                  <Text className="text-sm font-barlow-medium text-accent">Clear</Text>
+                </TouchableOpacity>
+              )}
               <TouchableOpacity
-                onPress={handleReset}
-                className="min-h-[48px] px-3 items-center justify-center"
+                onPress={onClose}
+                className="min-h-[48px] w-[48px] items-center justify-center -mr-2"
+                accessibilityLabel="Close category filters"
+                accessibilityRole="button"
               >
-                <Text className="text-sm font-barlow-medium text-accent">Clear</Text>
+                <X size={24} color={colors.textTertiary} />
               </TouchableOpacity>
-            )}
+            </View>
           </View>
 
           <View className="px-4 pb-6">

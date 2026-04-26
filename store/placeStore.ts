@@ -68,22 +68,22 @@ export const usePlaceStore = create<PlaceState>((set, get) => ({
     const enabledCategories = new Set<POICategory | "waypoint">(poiState.enabledCategories);
     const downloadedPOIs = allPlaces.filter((p) => p.entityType === "downloadedPoi");
 
-    let filtered = filterPlacesByCategory(downloadedPOIs, enabledCategories);
+    const starredIds = useStarredStore.getState().getStarredIds("downloadedPoi");
+    const filteredByCategory = filterPlacesByCategory(downloadedPOIs, enabledCategories);
+    const byPlaceId = new Map(filteredByCategory.map((place) => [place.placeId, place]));
+
+    for (const place of downloadedPOIs) {
+      if (starredIds.has(place.entityId)) byPlaceId.set(place.placeId, place);
+    }
+
+    let filtered = Array.from(byPlaceId.values());
 
     // Apply showOpenOnly to downloaded POIs only
     if (poiState.showOpenOnly) {
       filtered = filterPlacesByOpenNow(filtered);
     }
 
-    // Always show starred POIs
-    const starredIds = useStarredStore.getState().getStarredIds("downloadedPoi");
-    const withStarred = filtered.filter(
-      (p) =>
-        (p.entityType === "downloadedPoi" && starredIds.has(p.entityId)) ||
-        enabledCategories.has(p.category as POICategory),
-    );
-
-    return withStarred;
+    return filtered;
   },
 
   getPlacesForRoutes: (routeIds) => {
@@ -101,20 +101,29 @@ export const usePlaceStore = create<PlaceState>((set, get) => ({
     const poiState = usePoiStore.getState();
     const enabledCategories = new Set<POICategory | "waypoint">(poiState.enabledCategories);
 
-    const combined: PlaceViewModel[] = [];
+    const starredIds = useStarredStore.getState().getStarredIds("downloadedPoi");
+    const combinedByPlaceId = new Map<string, PlaceViewModel>();
     for (const seg of segments) {
       const places = state.places[seg.routeId];
       if (!places) continue;
 
       const downloadedPOIs = places.filter((p) => p.entityType === "downloadedPoi");
-      let filtered = filterPlacesByCategory(downloadedPOIs, enabledCategories);
+      const filteredByCategory = filterPlacesByCategory(downloadedPOIs, enabledCategories);
+      const byPlaceId = new Map(filteredByCategory.map((place) => [place.placeId, place]));
+
+      for (const place of downloadedPOIs) {
+        if (starredIds.has(place.entityId)) byPlaceId.set(place.placeId, place);
+      }
+
+      let filtered = Array.from(byPlaceId.values());
       if (poiState.showOpenOnly) filtered = filterPlacesByOpenNow(filtered);
       for (const place of filtered) {
-        combined.push({
+        const stitchedPlace = {
           ...place,
           effectiveDistanceAlongRouteMeters:
             place.rawDistanceAlongRouteMeters + seg.distanceOffsetMeters,
-        });
+        };
+        combinedByPlaceId.set(stitchedPlace.placeId, stitchedPlace);
       }
     }
 
@@ -124,12 +133,20 @@ export const usePlaceStore = create<PlaceState>((set, get) => ({
         const places = state.places[routeId];
         if (!places) continue;
         const downloadedPOIs = places.filter((p) => p.entityType === "downloadedPoi");
-        let filtered = filterPlacesByCategory(downloadedPOIs, enabledCategories);
+        const filteredByCategory = filterPlacesByCategory(downloadedPOIs, enabledCategories);
+        const byPlaceId = new Map(filteredByCategory.map((place) => [place.placeId, place]));
+
+        for (const place of downloadedPOIs) {
+          if (starredIds.has(place.entityId)) byPlaceId.set(place.placeId, place);
+        }
+
+        let filtered = Array.from(byPlaceId.values());
         if (poiState.showOpenOnly) filtered = filterPlacesByOpenNow(filtered);
-        combined.push(...filtered);
+        for (const place of filtered) combinedByPlaceId.set(place.placeId, place);
       }
     }
 
+    const combined = Array.from(combinedByPlaceId.values());
     combined.sort(
       (a, b) => a.effectiveDistanceAlongRouteMeters - b.effectiveDistanceAlongRouteMeters,
     );
