@@ -727,11 +727,12 @@ export default function MapScreen() {
             />
           );
         })}
-        {activeRouteIds.length > 0 && (
-          <POILayer key={mapStyle.styleKey} routeIds={activeRouteIds} />
-        )}
         {highlightedClimb && activeRoutePoints && (
-          <ClimbHighlightLayer climb={highlightedClimb} points={activeRoutePoints} />
+          <ClimbHighlightLayer
+            key={`climb-${highlightedClimb.id}-${mapStyle.styleKey}`}
+            climb={highlightedClimb}
+            points={activeRoutePoints}
+          />
         )}
         <RouteMarkerLayer
           key={`route-markers-${activeData?.id ?? "none"}-${mapStyle.styleKey}`}
@@ -740,6 +741,9 @@ export default function MapScreen() {
           showDistanceMarkers={showDistanceMarkers}
           zoom={routeMarkerZoom}
         />
+        {activeRouteIds.length > 0 && (
+          <POILayer key={mapStyle.styleKey} routeIds={activeRouteIds} />
+        )}
         <LocationPuck
           key={`puck-${renderedRouteKey}`}
           puckBearing="heading"
