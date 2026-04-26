@@ -39,6 +39,32 @@ export interface RouteWithPoints extends Route {
   points: RoutePoint[];
 }
 
+export type SurfaceClass = "paved" | "unpaved" | "unknown";
+
+export interface SurfaceWayGeometryPoint {
+  latitude: number;
+  longitude: number;
+}
+
+export interface ClassifiedSurfaceWay {
+  sourceId: string;
+  surfaceTag: string | null;
+  surfaceClass: SurfaceClass;
+  tags: Record<string, string>;
+  geometry: SurfaceWayGeometryPoint[];
+}
+
+export interface RouteSurfaceSegment {
+  id: string;
+  routeId: string;
+  sourceId: string;
+  startDistanceMeters: number;
+  endDistanceMeters: number;
+  surfaceTag: string | null;
+  surfaceClass: SurfaceClass;
+  tags: Record<string, string>;
+}
+
 export interface SnappedPosition {
   routeId: string;
   pointIndex: number;
