@@ -12,7 +12,13 @@ import { useCollectionStore } from "@/store/collectionStore";
 import { useRouteStore } from "@/store/routeStore";
 import { useSettingsStore } from "@/store/settingsStore";
 import { useClimbStore } from "@/store/climbStore";
-import type { Collection, CollectionSegmentWithRoute, StitchedCollection } from "@/types";
+import { useWaypointStore } from "@/store/waypointStore";
+import type {
+  Collection,
+  CollectionSegmentWithRoute,
+  RouteWaypoint,
+  StitchedCollection,
+} from "@/types";
 import { useMapStyle } from "@/hooks/useMapStyle";
 import { formatDistance, formatElevation } from "@/utils/formatters";
 import { computeBounds } from "@/utils/geo";
@@ -24,6 +30,7 @@ import StatBox from "@/components/common/StatBox";
 import SegmentList from "@/components/collection/SegmentList";
 import AddSegmentSheet from "@/components/collection/AddSegmentSheet";
 import CollectionOfflineSection from "@/components/collection/CollectionOfflineSection";
+import { getWaypointCategoryMeta, WAYPOINT_ICON_MAP } from "@/constants/waypointCategories";
 import { getMapInspectHref } from "@/utils/mapInspect";
 import { Maximize2 } from "lucide-react-native";
 import { useColorScheme } from "nativewind";
@@ -44,7 +51,6 @@ export default function CollectionDetailScreen() {
   const [isBusy, setIsBusy] = useState(false);
   const [showAddSheet, setShowAddSheet] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-
   const collections = useCollectionStore((s) => s.collections);
   const getCollectionSegmentsWithRoutes = useCollectionStore(
     (s) => s.getCollectionSegmentsWithRoutes,
@@ -57,7 +63,8 @@ export default function CollectionDetailScreen() {
   const visibleRoutePoints = useRouteStore((s) => s.visibleRoutePoints);
   const importRoute = useRouteStore((s) => s.importRoute);
   const units = useSettingsStore((s) => s.units);
-
+  const loadWaypoints = useWaypointStore((s) => s.loadWaypoints);
+  const waypointsByRoute = useWaypointStore((s) => s.waypoints);
   const loadData = useCallback(async () => {
     if (!id) return;
     const collectionData = collections.find((c) => c.id === id);
@@ -160,7 +167,6 @@ export default function CollectionDetailScreen() {
       setIsBusy(false);
     }
   }, [importRoute, loadData]);
-
   const handleRemoveSegment = useCallback(
     async (routeId: string) => {
       if (!id) return;
@@ -238,7 +244,12 @@ export default function CollectionDetailScreen() {
   const handleExportGPX = async () => {
     if (!collection || !stitched) return;
     try {
-      const gpx = serializeCollectionToGPX(collection.name, stitched);
+      const gpx = serializeCollectionToGPX(collection.name, stitched, {
+        routeWaypoints: collectionWaypoints.map((waypoint) => ({
+          ...waypoint,
+          distanceAlongRouteMeters: waypoint.effectiveDist,
+        })),
+      });
       await shareGPXFile(gpx, collection.name);
     } catch (error) {
       Alert.alert("Export Failed", error instanceof Error ? error.message : "Unknown error");
@@ -258,6 +269,13 @@ export default function CollectionDetailScreen() {
     }
   }, [stitched, loadClimbs]);
 
+  useEffect(() => {
+    if (!stitched) return;
+    for (const seg of stitched.segments) {
+      loadWaypoints(seg.routeId);
+    }
+  }, [stitched, loadWaypoints]);
+
   const collectionClimbs = useMemo(() => {
     if (!stitched) return [];
     const routeIds = stitched.segments.map((s) => s.routeId);
@@ -265,6 +283,21 @@ export default function CollectionDetailScreen() {
     // allClimbs is a reactivity trigger: getClimbsForDisplay reads store via get() and is not itself reactive
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stitched, getClimbsForDisplay, allClimbs]);
+
+  const collectionWaypoints = useMemo(() => {
+    if (!stitched) return [];
+    return stitched.segments
+      .flatMap((seg) => {
+        const waypoints = waypointsByRoute[seg.routeId] ?? [];
+        return waypoints.map((waypoint) =>
+          Object.assign({}, waypoint, {
+            effectiveDist: waypoint.distanceAlongRouteMeters + seg.distanceOffsetMeters,
+            segmentName: seg.routeName,
+          }),
+        );
+      })
+      .sort((a, b) => a.effectiveDist - b.effectiveDist);
+  }, [stitched, waypointsByRoute]);
 
   // Segment boundaries for elevation profile
   const segmentBoundaries = useMemo(() => {
@@ -420,6 +453,26 @@ export default function CollectionDetailScreen() {
           </>
         )}
 
+        {collectionWaypoints.length > 0 && (
+          <View className="mt-4">
+            <View className="flex-row items-baseline justify-between px-4 mb-2">
+              <Text className="text-[22px] font-barlow-semibold text-foreground">Waypoints</Text>
+              <Text className="text-[12px] text-muted-foreground font-barlow-sc-medium">
+                {collectionWaypoints.length}
+              </Text>
+            </View>
+            <View className="mx-4 rounded-xl overflow-hidden border border-border bg-surface">
+              {collectionWaypoints.map((waypoint) => (
+                <CollectionWaypointRow
+                  key={`${waypoint.routeId}:${waypoint.id}`}
+                  waypoint={waypoint}
+                  units={units}
+                />
+              ))}
+            </View>
+          </View>
+        )}
+
         {/* Offline */}
         {stitched && stitched.segments.length > 0 && (
           <CollectionOfflineSection stitched={stitched} />
@@ -455,5 +508,53 @@ export default function CollectionDetailScreen() {
         </View>
       )}
     </>
+  );
+}
+
+function CollectionWaypointRow({
+  waypoint,
+  units,
+}: {
+  waypoint: RouteWaypoint & { effectiveDist: number; segmentName: string };
+  units: "metric" | "imperial";
+}) {
+  const meta = getWaypointCategoryMeta(waypoint.type);
+  const IconComp = WAYPOINT_ICON_MAP[meta.iconName];
+
+  return (
+    <View
+      className="flex-row items-center px-3 py-2.5 min-h-[56px] border-b border-border/60 last:border-b-0"
+      accessibilityLabel={waypoint.name ?? meta.label}
+    >
+      <View
+        className="w-[32px] h-[32px] rounded-full items-center justify-center"
+        style={{ backgroundColor: `${meta.color}1A` }}
+      >
+        {IconComp && <IconComp size={16} color={meta.color} />}
+      </View>
+
+      <View className="flex-1 ml-2.5">
+        <Text className="text-[14px] font-barlow-medium text-foreground" numberOfLines={1}>
+          {waypoint.name ?? meta.label}
+        </Text>
+        <Text
+          className="mt-0.5 text-[11px] text-muted-foreground font-barlow-medium"
+          numberOfLines={1}
+        >
+          {meta.label} · {waypoint.segmentName}
+        </Text>
+      </View>
+
+      <View className="items-end ml-2">
+        <Text className="text-[14px] font-barlow-sc-semibold text-foreground">
+          {formatDistance(waypoint.effectiveDist, units)}
+        </Text>
+        {waypoint.distanceFromRouteMeters > 0 && (
+          <Text className="text-[10px] text-muted-foreground font-barlow-sc-medium">
+            {formatDistance(waypoint.distanceFromRouteMeters, units)} off route
+          </Text>
+        )}
+      </View>
+    </View>
   );
 }
