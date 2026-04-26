@@ -17,11 +17,15 @@ const WP_BADGE_SVGS = buildWaypointBadgeSvgs();
 // Merge both icon sets so waypoint icons are available alongside POI icons
 const ALL_BADGE_SVGS = { ...POI_BADGE_SVGS, ...WP_BADGE_SVGS };
 
+export const POI_TOP_LAYER_ID = "poi-starred-badge";
+
 interface POILayerProps {
   routeIds: string[];
+  /** ID of the layer this group should render above (for explicit z-ordering). */
+  aboveLayerID?: string;
 }
 
-export default function POILayer({ routeIds }: POILayerProps) {
+export default function POILayer({ routeIds, aboveLayerID }: POILayerProps) {
   const enabledCategories = usePoiStore((s) => s.enabledCategories);
   const showOpenOnly = usePoiStore((s) => s.showOpenOnly);
   const starredKeys = useStarredStore((s) => s.starredKeys);
@@ -172,6 +176,7 @@ export default function POILayer({ routeIds }: POILayerProps) {
           id="poi-normal-badge"
           filter={["==", ["get", "starred"], 0]}
           style={normalBadgeStyle}
+          aboveLayerID={aboveLayerID}
         />
         <CircleLayer
           id="poi-starred-halo"
@@ -180,7 +185,7 @@ export default function POILayer({ routeIds }: POILayerProps) {
           aboveLayerID="poi-normal-badge"
         />
         <SymbolLayer
-          id="poi-starred-badge"
+          id={POI_TOP_LAYER_ID}
           filter={["==", ["get", "starred"], 1]}
           style={starredBadgeStyle}
           aboveLayerID="poi-starred-halo"

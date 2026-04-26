@@ -641,6 +641,48 @@ export default function MapScreen() {
     allClimbData,
   ]);
 
+  // Explicit layer ordering (bottom-to-top: route lines -> arrows -> climb -> endpoints -> POIs -> puck).
+  // Only anchor to layers that definitely exist for the current render state.
+  // RouteLayer returns null when points < 2; RouteArrowLayer stays mounted with an empty/hidden
+  // source whenever the route line is renderable to avoid native Mapbox layer dependency races.
+  const lastRenderedRouteId = useMemo(() => {
+    for (let i = renderedRoutes.length - 1; i >= 0; i--) {
+      const pts = visibleRoutePoints[renderedRoutes[i].id];
+      if (pts && pts.length >= 2) return renderedRoutes[i].id;
+    }
+    return null;
+  }, [renderedRoutes, visibleRoutePoints]);
+
+  // ClimbHighlightLayer renders when there are at least 2 points in the climb distance range.
+  const climbWillRender = useMemo(() => {
+    if (!highlightedClimb || !activeRoutePoints || activeRoutePoints.length < 2) return false;
+    const start = highlightedClimb.startDistanceMeters;
+    const end = highlightedClimb.endDistanceMeters;
+    let count = 0;
+    for (const p of activeRoutePoints) {
+      if (p.distanceFromStartMeters >= start && p.distanceFromStartMeters <= end) count++;
+      if (p.distanceFromStartMeters > end) break;
+    }
+    return count >= 2;
+  }, [highlightedClimb, activeRoutePoints]);
+
+  // Endpoint markers render when activeRoutePoints has at least 2 points.
+  const markersWillRender = !!(activeRoutePoints && activeRoutePoints.length >= 2);
+
+  const topRouteVisualLayerId = lastRenderedRouteId
+    ? `route-arrow-layer-${lastRenderedRouteId}`
+    : undefined;
+
+  // Climb anchors above the top route visual layer. RouteArrowLayer stays mounted with an
+  // empty/hidden source whenever its route line exists, so this is a stable anchor.
+  const climbAboveLayerId = climbWillRender ? topRouteVisualLayerId : undefined;
+  // Endpoint markers anchor above arrows using a stable dependency. Do not re-anchor them
+  // above the transient climb highlight layer: tab changes mount/unmount that native layer and
+  // can race RNMapbox child layer removal (e.g. route-distance-marker-tails).
+  const markerAboveLayerId = topRouteVisualLayerId;
+  // POIs anchor above the top endpoint marker layer.
+  const poiAboveLayerId = markersWillRender ? "route-finish-marker-icon" : undefined;
+
   // The climbs-tab camera effect handles zooming; highlightedClimb is only for layer styling.
 
   return (
@@ -732,6 +774,7 @@ export default function MapScreen() {
             key={`climb-${highlightedClimb.id}-${mapStyle.styleKey}`}
             climb={highlightedClimb}
             points={activeRoutePoints}
+            aboveLayerID={climbAboveLayerId}
           />
         )}
         <RouteMarkerLayer
@@ -740,9 +783,14 @@ export default function MapScreen() {
           points={activeRoutePoints ?? []}
           showDistanceMarkers={showDistanceMarkers}
           zoom={routeMarkerZoom}
+          aboveLayerID={markerAboveLayerId}
         />
         {activeRouteIds.length > 0 && (
-          <POILayer key={mapStyle.styleKey} routeIds={activeRouteIds} />
+          <POILayer
+            key={mapStyle.styleKey}
+            routeIds={activeRouteIds}
+            aboveLayerID={poiAboveLayerId}
+          />
         )}
         <LocationPuck
           key={`puck-${renderedRouteKey}`}
