@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { View, FlatList, StyleSheet } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import {
   Sun,
@@ -201,6 +202,8 @@ export default function WeatherPanel() {
   const timeline = useWeatherStore((s) => s.timeline);
   const fetchedAt = useWeatherStore((s) => s.fetchedAt);
   const fetchStatus = useWeatherStore((s) => s.fetchStatus);
+  const plannedStart = useWeatherStore((s) => s.plannedStart);
+  const setPlannedStart = useWeatherStore((s) => s.setPlannedStart);
   const isExpanded = usePanelStore((s) => s.isExpanded);
 
   const current = timeline.length > 0 ? timeline[0] : null;
@@ -268,6 +271,55 @@ export default function WeatherPanel() {
           )}
         </View>
       )}
+
+      {/* Planned Start Controls */}
+      <View
+        className="flex-row items-center justify-between px-4 py-3"
+        style={{ borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}
+      >
+        <View>
+          <Text className="text-[12px] font-barlow-medium text-muted-foreground">
+            {plannedStart ? "Planned Restart" : "Start Time"}
+          </Text>
+          <Text className="text-[15px] font-barlow-semibold text-foreground">
+            {plannedStart
+              ? new Date(plannedStart).toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  weekday: "short",
+                })
+              : "Now"}
+          </Text>
+        </View>
+        <View className="flex-row gap-2">
+          {plannedStart !== null && (
+            <Button
+              variant="secondary"
+              size="sm"
+              label="Reset"
+              onPress={() => setPlannedStart(null)}
+              textClassName="text-[13px]"
+              className="h-12 px-4"
+            />
+          )}
+          <Button
+            variant="secondary"
+            size="sm"
+            label="+6h"
+            onPress={() => setPlannedStart((plannedStart ?? Date.now()) + 6 * 3600_000)}
+            textClassName="text-[13px]"
+            className="h-12 px-4"
+          />
+          <Button
+            variant="secondary"
+            size="sm"
+            label="+12h"
+            onPress={() => setPlannedStart((plannedStart ?? Date.now()) + 12 * 3600_000)}
+            textClassName="text-[13px]"
+            className="h-12 px-4"
+          />
+        </View>
+      </View>
 
       {/* Hourly timeline — vertical rows */}
       <TimelineList timeline={timeline.slice(1)} colors={colors} isExpanded={isExpanded} />

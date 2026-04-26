@@ -73,6 +73,10 @@ export function classifyWind(windDirectionDeg: number, routeBearingDeg: number):
   return angleDiff > 0 ? "crosswind-right" : "crosswind-left";
 }
 
+export interface WeatherTimelineOptions {
+  projectionStartTime?: Date;
+}
+
 /**
  * Build weather timeline using precomputed ETA data.
  * For each future hour, finds the weather at the rider's projected route position.
@@ -81,6 +85,7 @@ export async function buildWeatherTimeline(
   points: RoutePoint[],
   fromIndex: number,
   cumulativeTime: number[],
+  options: WeatherTimelineOptions = {},
 ): Promise<WeatherPoint[]> {
   const waypoints = sampleWaypoints(points, fromIndex);
   if (waypoints.length === 0) return [];
@@ -121,21 +126,21 @@ export async function buildWeatherTimeline(
     );
   }
 
-  const now = new Date();
-  const currentHourStart = new Date(now);
+  const projectionStart = options.projectionStartTime ?? new Date();
+  const currentHourStart = new Date(projectionStart);
   currentHourStart.setMinutes(0, 0, 0);
 
   const timeline: WeatherPoint[] = [];
 
   for (let h = 0; h < WEATHER_TIMELINE_HOURS; h++) {
     const hourTime = new Date(currentHourStart.getTime() + h * 3600_000);
-    const secondsFromNow = (hourTime.getTime() - now.getTime()) / 1000;
+    const secondsFromProjectionStart = (hourTime.getTime() - projectionStart.getTime()) / 1000;
 
     // Find the waypoint closest in riding time to this hour
     let bestWp = waypointETAs[0];
     let bestTimeDiff = Infinity;
     for (const wpf of waypointETAs) {
-      const timeDiff = Math.abs(wpf.ridingTimeSeconds - secondsFromNow);
+      const timeDiff = Math.abs(wpf.ridingTimeSeconds - secondsFromProjectionStart);
       if (timeDiff < bestTimeDiff) {
         bestTimeDiff = timeDiff;
         bestWp = wpf;

@@ -46,6 +46,7 @@ export function getETAToDistance(
   points: RoutePoint[],
   fromIndex: number,
   targetDistanceAlongRouteM: number,
+  referenceTime: Date | number = Date.now(),
 ): ETAResult | null {
   if (points.length === 0 || cumulativeTime.length === 0) return null;
   if (fromIndex < 0 || fromIndex >= points.length) return null;
@@ -82,7 +83,9 @@ export function getETAToDistance(
   }
 
   const ridingTimeSeconds = interpolatedTime - cumulativeTime[fromIndex];
-  const eta = new Date(Date.now() + ridingTimeSeconds * 1000);
+  const referenceTimestamp =
+    referenceTime instanceof Date ? referenceTime.getTime() : referenceTime;
+  const eta = new Date(referenceTimestamp + ridingTimeSeconds * 1000);
 
   return { distanceMeters, ridingTimeSeconds, eta };
 }

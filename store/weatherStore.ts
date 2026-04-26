@@ -18,6 +18,7 @@ interface CachedWeather {
   timeline: WeatherPoint[];
   fetchedAt: number;
   routeId: string;
+  plannedStart: number | null;
 }
 
 function loadCache(): CachedWeather | null {
@@ -40,12 +41,31 @@ function clearCache(): void {
   } catch {}
 }
 
+function loadPlannedStart(): number | null {
+  try {
+    const raw = getStorage().getString("plannedStart");
+    if (raw) return parseInt(raw, 10);
+  } catch {}
+  return null;
+}
+
+function persistPlannedStart(time: number | null): void {
+  try {
+    if (time === null) {
+      getStorage().set("plannedStart", "");
+    } else {
+      getStorage().set("plannedStart", time.toString());
+    }
+  } catch {}
+}
+
 interface WeatherState {
   timeline: WeatherPoint[];
   fetchedAt: number | null;
   routeId: string | null;
   fetchStatus: WeatherFetchStatus;
   error: string | null;
+  plannedStart: number | null;
 
   fetchWeather: (
     routeId: string,
@@ -54,19 +74,25 @@ interface WeatherState {
     cumulativeTime: number[],
   ) => Promise<void>;
   clearWeather: () => void;
+  setPlannedStart: (time: number | null) => void;
 }
 
 export const useWeatherStore = create<WeatherState>((set, get) => {
   const cached = loadCache();
-  // Mark cached data as stale if older than threshold
-  const cacheIsFresh = cached?.fetchedAt && Date.now() - cached.fetchedAt < WEATHER_STALE_MS;
+  const initialPlannedStart = loadPlannedStart();
+  // Mark cached data as stale if older than threshold or if plannedStart differs
+  const cacheIsFresh =
+    cached?.fetchedAt &&
+    Date.now() - cached.fetchedAt < WEATHER_STALE_MS &&
+    cached.plannedStart === initialPlannedStart;
 
   return {
-    timeline: cached?.timeline ?? [],
-    fetchedAt: cached?.fetchedAt ?? null,
-    routeId: cached?.routeId ?? null,
+    timeline: cacheIsFresh ? (cached?.timeline ?? []) : [],
+    fetchedAt: cacheIsFresh ? (cached?.fetchedAt ?? null) : null,
+    routeId: cacheIsFresh ? (cached?.routeId ?? null) : null,
     fetchStatus: cacheIsFresh && cached?.timeline?.length ? "done" : "idle",
     error: null,
+    plannedStart: initialPlannedStart,
 
     fetchWeather: async (routeId, points, fromIndex, cumulativeTime) => {
       const state = get();
@@ -77,12 +103,15 @@ export const useWeatherStore = create<WeatherState>((set, get) => {
       const isConnected = useOfflineStore.getState().isConnected;
       if (!isConnected) return;
 
-      // Don't refetch if we have fresh data for the same route
+      const cachedData = loadCache();
+
+      // Don't refetch if we have fresh data for the same route and same plannedStart
       if (
         state.routeId === routeId &&
         state.fetchedAt &&
         Date.now() - state.fetchedAt < WEATHER_STALE_MS &&
-        state.timeline.length > 0
+        state.timeline.length > 0 &&
+        cachedData?.plannedStart === state.plannedStart
       ) {
         return;
       }
@@ -90,12 +119,16 @@ export const useWeatherStore = create<WeatherState>((set, get) => {
       set({ fetchStatus: "fetching", error: null });
 
       try {
-        const timeline = await buildWeatherTimeline(points, fromIndex, cumulativeTime);
+        const options = state.plannedStart
+          ? { projectionStartTime: new Date(state.plannedStart) }
+          : {};
+        const timeline = await buildWeatherTimeline(points, fromIndex, cumulativeTime, options);
 
         const cache: CachedWeather = {
           timeline,
           fetchedAt: Date.now(),
           routeId,
+          plannedStart: state.plannedStart,
         };
         persistCache(cache);
 
@@ -123,6 +156,11 @@ export const useWeatherStore = create<WeatherState>((set, get) => {
         fetchStatus: "idle",
         error: null,
       });
+    },
+
+    setPlannedStart: (time) => {
+      persistPlannedStart(time);
+      set({ plannedStart: time });
     },
   };
 });

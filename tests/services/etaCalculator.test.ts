@@ -63,6 +63,18 @@ describe("etaCalculator", () => {
     vi.useRealTimers();
   });
 
+  it("getETAToDistance can anchor ETA to an explicit reference time", () => {
+    const points = [basePoint(0, 100, 0), basePoint(1_000, 100, 1), basePoint(2_000, 100, 2)];
+    const cumulative = [0, 100, 200];
+    const referenceDate = new Date("2026-02-03T04:05:06.000Z");
+
+    const dateResult = getETAToDistance(cumulative, points, 0, 1_500, referenceDate);
+    const timestampResult = getETAToDistance(cumulative, points, 0, 1_500, referenceDate.getTime());
+
+    expect(dateResult?.eta.toISOString()).toBe("2026-02-03T04:07:36.000Z");
+    expect(timestampResult?.eta.toISOString()).toBe("2026-02-03T04:07:36.000Z");
+  });
+
   it("getETAToDistance returns null for invalid cases and extrapolates after final point", () => {
     const points = [basePoint(0, 100, 0), basePoint(1_000, 100, 1)];
     const cumulative = [0, 120];

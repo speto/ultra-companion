@@ -115,6 +115,7 @@ export default function MapScreen() {
   const computeETAForRoute = useEtaStore((s) => s.computeETAForRoute);
   const cumulativeTime = useEtaStore((s) => s.cumulativeTime);
   const fetchWeather = useWeatherStore((s) => s.fetchWeather);
+  const plannedStart = useWeatherStore((s) => s.plannedStart);
   const isConnected = useOfflineStore((s) => s.isConnected);
 
   // Unified active context — works for both standalone routes and collections
@@ -186,7 +187,14 @@ export default function MapScreen() {
     }
     // Intentional: fire on id/pointIndex changes, not full object identities
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeData?.id, snappedPosition?.pointIndex, isConnected, cumulativeTime, fetchWeather]);
+  }, [
+    activeData?.id,
+    snappedPosition?.pointIndex,
+    isConnected,
+    cumulativeTime,
+    fetchWeather,
+    plannedStart,
+  ]);
 
   // Snap eagerly when routes load (don't wait for next GPS refresh)
   useEffect(() => {
