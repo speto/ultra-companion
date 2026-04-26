@@ -109,6 +109,18 @@ export function buildOverpassQuery(
   way["tourism"="wilderness_hut"](around:${r},${coords});
   node["tourism"="alpine_hut"](around:${r},${coords});
   way["tourism"="alpine_hut"](around:${r},${coords});
+  node["highway"="bus_stop"](around:${r},${coords});
+  node["public_transport"~"^(platform|stop_position)$"]["bus"="yes"](around:${r},${coords});
+  node["leisure"="pitch"]["sport"="soccer"](around:${r},${coords});
+  way["leisure"="pitch"]["sport"="soccer"](around:${r},${coords});
+  node["leisure"="sports_centre"](around:${r},${coords});
+  way["leisure"="sports_centre"](around:${r},${coords});
+  node["amenity"="grave_yard"](around:${r},${coords});
+  way["amenity"="grave_yard"](around:${r},${coords});
+  node["landuse"="cemetery"](around:${r},${coords});
+  way["landuse"="cemetery"](around:${r},${coords});
+  node["amenity"="school"](around:${r},${coords});
+  way["amenity"="school"](around:${r},${coords});
 );
 out center body;`;
 }

@@ -91,7 +91,11 @@ export type POICategory =
   | "gas_station"
   | "bakery"
   | "toilet_shower"
-  | "shelter";
+  | "shelter"
+  | "bus_stop"
+  | "sports"
+  | "cemetery"
+  | "school";
 
 export type POISource = "osm" | "google";
 

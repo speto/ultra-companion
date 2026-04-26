@@ -43,6 +43,10 @@ export const POI_CATEGORIES: POICategoryMeta[] = [
   { key: "bakery", label: "Bakery", color: "#EAB308", iconName: "Croissant" },
   { key: "toilet_shower", label: "WC", color: "#6366F1", iconName: "ShowerHead" },
   { key: "shelter", label: "Shelter", color: "#8B5CF6", iconName: "Tent" },
+  { key: "bus_stop", label: "Bus", color: "#0EA5E9", iconName: "Bus" },
+  { key: "sports", label: "Sports", color: "#84CC16", iconName: "Dumbbell" },
+  { key: "cemetery", label: "Cemetery", color: "#64748B", iconName: "Landmark" },
+  { key: "school", label: "School", color: "#14B8A6", iconName: "School" },
 ];
 
 /** How far behind the rider a POI remains visible in the list */

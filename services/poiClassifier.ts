@@ -24,6 +24,25 @@ const TAG_RULES: {
       t.tourism === "wilderness_hut" ||
       t.tourism === "alpine_hut",
   },
+  {
+    category: "bus_stop",
+    check: (t) =>
+      t.highway === "bus_stop" ||
+      ((t.public_transport === "platform" || t.public_transport === "stop_position") &&
+        t.bus === "yes"),
+  },
+  {
+    category: "sports",
+    check: (t) => (t.leisure === "pitch" && t.sport === "soccer") || t.leisure === "sports_centre",
+  },
+  {
+    category: "cemetery",
+    check: (t) => t.amenity === "grave_yard" || t.landuse === "cemetery",
+  },
+  {
+    category: "school",
+    check: (t) => t.amenity === "school",
+  },
 ];
 
 /** Classify a single Overpass element into a POI category */
