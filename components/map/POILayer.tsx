@@ -1,54 +1,80 @@
 import React, { useMemo, useCallback } from "react";
-import { ShapeSource, CircleLayer } from "@rnmapbox/maps";
+import { ShapeSource, SymbolLayer, CircleLayer, Images, Image } from "@rnmapbox/maps";
+import { SvgXml } from "react-native-svg";
 import { usePoiStore } from "@/store/poiStore";
+import { usePlaceStore } from "@/store/placeStore";
+import { useWaypointStore } from "@/store/waypointStore";
 import { useThemeColors } from "@/theme";
-import { POI_CATEGORIES } from "@/constants";
 import { haversineDistance } from "@/utils/geo";
-import type { POI } from "@/types";
+import { waypointCategoryForType } from "@/constants/waypointCategories";
+import { buildPoiBadgeSvgs, buildWaypointBadgeSvgs } from "./mapBadgeIcons";
+import type { PlaceViewModel } from "@/types";
+import type { SymbolLayerStyle, CircleLayerStyle } from "@rnmapbox/maps";
 
-const categoryColorMap = Object.fromEntries(POI_CATEGORIES.map((c) => [c.key, c.color]));
+const POI_BADGE_SVGS = buildPoiBadgeSvgs();
+const WP_BADGE_SVGS = buildWaypointBadgeSvgs();
+// Merge both icon sets so waypoint icons are available alongside POI icons
+const ALL_BADGE_SVGS = { ...POI_BADGE_SVGS, ...WP_BADGE_SVGS };
 
 interface POILayerProps {
   routeIds: string[];
 }
 
 export default function POILayer({ routeIds }: POILayerProps) {
-  const getVisiblePOIs = usePoiStore((s) => s.getVisiblePOIs);
   const enabledCategories = usePoiStore((s) => s.enabledCategories);
   const showOpenOnly = usePoiStore((s) => s.showOpenOnly);
   const starredPOIIds = usePoiStore((s) => s.starredPOIIds);
-  const allPois = usePoiStore((s) => s.pois);
-  const setSelectedPOI = usePoiStore((s) => s.setSelectedPOI);
+  const allPlaces = usePlaceStore((s) => s.places);
+  const getVisiblePlaces = usePlaceStore((s) => s.getVisiblePlaces);
+  const setSelectedPlace = usePlaceStore((s) => s.setSelectedPlace);
+  const showWaypoints = useWaypointStore((s) => s.showWaypoints);
   const colors = useThemeColors();
 
-  const visiblePOIs = useMemo(() => {
-    const combined: POI[] = [];
+  const visiblePlaces = useMemo(() => {
+    const places: PlaceViewModel[] = [];
     for (const routeId of routeIds) {
-      combined.push(...getVisiblePOIs(routeId));
+      places.push(...getVisiblePlaces(routeId));
     }
-    return combined;
+    return places;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [routeIds, allPois, enabledCategories, showOpenOnly, starredPOIIds]);
+  }, [
+    routeIds,
+    allPlaces,
+    enabledCategories,
+    showOpenOnly,
+    starredPOIIds,
+    showWaypoints,
+    getVisiblePlaces,
+  ]);
 
   const geoJSON = useMemo(
     (): GeoJSON.FeatureCollection => ({
       type: "FeatureCollection",
-      features: visiblePOIs.map((poi) => ({
-        type: "Feature",
-        properties: {
-          poiId: poi.id,
-          category: poi.category,
-          color: categoryColorMap[poi.category] ?? "#888888",
-          name: poi.name ?? "",
-          starred: starredPOIIds.has(poi.id) ? 1 : 0,
-        },
-        geometry: {
-          type: "Point",
-          coordinates: [poi.longitude, poi.latitude],
-        },
-      })),
+      features: visiblePlaces.map((place) => {
+        const iconName =
+          place.entityType === "routeWaypoint"
+            ? `wp-${waypointCategoryForType(place.waypointType)}`
+            : `poi-${place.category}`;
+        const starred =
+          place.entityType === "downloadedPoi" && starredPOIIds.has(place.entityId) ? 1 : 0;
+        return {
+          type: "Feature",
+          properties: {
+            placeId: place.placeId,
+            entityId: place.entityId,
+            entityType: place.entityType,
+            category: place.category,
+            iconName,
+            starred,
+          },
+          geometry: {
+            type: "Point",
+            coordinates: [place.longitude, place.latitude],
+          },
+        };
+      }),
     }),
-    [visiblePOIs, starredPOIIds],
+    [visiblePlaces, starredPOIIds],
   );
 
   const handlePress = useCallback(
@@ -56,86 +82,105 @@ export default function POILayer({ routeIds }: POILayerProps) {
       const features = event?.features;
       if (!features?.length) return;
 
-      // When multiple features overlap, pick the one closest to the tap point
       const tapCoord = event?.coordinates;
-      let bestPoi: POI | undefined;
+      let bestPlace: PlaceViewModel | undefined;
 
       if (tapCoord && features.length > 1) {
         let bestDist = Infinity;
         for (const feature of features) {
-          const id = feature?.properties?.poiId;
-          if (!id) continue;
-          const poi = visiblePOIs.find((p) => p.id === id);
-          if (!poi) continue;
+          const placeId = feature?.properties?.placeId;
+          if (!placeId) continue;
+          const place = visiblePlaces.find((p) => p.placeId === placeId);
+          if (!place) continue;
           const dist = haversineDistance(
             tapCoord.latitude,
             tapCoord.longitude,
-            poi.latitude,
-            poi.longitude,
+            place.latitude,
+            place.longitude,
           );
           if (dist < bestDist) {
             bestDist = dist;
-            bestPoi = poi;
+            bestPlace = place;
           }
         }
       } else {
-        const id = features[0]?.properties?.poiId;
-        if (id) bestPoi = visiblePOIs.find((p) => p.id === id);
+        const placeId = features[0]?.properties?.placeId;
+        if (placeId) bestPlace = visiblePlaces.find((p) => p.placeId === placeId);
       }
 
-      if (bestPoi) setSelectedPOI(bestPoi);
+      if (bestPlace) {
+        setSelectedPlace(bestPlace);
+      }
     },
-    [visiblePOIs, setSelectedPOI],
+    [visiblePlaces, setSelectedPlace],
   );
 
-  if (visiblePOIs.length === 0) return null;
+  const starredHaloStyle = useMemo<CircleLayerStyle>(
+    () => ({
+      circleRadius: ["interpolate", ["linear"], ["zoom"], 5, 7, 8, 9, 10, 11, 12, 14],
+      circleColor: colors.warning,
+      circleOpacity: 0.85,
+    }),
+    [colors.warning],
+  );
+
+  const normalBadgeStyle = useMemo<SymbolLayerStyle>(
+    () => ({
+      iconImage: ["get", "iconName"],
+      iconSize: ["interpolate", ["linear"], ["zoom"], 5, 0.73, 10, 1.0, 14, 1.27],
+      iconAllowOverlap: true,
+      iconIgnorePlacement: true,
+      iconAnchor: "center",
+    }),
+    [],
+  );
+
+  const starredBadgeStyle = useMemo<SymbolLayerStyle>(
+    () => ({
+      iconImage: ["get", "iconName"],
+      iconSize: ["interpolate", ["linear"], ["zoom"], 5, 0.8, 10, 1.1, 14, 1.4],
+      iconAllowOverlap: true,
+      iconIgnorePlacement: true,
+      iconAnchor: "center",
+    }),
+    [],
+  );
+
+  const badgeEntries = useMemo(() => Object.entries(ALL_BADGE_SVGS), []);
 
   return (
-    <ShapeSource
-      id="poi-source"
-      shape={geoJSON}
-      onPress={handlePress}
-      hitbox={{ width: 16, height: 16 }}
-    >
-      {/* Regular POIs: surface-colored ring, visible from zoom 10 */}
-      <CircleLayer
-        id="poi-circles-outline"
-        filter={["==", ["get", "starred"], 0]}
-        style={{
-          circleRadius: 7,
-          circleColor: colors.surface,
-        }}
-        minZoomLevel={10}
-      />
-      <CircleLayer
-        id="poi-circles"
-        filter={["==", ["get", "starred"], 0]}
-        style={{
-          circleRadius: 5,
-          circleColor: ["get", "color"],
-        }}
-        minZoomLevel={10}
-      />
-
-      {/* Starred POIs: gold ring, larger, visible from zoom 8 — rendered last to be on top */}
-      <CircleLayer
-        id="poi-starred-outline"
-        filter={["==", ["get", "starred"], 1]}
-        style={{
-          circleRadius: 10,
-          circleColor: colors.warning,
-        }}
-        minZoomLevel={8}
-      />
-      <CircleLayer
-        id="poi-starred-fill"
-        filter={["==", ["get", "starred"], 1]}
-        style={{
-          circleRadius: 7,
-          circleColor: ["get", "color"],
-        }}
-        minZoomLevel={8}
-      />
-    </ShapeSource>
+    <>
+      <Images>
+        {badgeEntries.map(([name, svg]) => (
+          <Image key={name} name={name}>
+            <SvgXml xml={svg} width={24} height={24} />
+          </Image>
+        ))}
+      </Images>
+      <ShapeSource
+        id="poi-source"
+        shape={geoJSON}
+        onPress={handlePress}
+        hitbox={{ width: 40, height: 40 }}
+      >
+        <SymbolLayer
+          id="poi-normal-badge"
+          filter={["==", ["get", "starred"], 0]}
+          style={normalBadgeStyle}
+        />
+        <CircleLayer
+          id="poi-starred-halo"
+          filter={["==", ["get", "starred"], 1]}
+          style={starredHaloStyle}
+          aboveLayerID="poi-normal-badge"
+        />
+        <SymbolLayer
+          id="poi-starred-badge"
+          filter={["==", ["get", "starred"], 1]}
+          style={starredBadgeStyle}
+          aboveLayerID="poi-starred-halo"
+        />
+      </ShapeSource>
+    </>
   );
 }
