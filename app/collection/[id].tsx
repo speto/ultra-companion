@@ -2,6 +2,8 @@ import React, { useEffect, useState, useMemo, useCallback, useRef } from "react"
 import { View, useWindowDimensions, ActivityIndicator, Alert } from "react-native";
 import { NestableScrollContainer } from "react-native-draggable-flatlist";
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
+import { serializeCollectionToGPX } from "@/services/gpxSerializer";
+import { shareGPXFile } from "@/utils/gpxExportShare";
 import { Camera, MapView as MapboxMapView } from "@rnmapbox/maps";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
@@ -204,6 +206,16 @@ export default function CollectionDetailScreen() {
     ]);
   }, [id, collection, deleteCollection, router]);
 
+  const handleExportGPX = async () => {
+    if (!collection || !stitched) return;
+    try {
+      const gpx = serializeCollectionToGPX(collection.name, stitched);
+      await shareGPXFile(gpx, collection.name);
+    } catch (error) {
+      Alert.alert("Export Failed", error instanceof Error ? error.message : "Unknown error");
+    }
+  };
+
   // Load climbs for all segments
   const loadClimbs = useClimbStore((s) => s.loadClimbs);
   const getClimbsForDisplay = useClimbStore((s) => s.getClimbsForDisplay);
@@ -363,6 +375,12 @@ export default function CollectionDetailScreen() {
 
         {/* Actions */}
         <View className="px-4 mt-6 gap-3">
+          <Button
+            onPress={handleExportGPX}
+            disabled={!stitched || stitched.points.length === 0}
+            label="Export GPX"
+            variant="secondary"
+          />
           <Button
             onPress={handleSetActive}
             disabled={collection.isActive || segmentsWithRoutes.length === 0}

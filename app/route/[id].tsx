@@ -1,8 +1,11 @@
 import React, { useEffect, useState, useMemo, useRef } from "react";
-import { View, ScrollView, useWindowDimensions, ActivityIndicator } from "react-native";
+import { View, ScrollView, useWindowDimensions, ActivityIndicator, Alert } from "react-native";
 import { useLocalSearchParams, Stack } from "expo-router";
+import { serializeRouteToGPX } from "@/services/gpxSerializer";
+import { shareGPXFile } from "@/utils/gpxExportShare";
 import { Camera, MapView as MapboxMapView } from "@rnmapbox/maps";
 import { Text } from "@/components/ui/text";
+import { Button } from "@/components/ui/button";
 import { useThemeColors } from "@/theme";
 import { useRouteStore } from "@/store/routeStore";
 import { useSettingsStore } from "@/store/settingsStore";
@@ -95,6 +98,16 @@ export default function RouteDetailScreen() {
       </View>
     );
   }
+
+  const handleExportGPX = async () => {
+    if (!route) return;
+    try {
+      const gpx = serializeRouteToGPX(route, { waypoints: chartPOIs });
+      await shareGPXFile(gpx, route.name);
+    } catch (error) {
+      Alert.alert("Export Failed", error instanceof Error ? error.message : "Unknown error");
+    }
+  };
 
   const chartWidth = screenWidth - 32;
   const chartHeight = 220;
@@ -214,6 +227,11 @@ export default function RouteDetailScreen() {
             </View>
           </View>
         )}
+
+        {/* Actions */}
+        <View className="px-4 mt-6 gap-3">
+          <Button onPress={handleExportGPX} label="Export GPX" variant="secondary" />
+        </View>
       </ScrollView>
     </>
   );
