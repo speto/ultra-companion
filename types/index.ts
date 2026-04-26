@@ -307,3 +307,40 @@ export interface OfflineRouteInfo {
   downloadedAt: string | null;
   error: string | null;
 }
+
+// --- Place view model (unified display layer for POIs + route waypoints) ---
+
+export type PlaceEntityType = "downloadedPoi" | "routeWaypoint";
+
+export interface PlaceViewModel {
+  /** Discriminated identity */
+  entityType: PlaceEntityType;
+  /** ID of the underlying entity (POI id or RouteWaypoint id) */
+  entityId: string;
+  /** Stable composite key: `"downloadedPoi:<id>" | "routeWaypoint:<id>"` */
+  placeId: string;
+  /** Route that owns this place */
+  routeId: string;
+  /** For downloaded POIs, the POI category. For route waypoints, derived from waypoint type or `"waypoint"`. */
+  category: POICategory | "waypoint";
+  name: string | null;
+  latitude: number;
+  longitude: number;
+  tags: Record<string, string>;
+  /** Raw distance from route in meters (from the underlying entity) */
+  distanceFromRouteMeters: number;
+  /** Raw distance along route in meters (from the underlying entity) */
+  rawDistanceAlongRouteMeters: number;
+  /** Effective stitched distance — equals raw for single routes, offset for collections */
+  effectiveDistanceAlongRouteMeters: number;
+  /** Elevation in meters (available for route waypoints, null for most downloaded POIs) */
+  elevationMeters: number | null;
+  /** Opening hours string (from POI tags) */
+  openingHours: string | null;
+  /** Waypoint type string (from route waypoints, e.g. "control", "water") */
+  waypointType: string | null;
+  /** Description (from route waypoints) */
+  description: string | null;
+  /** Reference to the raw underlying entity if needed for detail views */
+  raw?: POI | RouteWaypoint;
+}

@@ -2,10 +2,11 @@ import { create } from "zustand";
 import { createMMKV, type MMKV } from "react-native-mmkv";
 import type { FetchablePOISource, POI, POICategory, POIFetchStatus, RoutePoint } from "@/types";
 import { DEFAULT_CORRIDOR_WIDTH_M, POI_CATEGORIES } from "@/constants";
-import { getPOIsForRoute, deletePOIsBySource, deletePOIsForRoute } from "@/db/database";
+import { getPOIsForRoute, deletePOIsBySource, deleteDownloadedPOIsForRoute } from "@/db/database";
 import { fetchOsmPOIs, fetchGooglePOIs } from "@/services/poiFetcher";
-import { getOpeningHoursStatus } from "@/services/openingHoursParser";
+import { isKnownOpenNow } from "@/utils/placeAdapter";
 import { usePanelStore } from "./panelStore";
+import { useStarredStore } from "./starredStore";
 
 let storage: MMKV | null = null;
 
@@ -21,15 +22,6 @@ function readString(key: string): string | undefined {
     return getStorage().getString(key);
   } catch {
     return undefined;
-  }
-}
-
-function parseStarredIds(raw: string | undefined): Set<string> {
-  if (!raw) return new Set();
-  try {
-    return new Set(JSON.parse(raw) as string[]);
-  } catch {
-    return new Set();
   }
 }
 
@@ -126,6 +118,15 @@ function normalizePersistedStatuses(): void {
 
 normalizePersistedStatuses();
 
+async function refreshPlacesForRoute(routeId: string): Promise<void> {
+  const { usePlaceStore } = await import("@/store/placeStore");
+  await usePlaceStore.getState().loadPlaces(routeId);
+}
+
+async function refreshStarredItems(): Promise<void> {
+  await useStarredStore.getState().loadStarredItems();
+}
+
 type ScrubMode = "reset" | "remove";
 
 /**
@@ -138,21 +139,15 @@ function buildRouteScrubPatch(
   s: {
     pois: Record<string, POI[]>;
     sourceInfo: Record<string, Record<FetchablePOISource, SourceInfo>>;
-    starredPOIIds: Set<string>;
     selectedPOI: POI | null;
   },
   routeId: string,
   mode: ScrubMode,
 ) {
-  const { [routeId]: removed, ...remainingPois } = s.pois;
+  const removed = s.pois[routeId] ?? [];
+  const { [routeId]: _currentPois, ...remainingPois } = s.pois;
+  const pois = remainingPois;
   const removedIds = new Set((removed ?? []).map((p) => p.id));
-  const nextStarred = new Set([...s.starredPOIIds].filter((id) => !removedIds.has(id)));
-  const starredChanged = nextStarred.size !== s.starredPOIIds.size;
-  if (starredChanged) {
-    try {
-      getStorage().set("starredPOIIds", JSON.stringify([...nextStarred]));
-    } catch {}
-  }
 
   let sourceInfo: typeof s.sourceInfo;
   if (mode === "remove") {
@@ -166,10 +161,9 @@ function buildRouteScrubPatch(
   }
 
   return {
-    pois: remainingPois,
+    pois,
     sourceInfo,
-    starredPOIIds: starredChanged ? nextStarred : s.starredPOIIds,
-    selectedPOI: s.selectedPOI?.routeId === routeId ? null : s.selectedPOI,
+    selectedPOI: removedIds.has(s.selectedPOI?.id ?? "") ? null : s.selectedPOI,
   };
 }
 
@@ -181,7 +175,6 @@ interface POIState {
   enabledCategories: POICategory[];
   corridorWidthM: number;
   showOpenOnly: boolean;
-  starredPOIIds: Set<string>;
 
   // Fetch state per source per route
   sourceInfo: Record<string, Record<FetchablePOISource, SourceInfo>>; // routeId -> source -> info
@@ -201,8 +194,6 @@ interface POIState {
   setCorridorWidth: (widthM: number) => void;
   setAllCategories: (enabled: boolean) => void;
   toggleShowOpenOnly: () => void;
-  toggleStarred: (poiId: string) => void;
-  isStarred: (poiId: string) => boolean;
   getStarredPOIs: (routeId: string) => POI[];
   clearPOIs: (routeId: string) => Promise<void>;
   cleanupRouteState: (routeId: string) => void;
@@ -221,7 +212,6 @@ export const usePoiStore = create<POIState>((set, get) => ({
   enabledCategories: parseCategories(readString("enabledCategories")),
   corridorWidthM: Number(readString("corridorWidthM")) || DEFAULT_CORRIDOR_WIDTH_M,
   showOpenOnly: readString("showOpenOnly") === "true",
-  starredPOIIds: parseStarredIds(readString("starredPOIIds")),
   sourceInfo: {},
   selectedPOI: null,
 
@@ -234,7 +224,7 @@ export const usePoiStore = create<POIState>((set, get) => ({
       googleCount = 0;
     for (const p of pois) {
       if (p.source === "google") googleCount++;
-      else osmCount++;
+      else if (p.source === "osm") osmCount++;
     }
 
     set((s) => {
@@ -295,6 +285,7 @@ export const usePoiStore = create<POIState>((set, get) => ({
 
       const pois = await getPOIsForRoute(routeId);
       set((s) => ({ pois: { ...s.pois, [routeId]: pois } }));
+      await refreshPlacesForRoute(routeId);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to fetch POIs";
       updateSourceInfo({ status: "error", error: message, progress: null });
@@ -322,6 +313,8 @@ export const usePoiStore = create<POIState>((set, get) => ({
         },
       };
     });
+    await refreshStarredItems();
+    await refreshPlacesForRoute(routeId);
   },
 
   toggleCategory: (category) => {
@@ -358,34 +351,21 @@ export const usePoiStore = create<POIState>((set, get) => ({
     set({ showOpenOnly: next });
   },
 
-  toggleStarred: (poiId) => {
-    const current = get().starredPOIIds;
-    const next = new Set(current);
-    if (next.has(poiId)) {
-      next.delete(poiId);
-    } else {
-      next.add(poiId);
-    }
-    try {
-      getStorage().set("starredPOIIds", JSON.stringify([...next]));
-    } catch {}
-    set({ starredPOIIds: next });
-  },
-
-  isStarred: (poiId) => get().starredPOIIds.has(poiId),
-
   getStarredPOIs: (routeId) => {
     const state = get();
     const all = state.pois[routeId];
     if (!all) return [];
-    return all.filter((p) => state.starredPOIIds.has(p.id));
+    const starredIds = useStarredStore.getState().getStarredIds("downloadedPoi");
+    return all.filter((p) => starredIds.has(p.id));
   },
 
   clearPOIs: async (routeId) => {
-    await deletePOIsForRoute(routeId);
+    await deleteDownloadedPOIsForRoute(routeId);
     clearSourceInfo(routeId, "osm");
     clearSourceInfo(routeId, "google");
     set((s) => buildRouteScrubPatch(s, routeId, "reset"));
+    await refreshStarredItems();
+    await refreshPlacesForRoute(routeId);
   },
 
   cleanupRouteState: (routeId) => {
@@ -408,13 +388,10 @@ export const usePoiStore = create<POIState>((set, get) => ({
     return all.filter((p) => {
       if (state.showOpenOnly) {
         if (!enabled.has(p.category)) return false;
-        const openingHours = p.tags.opening_hours;
-        if (!openingHours) return false;
-        const status = getOpeningHoursStatus(openingHours);
-        return status?.isOpen === true;
+        return isKnownOpenNow(p.tags.opening_hours);
       }
       // Always show starred POIs outside Open now filtering
-      if (state.starredPOIIds.has(p.id)) return true;
+      if (useStarredStore.getState().isStarred("downloadedPoi", p.id)) return true;
       if (!enabled.has(p.category)) return false;
       return true;
     });

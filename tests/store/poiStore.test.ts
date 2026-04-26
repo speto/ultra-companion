@@ -10,7 +10,10 @@ vi.mock("react-native-mmkv", () => ({
 vi.mock("@/db/database", () => ({
   getPOIsForRoute: vi.fn(),
   deletePOIsBySource: vi.fn(),
+  deleteDownloadedPOIsForRoute: vi.fn(),
   deletePOIsForRoute: vi.fn(),
+  getStarredItems: vi.fn(() => []),
+  setStarredItem: vi.fn(),
 }));
 
 vi.mock("@/services/poiFetcher", () => ({
@@ -18,8 +21,18 @@ vi.mock("@/services/poiFetcher", () => ({
   fetchGooglePOIs: vi.fn(),
 }));
 
+vi.mock("@/store/placeStore", () => ({
+  usePlaceStore: {
+    getState: vi.fn(() => ({ loadPlaces: vi.fn() })),
+  },
+}));
+
 async function loadPoiStore() {
   return (await import("@/store/poiStore")).usePoiStore;
+}
+
+async function loadStarredStore() {
+  return (await import("@/store/starredStore")).useStarredStore;
 }
 
 const routeId = "route-1";
@@ -117,17 +130,47 @@ describe("POI store visible POI filtering", () => {
 
   it("does not let starred known-closed POIs bypass Open now", async () => {
     const usePoiStore = await loadPoiStore();
+    const useStarredStore = await loadStarredStore();
     const pois = [
       buildPoi("known-open", routeId, 100, { tags: { opening_hours: mondayOpenHours } }),
       buildPoi("starred-closed", routeId, 200, { tags: { opening_hours: mondayClosedHours } }),
     ];
 
-    usePoiStore.setState({
-      pois: { [routeId]: pois },
-      starredPOIIds: new Set(["starred-closed"]),
-    });
+    usePoiStore.setState({ pois: { [routeId]: pois } });
+    useStarredStore.setState({ starredKeys: new Set(["downloadedPoi:starred-closed"]) });
     usePoiStore.getState().toggleShowOpenOnly();
 
     expect(visibleIds(usePoiStore.getState().getVisiblePOIs(routeId))).toEqual(["known-open"]);
+  });
+
+  it("clears route POI cache state when deleting POIs for a route", async () => {
+    const database = await import("@/db/database");
+    const placeStore = await import("@/store/placeStore");
+    const useStarredStore = await loadStarredStore();
+    const loadPlaces = vi.fn();
+    vi.mocked(placeStore.usePlaceStore.getState).mockReturnValue({ loadPlaces } as any);
+    const usePoiStore = await loadPoiStore();
+
+    usePoiStore.setState({
+      pois: {
+        [routeId]: [
+          buildPoi("osm-water", routeId, 100, { source: "osm" }),
+          buildPoi("google-shop", routeId, 200, { source: "google" }),
+        ],
+      },
+      selectedPOI: buildPoi("google-shop", routeId, 200, { source: "google" }),
+    });
+    useStarredStore.setState({
+      starredKeys: new Set(["downloadedPoi:osm-water", "downloadedPoi:google-shop"]),
+    });
+
+    await usePoiStore.getState().clearPOIs(routeId);
+
+    expect(database.deleteDownloadedPOIsForRoute).toHaveBeenCalledWith(routeId);
+    expect(database.deletePOIsForRoute).not.toHaveBeenCalled();
+    expect(usePoiStore.getState().pois[routeId]).toBeUndefined();
+    expect(database.getStarredItems).toHaveBeenCalled();
+    expect(usePoiStore.getState().selectedPOI).toBeNull();
+    expect(loadPlaces).toHaveBeenCalledWith(routeId);
   });
 });
