@@ -21,15 +21,28 @@ function readPersistedCamera(): { center: [number, number]; zoom: number } {
   };
 }
 
+function readPersistedBoolean(key: string, defaultValue: boolean): boolean {
+  try {
+    const raw = getStorage().getString(key);
+    if (raw === "true") return true;
+    if (raw === "false") return false;
+  } catch {
+    return defaultValue;
+  }
+  return defaultValue;
+}
+
 interface MapState {
   center: [number, number]; // [longitude, latitude] — Mapbox convention
   zoom: number;
   followUser: boolean;
+  showDistanceMarkers: boolean;
   userPosition: UserPosition | null;
   isRefreshing: boolean;
 
   setCenter: (center: [number, number]) => void;
   setFollowUser: (follow: boolean) => void;
+  toggleDistanceMarkers: () => void;
   setUserPosition: (position: UserPosition | null) => void;
   refreshPosition: () => Promise<UserPosition | null>;
   persistCamera: (center: [number, number], zoom: number) => void;
@@ -41,11 +54,21 @@ export const useMapStore = create<MapState>((set, get) => ({
   center: persisted.center,
   zoom: persisted.zoom,
   followUser: true,
+  showDistanceMarkers: readPersistedBoolean("showDistanceMarkers", false),
   userPosition: null,
   isRefreshing: false,
 
   setCenter: (center) => set({ center }),
   setFollowUser: (followUser) => set({ followUser }),
+  toggleDistanceMarkers: () => {
+    const next = !get().showDistanceMarkers;
+    try {
+      getStorage().set("showDistanceMarkers", String(next));
+    } catch (error) {
+      console.warn("Failed to persist distance marker preference:", error);
+    }
+    set({ showDistanceMarkers: next });
+  },
   setUserPosition: (userPosition) => set({ userPosition }),
 
   persistCamera: (center, zoom) => {

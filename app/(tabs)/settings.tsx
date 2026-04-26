@@ -5,6 +5,7 @@ import { ChevronDown, ChevronUp } from "lucide-react-native";
 import { cn } from "@/lib/cn";
 import { useThemeColors } from "@/theme";
 import { useSettingsStore } from "@/store/settingsStore";
+import { useMapStore } from "@/store/mapStore";
 import { useEtaStore } from "@/store/etaStore";
 import { usePoiStore } from "@/store/poiStore";
 import { solveVelocity } from "@/services/powerModel";
@@ -102,9 +103,53 @@ function NumericInput({
   );
 }
 
+function ToggleRow({
+  label,
+  description,
+  value,
+  onToggle,
+}: {
+  label: string;
+  description: string;
+  value: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      className="min-h-[64px] flex-row items-center justify-between py-3"
+      onPress={onToggle}
+      accessibilityRole="switch"
+      accessibilityState={{ checked: value }}
+      accessibilityLabel={label}
+      accessibilityHint={description}
+      activeOpacity={0.7}
+    >
+      <View className="flex-1 pr-4">
+        <Text className="text-[15px] font-barlow text-foreground">{label}</Text>
+        <Text className="text-[12px] font-barlow text-muted-foreground mt-0.5">{description}</Text>
+      </View>
+      <View
+        className={cn(
+          "w-[48px] h-[28px] rounded-full p-0.5 justify-center",
+          value ? "bg-primary" : "bg-muted",
+        )}
+      >
+        <View
+          className={cn(
+            "w-[24px] h-[24px] rounded-full bg-background shadow-sm",
+            value ? "self-end" : "self-start",
+          )}
+        />
+      </View>
+    </TouchableOpacity>
+  );
+}
+
 export default function SettingsScreen() {
   const { units, setUnits } = useSettingsStore();
   const colors = useThemeColors();
+  const showDistanceMarkers = useMapStore((s) => s.showDistanceMarkers);
+  const toggleDistanceMarkers = useMapStore((s) => s.toggleDistanceMarkers);
   const powerConfig = useEtaStore((s) => s.powerConfig);
   const updatePowerConfig = useEtaStore((s) => s.updatePowerConfig);
   const corridorWidthM = usePoiStore((s) => s.corridorWidthM);
@@ -120,6 +165,18 @@ export default function SettingsScreen() {
     <ScrollView className="flex-1 bg-background px-4">
       <Text className="text-[22px] font-barlow-semibold text-foreground mt-6 mb-3">Units</Text>
       <OptionGroup options={UNIT_OPTIONS} value={units} onChange={setUnits} />
+
+      <Text className="text-[22px] font-barlow-semibold text-foreground mt-6 mb-3">
+        Map Display
+      </Text>
+      <View className="bg-card rounded-xl px-4">
+        <ToggleRow
+          label="Distance markers"
+          description="Show kilometer badges along the active route"
+          value={showDistanceMarkers}
+          onToggle={toggleDistanceMarkers}
+        />
+      </View>
 
       <Text className="text-[22px] font-barlow-semibold text-foreground mt-6 mb-3">
         POI Search Radius
