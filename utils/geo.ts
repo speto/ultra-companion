@@ -348,3 +348,174 @@ export function routeToGeoJSON(points: RoutePoint[]): GeoJSON.Feature<GeoJSON.Li
     },
   };
 }
+
+export interface DirectionArrowProperties {
+  bearing: number;
+  rotation: number;
+  color: string;
+}
+
+const DIRECTION_ARROW_MIN_SPACING_M = 3000;
+const DIRECTION_ARROW_ENDPOINT_CLEARANCE_M = 3000;
+const DIRECTION_ARROW_OVERVIEW_ZOOM = 8;
+const DIRECTION_ARROW_MID_ZOOM = 10;
+const DIRECTION_ARROW_DETAIL_ZOOM = 13;
+const DIRECTION_ARROW_OVERVIEW_BEARING_WINDOW_M = 800;
+const DIRECTION_ARROW_MID_BEARING_WINDOW_M = 400;
+const DIRECTION_ARROW_DETAIL_BEARING_WINDOW_M = 150;
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function selectDirectionArrowCount(segmentDistanceMeters: number): number {
+  const segmentKm = segmentDistanceMeters / 1000;
+  if (segmentKm < 8) return 0;
+
+  if (segmentKm <= 100) {
+    return clamp(Math.round(segmentKm / 12.5), 1, 8);
+  }
+
+  if (segmentKm < 200) {
+    const t = (segmentKm - 100) / 100;
+    return Math.round(8 - t * 3);
+  }
+
+  return 5;
+}
+
+function interpolateNumber(
+  input: number,
+  inputMin: number,
+  inputMax: number,
+  outputMin: number,
+  outputMax: number,
+): number {
+  const t = clamp((input - inputMin) / (inputMax - inputMin), 0, 1);
+  return outputMin + (outputMax - outputMin) * t;
+}
+
+function selectDirectionArrowBearingWindowMeters(zoom: number): number {
+  if (zoom <= DIRECTION_ARROW_MID_ZOOM) {
+    return interpolateNumber(
+      zoom,
+      DIRECTION_ARROW_OVERVIEW_ZOOM,
+      DIRECTION_ARROW_MID_ZOOM,
+      DIRECTION_ARROW_OVERVIEW_BEARING_WINDOW_M,
+      DIRECTION_ARROW_MID_BEARING_WINDOW_M,
+    );
+  }
+
+  return interpolateNumber(
+    zoom,
+    DIRECTION_ARROW_MID_ZOOM,
+    DIRECTION_ARROW_DETAIL_ZOOM,
+    DIRECTION_ARROW_MID_BEARING_WINDOW_M,
+    DIRECTION_ARROW_DETAIL_BEARING_WINDOW_M,
+  );
+}
+
+function interpolateRoutePointAtDistance(
+  points: RoutePoint[],
+  distanceMeters: number,
+): { point: RoutePoint; previous: RoutePoint } | null {
+  if (points.length < 2) return null;
+
+  for (let i = 1; i < points.length; i++) {
+    const previous = points[i - 1];
+    const current = points[i];
+    const previousDistance = previous.distanceFromStartMeters;
+    const currentDistance = current.distanceFromStartMeters;
+
+    if (distanceMeters > currentDistance) continue;
+
+    if (currentDistance <= previousDistance) {
+      return { point: current, previous };
+    }
+
+    const fraction = (distanceMeters - previousDistance) / (currentDistance - previousDistance);
+    return {
+      point: {
+        latitude: previous.latitude + (current.latitude - previous.latitude) * fraction,
+        longitude: previous.longitude + (current.longitude - previous.longitude) * fraction,
+        elevationMeters: null,
+        distanceFromStartMeters: distanceMeters,
+        idx: previous.idx,
+      },
+      previous,
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Sample direction arrow positions along a route, computing bearing at each point.
+ * Spacing adapts to the rendered segment length so similarly sized segments look consistent.
+ * Returns a GeoJSON FeatureCollection of Points with bearing, glyph rotation, and color properties.
+ */
+export function buildDirectionArrows(
+  points: RoutePoint[],
+  routeColor: string,
+  zoom = DIRECTION_ARROW_MID_ZOOM,
+  minSpacingMeters = DIRECTION_ARROW_MIN_SPACING_M,
+): GeoJSON.FeatureCollection<GeoJSON.Point, DirectionArrowProperties> {
+  if (points.length < 2) {
+    return { type: "FeatureCollection", features: [] };
+  }
+
+  const totalDistance = points[points.length - 1].distanceFromStartMeters;
+  const targetArrowCount = selectDirectionArrowCount(totalDistance);
+  if (targetArrowCount === 0 || totalDistance < minSpacingMeters) {
+    return { type: "FeatureCollection", features: [] };
+  }
+
+  const endpointClearance = DIRECTION_ARROW_ENDPOINT_CLEARANCE_M;
+  const usableDistance = totalDistance - endpointClearance * 2;
+  if (usableDistance <= 0) {
+    return { type: "FeatureCollection", features: [] };
+  }
+
+  const maxArrowCountBySpacing =
+    targetArrowCount <= 1 ? 1 : Math.max(1, Math.floor(usableDistance / minSpacingMeters) + 1);
+  const effectiveArrowCount = Math.max(1, Math.min(targetArrowCount, maxArrowCountBySpacing));
+  const spacing = effectiveArrowCount <= 1 ? 0 : usableDistance / (effectiveArrowCount - 1);
+  const bearingWindowMeters = selectDirectionArrowBearingWindowMeters(zoom);
+
+  const features: GeoJSON.Feature<GeoJSON.Point, DirectionArrowProperties>[] = [];
+
+  for (let i = 1; i <= effectiveArrowCount; i++) {
+    const arrowDistance =
+      effectiveArrowCount <= 1 ? totalDistance / 2 : endpointClearance + spacing * (i - 1);
+    const sample = interpolateRoutePointAtDistance(points, arrowDistance);
+    if (!sample) continue;
+
+    const before = interpolateRoutePointAtDistance(
+      points,
+      clamp(arrowDistance - bearingWindowMeters, 0, totalDistance),
+    );
+    const after = interpolateRoutePointAtDistance(
+      points,
+      clamp(arrowDistance + bearingWindowMeters, 0, totalDistance),
+    );
+
+    const bearing = computeBearing(
+      before?.point.latitude ?? sample.previous.latitude,
+      before?.point.longitude ?? sample.previous.longitude,
+      after?.point.latitude ?? sample.point.latitude,
+      after?.point.longitude ?? sample.point.longitude,
+    );
+    const rotation = (bearing - 90 + 360) % 360;
+    features.push({
+      type: "Feature",
+      id: `arrow-${Math.round(arrowDistance)}`,
+      properties: { bearing, rotation, color: routeColor },
+      geometry: {
+        type: "Point",
+        coordinates: [sample.point.longitude, sample.point.latitude],
+      },
+    });
+  }
+
+  return { type: "FeatureCollection", features };
+}
