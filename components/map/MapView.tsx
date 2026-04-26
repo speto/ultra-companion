@@ -6,12 +6,19 @@ import { useRouteStore } from "@/store/routeStore";
 import { useCollectionStore } from "@/store/collectionStore";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { usePanelStore } from "@/store/panelStore";
-import { SHEET_COMPACT_RATIO } from "@/constants";
+import {
+  ACTIVE_ROUTE_POLISHED,
+  ACTIVE_ROUTE_POLISHED_DARK,
+  SEGMENT_COLORS_DARK,
+  SEGMENT_COLORS_LIGHT,
+  SHEET_COMPACT_RATIO,
+} from "@/constants";
 import { useThemeColors } from "@/theme";
+import { useColorScheme } from "nativewind";
 import { useMapStyle } from "@/hooks/useMapStyle";
 import { GPS_STALE_THRESHOLD_MS } from "@/constants";
 import MapControls from "./MapControls";
-import RouteLayer from "./RouteLayer";
+import RouteLayer, { RouteArrowLayer } from "./RouteLayer";
 import POILayer from "./POILayer";
 import ClimbHighlightLayer from "./ClimbHighlightLayer";
 import TabbedBottomPanel from "./TabbedBottomPanel";
@@ -28,6 +35,7 @@ import { useOfflineStore } from "@/store/offlineStore";
 
 export default function MapScreen() {
   const themeColors = useThemeColors();
+  const { colorScheme } = useColorScheme();
   const mapStyle = useMapStyle();
   const cameraRef = useRef<Camera>(null);
   const mapRef = useRef<MapboxMapView>(null);
@@ -361,12 +369,63 @@ export default function MapScreen() {
         />
         {renderedRoutes.map((route) => {
           const styledRoute = route.isActive ? route : { ...route, isActive: true };
+          const isCollectionRoute =
+            (activeCollectionRouteIds?.has(route.id) ?? false) && activeData?.type === "collection";
+          const segmentIndex = isCollectionRoute
+            ? (activeData?.segments?.findIndex((segment) => segment.routeId === route.id) ?? -1)
+            : -1;
+          const segmentColors = colorScheme === "dark" ? SEGMENT_COLORS_DARK : SEGMENT_COLORS_LIGHT;
+          const colorOverride =
+            isCollectionRoute && segmentIndex >= 0
+              ? segmentColors[segmentIndex % segmentColors.length]
+              : undefined;
+          const isSingleActive = route.isActive && activeData?.type === "route";
+          const singleColor = isSingleActive
+            ? colorScheme === "dark"
+              ? ACTIVE_ROUTE_POLISHED_DARK
+              : ACTIVE_ROUTE_POLISHED
+            : undefined;
+
           return (
             <RouteLayer
               key={`${route.id}-${mapStyle.styleKey}`}
               route={styledRoute}
               points={visibleRoutePoints[route.id]}
               dimmed={highlightedClimb != null}
+              colorOverride={colorOverride ?? singleColor}
+            />
+          );
+        })}
+        {renderedRoutes.map((route) => {
+          const styledRoute = route.isActive ? route : { ...route, isActive: true };
+          const isCollectionRoute =
+            (activeCollectionRouteIds?.has(route.id) ?? false) && activeData?.type === "collection";
+          const segmentIndex = isCollectionRoute
+            ? (activeData?.segments?.findIndex((segment) => segment.routeId === route.id) ?? -1)
+            : -1;
+          const segmentColors = colorScheme === "dark" ? SEGMENT_COLORS_DARK : SEGMENT_COLORS_LIGHT;
+          const colorOverride =
+            isCollectionRoute && segmentIndex >= 0
+              ? segmentColors[segmentIndex % segmentColors.length]
+              : undefined;
+          const showRouteArrows = route.isActive || isCollectionRoute;
+          const isSingleActive = route.isActive && activeData?.type === "route";
+          const singleColor = isSingleActive
+            ? colorScheme === "dark"
+              ? ACTIVE_ROUTE_POLISHED_DARK
+              : ACTIVE_ROUTE_POLISHED
+            : undefined;
+
+          return (
+            <RouteArrowLayer
+              key={`arrows-${route.id}-${mapStyle.styleKey}`}
+              route={styledRoute}
+              points={visibleRoutePoints[route.id]}
+              dimmed={highlightedClimb != null}
+              colorOverride={colorOverride ?? singleColor}
+              showArrows={showRouteArrows}
+              zoom={initialCamera.current.zoom}
+              aboveLayerID={`route-line-${route.id}`}
             />
           );
         })}
