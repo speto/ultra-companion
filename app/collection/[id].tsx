@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from "react";
-import { View, useWindowDimensions, ActivityIndicator, Alert } from "react-native";
+import { View, useWindowDimensions, ActivityIndicator, Alert, Pressable } from "react-native";
 import { NestableScrollContainer } from "react-native-draggable-flatlist";
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
 import { serializeCollectionToGPX } from "@/services/gpxSerializer";
@@ -23,6 +23,8 @@ import StatBox from "@/components/common/StatBox";
 import SegmentList from "@/components/collection/SegmentList";
 import AddSegmentSheet from "@/components/collection/AddSegmentSheet";
 import CollectionOfflineSection from "@/components/collection/CollectionOfflineSection";
+import { getMapInspectHref } from "@/utils/mapInspect";
+import { Maximize2 } from "lucide-react-native";
 
 export default function CollectionDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -298,15 +300,16 @@ export default function CollectionDetailScreen() {
       >
         {/* Mini map */}
         {selectedSegmentRoutes.length > 0 && (
-          <View className="h-[250px] mx-4 mt-4 rounded-xl overflow-hidden">
+          <View className="h-[250px] mx-4 mt-4 rounded-xl overflow-hidden relative">
             <MapboxMapView
               style={{ flex: 1 }}
               {...mapStyle.props}
               compassEnabled={false}
               scaleBarEnabled={false}
               rotateEnabled={false}
-              scrollEnabled={true}
-              zoomEnabled={true}
+              scrollEnabled={false}
+              zoomEnabled={false}
+              pitchEnabled={false}
             >
               <Camera
                 ref={cameraRef}
@@ -337,6 +340,14 @@ export default function CollectionDetailScreen() {
                 );
               })}
             </MapboxMapView>
+            <Pressable
+              className="absolute bottom-2 right-2 w-[52px] h-[52px] bg-background/90 rounded-full items-center justify-center shadow-sm"
+              onPress={() => router.push(getMapInspectHref("collection", id))}
+              accessibilityLabel="Expand collection map"
+              accessibilityRole="button"
+            >
+              <Maximize2 size={24} color={colors.textPrimary} />
+            </Pressable>
           </View>
         )}
 

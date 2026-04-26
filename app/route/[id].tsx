@@ -1,6 +1,13 @@
 import React, { useEffect, useState, useMemo, useRef } from "react";
-import { View, ScrollView, useWindowDimensions, ActivityIndicator, Alert } from "react-native";
-import { useLocalSearchParams, Stack } from "expo-router";
+import {
+  View,
+  ScrollView,
+  useWindowDimensions,
+  ActivityIndicator,
+  Pressable,
+  Alert,
+} from "react-native";
+import { useLocalSearchParams, Stack, router } from "expo-router";
 import { serializeRouteToGPX } from "@/services/gpxSerializer";
 import { shareGPXFile } from "@/utils/gpxExportShare";
 import { Camera, MapView as MapboxMapView } from "@rnmapbox/maps";
@@ -19,6 +26,8 @@ import ElevationProfile from "@/components/elevation/ElevationProfile";
 import RouteLayer from "@/components/map/RouteLayer";
 import StatBox from "@/components/common/StatBox";
 import DataSection from "@/components/route/DataSection";
+import { getMapInspectHref } from "@/utils/mapInspect";
+import { Maximize2 } from "lucide-react-native";
 
 const EMPTY_CLIMBS: Climb[] = [];
 
@@ -117,15 +126,16 @@ export default function RouteDetailScreen() {
       <Stack.Screen options={screenOptions} />
       <ScrollView className="flex-1 bg-background" contentContainerStyle={{ paddingBottom: 40 }}>
         {/* Mini map */}
-        <View className="h-[250px] mx-4 mt-4 rounded-xl overflow-hidden">
+        <View className="h-[250px] mx-4 mt-4 rounded-xl overflow-hidden relative">
           <MapboxMapView
             style={{ flex: 1 }}
             {...mapStyle.props}
             compassEnabled={false}
             scaleBarEnabled={false}
             rotateEnabled={false}
-            scrollEnabled={true}
-            zoomEnabled={true}
+            scrollEnabled={false}
+            zoomEnabled={false}
+            pitchEnabled={false}
           >
             <Camera
               ref={cameraRef}
@@ -150,6 +160,14 @@ export default function RouteDetailScreen() {
               points={route.points}
             />
           </MapboxMapView>
+          <Pressable
+            className="absolute bottom-2 right-2 w-[52px] h-[52px] bg-background/90 rounded-full items-center justify-center shadow-sm"
+            onPress={() => router.push(getMapInspectHref("route", id))}
+            accessibilityLabel="Expand route map"
+            accessibilityRole="button"
+          >
+            <Maximize2 size={24} color={colors.textPrimary} />
+          </Pressable>
         </View>
 
         {/* Stats */}
