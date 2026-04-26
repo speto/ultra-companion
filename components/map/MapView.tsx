@@ -619,15 +619,15 @@ export default function MapScreen() {
     [routes, visibleRoutePoints, activeCollectionRouteIds],
   );
 
-  // Forces LocationPuck to remount so its layer is recreated on top of route/POI layers.
+  // Forces upper overlays to remount so their native layers are recreated on top of lower layers.
   const renderedRouteKey = useMemo(() => {
     return (
       renderedRoutes
-        .map((r) => r.id)
+        .map((r) => `${r.id}:${visibleRoutePoints[r.id]?.length ?? 0}`)
         .sort()
         .join(",") + `-${mapStyle.styleKey}`
     );
-  }, [renderedRoutes, mapStyle.styleKey]);
+  }, [renderedRoutes, visibleRoutePoints, mapStyle.styleKey]);
 
   // Climb to highlight on the map — active when Climbs tab is selected
   const highlightedClimb = useMemo(() => {
@@ -648,6 +648,11 @@ export default function MapScreen() {
     snappedPosition?.distanceAlongRouteMeters,
     allClimbData,
   ]);
+
+  // RNMapbox inserts native layers in mount order, so remount each upper tier after lower tiers change.
+  const routeStackKey = renderedRouteKey;
+  const climbStackKey = `${routeStackKey}-${highlightedClimb?.id ?? "none"}`;
+  const overlayStackKey = `${climbStackKey}-${activeContextKey ?? "none"}`;
 
   // The climbs-tab camera effect handles zooming; highlightedClimb is only for layer styling.
 
@@ -724,7 +729,7 @@ export default function MapScreen() {
 
           return (
             <RouteArrowLayer
-              key={`arrows-${route.id}-${mapStyle.styleKey}`}
+              key={`arrows-${route.id}-${routeStackKey}`}
               route={styledRoute}
               points={visibleRoutePoints[route.id]}
               dimmed={highlightedClimb != null}
@@ -736,23 +741,23 @@ export default function MapScreen() {
         })}
         {highlightedClimb && activeRoutePoints && (
           <ClimbHighlightLayer
-            key={`climb-${highlightedClimb.id}-${mapStyle.styleKey}`}
+            key={`climb-${highlightedClimb.id}-${routeStackKey}`}
             climb={highlightedClimb}
             points={activeRoutePoints}
           />
         )}
         <RouteMarkerLayer
-          key={`route-markers-${activeData?.id ?? "none"}-${mapStyle.styleKey}`}
+          key={`route-markers-${overlayStackKey}`}
           activeContextKey={activeContextKey}
           points={activeRoutePoints ?? []}
           showDistanceMarkers={showDistanceMarkers}
           zoom={routeMarkerZoom}
         />
         {activeRouteIds.length > 0 && (
-          <POILayer key={mapStyle.styleKey} routeIds={activeRouteIds} />
+          <POILayer key={`pois-${overlayStackKey}`} routeIds={activeRouteIds} />
         )}
         <LocationPuck
-          key={`puck-${renderedRouteKey}`}
+          key={`puck-${overlayStackKey}`}
           puckBearing="heading"
           puckBearingEnabled
           pulsing={pulsingConfig}
