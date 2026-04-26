@@ -35,8 +35,41 @@ import { useEtaStore } from "@/store/etaStore";
 import { useWeatherStore } from "@/store/weatherStore";
 import { useOfflineStore } from "@/store/offlineStore";
 import { selectDistanceMarkerZoomBucket } from "@/utils/routeMarkers";
+import { horizonWindow, zoomToHorizon } from "@/utils/horizon";
 import { nextDisplayHeading } from "@/utils/mapHeading";
 import type { MapState } from "@rnmapbox/maps";
+import type { RoutePoint } from "@/types";
+
+function getRouteWindowBounds(input: {
+  points: RoutePoint[];
+  startIndex: number;
+  startDistanceMeters: number;
+  endDistanceMeters: number;
+}): { minLat: number; maxLat: number; minLon: number; maxLon: number } | null {
+  const { points, startIndex, startDistanceMeters, endDistanceMeters } = input;
+  if (points.length === 0) return null;
+
+  let minLat = 90,
+    maxLat = -90,
+    minLon = 180,
+    maxLon = -180;
+  let found = false;
+
+  for (let i = Math.max(0, startIndex); i < points.length; i++) {
+    const point = points[i];
+    if (point.distanceFromStartMeters < startDistanceMeters && i > startIndex) continue;
+
+    found = true;
+    if (point.latitude < minLat) minLat = point.latitude;
+    if (point.latitude > maxLat) maxLat = point.latitude;
+    if (point.longitude < minLon) minLon = point.longitude;
+    if (point.longitude > maxLon) maxLon = point.longitude;
+
+    if (point.distanceFromStartMeters > endDistanceMeters) break;
+  }
+
+  return found ? { minLat, maxLat, minLon, maxLon } : null;
+}
 
 export default function MapScreen() {
   const themeColors = useThemeColors();
@@ -48,6 +81,7 @@ export default function MapScreen() {
   const [routeMarkerZoom, setRouteMarkerZoom] = useState(() => useMapStore.getState().zoom);
   const [heading, setHeading] = useState(0);
   const { height: screenHeight } = useWindowDimensions();
+  const { bottom: safeBottom } = useSafeAreaInsets();
 
   const { followUser, setFollowUser } = useMapStore();
   const showDistanceMarkers = useMapStore((s) => s.showDistanceMarkers);
@@ -59,7 +93,13 @@ export default function MapScreen() {
   });
   const lastCamera = useRef(initialCamera.current);
   const panelTab = usePanelStore((s) => s.panelTab);
-  const { bottom: safeBottom } = useSafeAreaInsets();
+  const horizonFitRequestId = usePanelStore((s) => s.horizonFitRequestId);
+  const lastHorizonFitId = useRef(horizonFitRequestId);
+  const climbZoomScope = usePanelStore((s) => s.climbZoomScope);
+  const climbScopeFitRequestId = usePanelStore((s) => s.climbScopeFitRequestId);
+  const setHorizonFromZoom = usePanelStore((s) => s.setHorizonFromZoom);
+  const setHorizonFromCamera = usePanelStore((s) => s.setHorizonFromCamera);
+  const setHorizonPopoverOpen = usePanelStore((s) => s.setHorizonPopoverOpen);
   const panelHeight = Math.round(screenHeight * SHEET_COMPACT_RATIO) + safeBottom;
 
   const routes = useRouteStore((s) => s.routes);
@@ -80,6 +120,8 @@ export default function MapScreen() {
   // Unified active context — works for both standalone routes and collections
   const activeData = useActiveRouteData();
   const activeRoutePoints = activeData?.points ?? null;
+  const activeDataId = activeData?.id ?? null;
+  const activeTotalDistance = activeData?.totalDistanceMeters ?? 0;
   const activeRouteIds = useMemo(() => activeData?.routeIds ?? [], [activeData?.routeIds]);
   const activeRouteIdsKey = useMemo(() => activeRouteIds.join(","), [activeRouteIds]);
 
@@ -223,8 +265,9 @@ export default function MapScreen() {
         zoomLevel: 14,
         animationDuration: 500,
       });
+      setHorizonFromCamera(zoomToHorizon(14));
     }
-  }, [selectedPOI, selectedPlace, setFollowUser]);
+  }, [selectedPOI, selectedPlace, setFollowUser, setHorizonFromCamera]);
 
   const handleLocate = useCallback(async () => {
     setFollowUser(true);
@@ -249,18 +292,27 @@ export default function MapScreen() {
     }
   }, [setFollowUser, refreshPosition, snapAfterRefresh, hasGpsFix]);
 
-  const handleCameraChanged = useCallback((state: MapState) => {
-    const c = state.properties.center;
-    const nextZoom = state.properties.zoom;
-    const nextHeading = state.properties.heading;
-    lastCamera.current = { center: [c[0], c[1]], zoom: nextZoom };
-    setRouteMarkerZoom((currentZoom) =>
-      selectDistanceMarkerZoomBucket(currentZoom) === selectDistanceMarkerZoomBucket(nextZoom)
-        ? currentZoom
-        : nextZoom,
-    );
-    setHeading((prev) => nextDisplayHeading(prev, nextHeading));
-  }, []);
+  const handleCameraChanged = useCallback(
+    (state: MapState) => {
+      const c = state.properties.center;
+      const nextZoom = state.properties.zoom;
+      const nextHeading = state.properties.heading;
+      lastCamera.current = { center: [c[0], c[1]], zoom: nextZoom };
+      setRouteMarkerZoom((currentZoom) =>
+        selectDistanceMarkerZoomBucket(currentZoom) === selectDistanceMarkerZoomBucket(nextZoom)
+          ? currentZoom
+          : nextZoom,
+      );
+      setHeading((prev) => nextDisplayHeading(prev, nextHeading));
+
+      // Programmatic camera moves also emit camera events; only real map gestures update the chip.
+      if (state.gestures.isGestureActive) {
+        const newHorizon = zoomToHorizon(nextZoom);
+        setHorizonFromZoom(newHorizon);
+      }
+    },
+    [setHorizonFromZoom],
+  );
 
   // Persist camera to MMKV when app goes to background
   useEffect(() => {
@@ -273,10 +325,11 @@ export default function MapScreen() {
   }, [persistCamera]);
 
   const handleTouchStart = useCallback(() => {
+    setHorizonPopoverOpen(false);
     if (followUser) {
       setFollowUser(false);
     }
-  }, [followUser, setFollowUser]);
+  }, [followUser, setFollowUser, setHorizonPopoverOpen]);
 
   const handleResetNorth = useCallback(() => {
     cameraRef.current?.setCamera({
@@ -285,6 +338,251 @@ export default function MapScreen() {
       animationMode: "easeTo",
     });
   }, []);
+
+  useEffect(() => {
+    if (!activeDataId || !activeRoutePoints?.length) return;
+    if (panelTab === "climbs") return;
+    // Only run camera fit for explicit horizon selector changes
+    if (horizonFitRequestId === lastHorizonFitId.current) return;
+    lastHorizonFitId.current = horizonFitRequestId;
+
+    const horizon = usePanelStore.getState().horizon;
+
+    const isValidSnap =
+      snappedPosition?.routeId === activeDataId && snappedPosition.distanceFromRouteMeters <= 1000;
+
+    const startIndex = isValidSnap ? snappedPosition.pointIndex : 0;
+    const startDistanceMeters =
+      horizon === null
+        ? 0
+        : isValidSnap
+          ? snappedPosition.distanceAlongRouteMeters
+          : (activeRoutePoints[startIndex]?.distanceFromStartMeters ?? 0);
+    const endDistanceMeters =
+      horizon === null
+        ? activeTotalDistance
+        : horizonWindow(startDistanceMeters, horizon, activeTotalDistance).endDist;
+
+    const bounds = getRouteWindowBounds({
+      points: activeRoutePoints,
+      startIndex: horizon === null ? 0 : startIndex,
+      startDistanceMeters,
+      endDistanceMeters,
+    });
+    if (!bounds) return;
+
+    setFollowUser(false);
+    if (bounds.minLat === bounds.maxLat && bounds.minLon === bounds.maxLon) {
+      cameraRef.current?.setCamera({
+        centerCoordinate: [bounds.minLon, bounds.minLat],
+        zoomLevel: 14,
+        animationDuration: 500,
+        animationMode: "easeTo",
+      });
+      return;
+    }
+
+    cameraRef.current?.fitBounds(
+      [bounds.maxLon, bounds.maxLat],
+      [bounds.minLon, bounds.minLat],
+      [60, 40, 40, 40],
+      500,
+    );
+  }, [
+    activeDataId,
+    activeTotalDistance,
+    activeRoutePoints,
+    panelTab,
+    horizonFitRequestId,
+    snappedPosition?.distanceAlongRouteMeters,
+    snappedPosition?.distanceFromRouteMeters,
+    snappedPosition?.pointIndex,
+    snappedPosition?.routeId,
+    setFollowUser,
+  ]);
+
+  // Camera fit: climbs tab — uses climbZoomScope (Climb | Segment | All)
+  // instead of numeric horizon. Climb fits exact climb bounds, Segment fits
+  // the collection segment containing the climb, All fits the full route.
+  const lastClimbScopeFitId = useRef(climbScopeFitRequestId);
+  const prevClimbScopePanelTab = useRef(panelTab);
+  const lastClimbFocusKey = useRef<string | null>(null);
+  useEffect(() => {
+    if (!activeDataId || !activeRoutePoints?.length) return;
+    const enteredClimbs = prevClimbScopePanelTab.current !== "climbs" && panelTab === "climbs";
+    prevClimbScopePanelTab.current = panelTab;
+    if (panelTab !== "climbs") return;
+
+    const isScopeChange = climbScopeFitRequestId !== lastClimbScopeFitId.current;
+
+    const scope = usePanelStore.getState().climbZoomScope;
+
+    // All: fit the whole route
+    if (scope === "all") {
+      if (!enteredClimbs && !isScopeChange) return;
+      lastClimbScopeFitId.current = climbScopeFitRequestId;
+      lastClimbFocusKey.current = `${activeDataId}:all`;
+      const bounds = getRouteWindowBounds({
+        points: activeRoutePoints,
+        startIndex: 0,
+        startDistanceMeters: 0,
+        endDistanceMeters: activeTotalDistance,
+      });
+      if (bounds) {
+        setFollowUser(false);
+        if (bounds.minLat === bounds.maxLat && bounds.minLon === bounds.maxLon) {
+          cameraRef.current?.setCamera({
+            centerCoordinate: [bounds.minLon, bounds.minLat],
+            zoomLevel: 14,
+            animationDuration: 500,
+            animationMode: "easeTo",
+          });
+        } else {
+          cameraRef.current?.fitBounds(
+            [bounds.maxLon, bounds.maxLat],
+            [bounds.minLon, bounds.minLat],
+            [60, 40, 40, 40],
+            500,
+          );
+        }
+      }
+      return;
+    }
+
+    // Resolve the active/selected climb for Climb and Segment scopes
+    const climbs = getClimbsForDisplay(activeRouteIds, activeData?.segments ?? null);
+    const resolvedClimb = resolveActiveClimb(
+      climbs,
+      snappedPosition?.distanceAlongRouteMeters ?? null,
+      selectedClimb,
+    );
+    if (!resolvedClimb) return;
+
+    const focusKey = `${activeDataId}:${scope}:${resolvedClimb.id}:${resolvedClimb.startDistanceMeters}:${resolvedClimb.endDistanceMeters}`;
+    if (!enteredClimbs && !isScopeChange && lastClimbFocusKey.current === focusKey) return;
+    lastClimbScopeFitId.current = climbScopeFitRequestId;
+    lastClimbFocusKey.current = focusKey;
+
+    // Segment: fit the collection segment with the largest overlap with the climb
+    if (scope === "segment") {
+      const segments = activeData?.segments;
+      if (!segments || segments.length === 0) {
+        // No segment data — fall back to climb scope behavior
+        // (Segment button is hidden in UI when no segments, but guard anyway)
+      } else {
+        const climbStart = resolvedClimb.startDistanceMeters;
+        const climbEnd = resolvedClimb.endDistanceMeters;
+        const climbLen = climbEnd - climbStart;
+
+        // Find the segment with the largest overlap with the climb
+        let bestSeg = segments[0];
+        let bestOverlap = -1;
+        for (const seg of segments) {
+          const segStart = seg.distanceOffsetMeters;
+          const segEnd = segStart + seg.segmentDistanceMeters;
+          const overlapStart = Math.max(climbStart, segStart);
+          const overlapEnd = Math.min(climbEnd, segEnd);
+          const overlap = Math.max(0, overlapEnd - overlapStart);
+          if (overlap > bestOverlap) {
+            bestOverlap = overlap;
+            bestSeg = seg;
+          }
+        }
+
+        // Also include adjacent segments that are roughly tied (within 10% of climb length)
+        const tiedSegments = segments.filter((seg) => {
+          if (seg === bestSeg) return true;
+          const segStart = seg.distanceOffsetMeters;
+          const segEnd = segStart + seg.segmentDistanceMeters;
+          const overlapStart = Math.max(climbStart, segStart);
+          const overlapEnd = Math.min(climbEnd, segEnd);
+          const overlap = Math.max(0, overlapEnd - overlapStart);
+          return overlap > 0 && Math.abs(overlap - bestOverlap) < climbLen * 0.1;
+        });
+
+        // Compute bounds for the union of tied segments
+        let minDist = Infinity;
+        let maxDist = -Infinity;
+        for (const seg of tiedSegments) {
+          const segStart = seg.distanceOffsetMeters;
+          const segEnd = segStart + seg.segmentDistanceMeters;
+          if (segStart < minDist) minDist = segStart;
+          if (segEnd > maxDist) maxDist = segEnd;
+        }
+
+        const bounds = getRouteWindowBounds({
+          points: activeRoutePoints,
+          startIndex: 0,
+          startDistanceMeters: minDist,
+          endDistanceMeters: maxDist,
+        });
+        if (bounds) {
+          setFollowUser(false);
+          if (bounds.minLat === bounds.maxLat && bounds.minLon === bounds.maxLon) {
+            cameraRef.current?.setCamera({
+              centerCoordinate: [bounds.minLon, bounds.minLat],
+              zoomLevel: 14,
+              animationDuration: 500,
+              animationMode: "easeTo",
+            });
+          } else {
+            cameraRef.current?.fitBounds(
+              [bounds.maxLon, bounds.maxLat],
+              [bounds.minLon, bounds.minLat],
+              [60, 40, 40, 40],
+              500,
+            );
+          }
+        }
+        return;
+      }
+      // Fall through to climb scope when no segments
+    }
+
+    // Climb scope: fit exact climb bounds
+    let minLat = 90,
+      maxLat = -90,
+      minLon = 180,
+      maxLon = -180;
+    let found = false;
+    for (const point of activeRoutePoints) {
+      if (point.distanceFromStartMeters < resolvedClimb.startDistanceMeters) continue;
+      if (point.distanceFromStartMeters > resolvedClimb.endDistanceMeters) break;
+      found = true;
+      if (point.latitude < minLat) minLat = point.latitude;
+      if (point.latitude > maxLat) maxLat = point.latitude;
+      if (point.longitude < minLon) minLon = point.longitude;
+      if (point.longitude > maxLon) maxLon = point.longitude;
+    }
+    if (!found) return;
+
+    setFollowUser(false);
+    if (minLat === maxLat && minLon === maxLon) {
+      cameraRef.current?.setCamera({
+        centerCoordinate: [minLon, minLat],
+        zoomLevel: 14,
+        animationDuration: 500,
+        animationMode: "easeTo",
+      });
+      return;
+    }
+
+    cameraRef.current?.fitBounds([maxLon, maxLat], [minLon, minLat], [60, 40, 40, 40], 500);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    selectedClimb,
+    panelTab,
+    climbScopeFitRequestId,
+    climbZoomScope,
+    activeDataId,
+    activeTotalDistance,
+    activeRoutePoints,
+    activeRouteIds,
+    activeData?.segments,
+    snappedPosition?.distanceAlongRouteMeters,
+    allClimbData,
+    setFollowUser,
+  ]);
 
   const cameraPadding = useMemo(
     () => ({
@@ -343,35 +641,7 @@ export default function MapScreen() {
     allClimbData,
   ]);
 
-  // Fly to highlighted climb bounds
-  useEffect(() => {
-    if (!highlightedClimb || !activeRoutePoints?.length) return;
-    const climbStart = highlightedClimb.startDistanceMeters;
-    const climbEnd = highlightedClimb.endDistanceMeters;
-
-    let minLat = 90,
-      maxLat = -90,
-      minLon = 180,
-      maxLon = -180;
-    let found = false;
-    for (const p of activeRoutePoints) {
-      if (p.distanceFromStartMeters < climbStart) continue;
-      if (p.distanceFromStartMeters > climbEnd) break;
-      found = true;
-      if (p.latitude < minLat) minLat = p.latitude;
-      if (p.latitude > maxLat) maxLat = p.latitude;
-      if (p.longitude < minLon) minLon = p.longitude;
-      if (p.longitude > maxLon) maxLon = p.longitude;
-    }
-    if (!found) return;
-
-    setFollowUser(false);
-    // Camera padding already accounts for the panel, so fitBounds
-    // only needs breathing room around the climb bounds.
-    cameraRef.current?.fitBounds([maxLon, maxLat], [minLon, minLat], [60, 40, 40, 40], 500);
-    // Intentional: fire only when the highlighted climb identity changes, not on every route point update
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [highlightedClimb?.id]);
+  // The climbs-tab camera effect handles zooming; highlightedClimb is only for layer styling.
 
   return (
     <View className="flex-1">
