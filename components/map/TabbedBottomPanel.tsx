@@ -1,5 +1,6 @@
 import React from "react";
 import { View, TouchableOpacity, useWindowDimensions } from "react-native";
+import { TabView } from "react-native-tab-view";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -18,6 +19,7 @@ import WeatherPanel from "./WeatherPanel";
 import ClimbTabContent from "./ClimbTabContent";
 import POITabContent from "./POITabContent";
 import type { ActiveRouteData, PanelTab } from "@/types";
+import type { SceneRendererProps } from "react-native-tab-view";
 
 /** Combined handle + tabs height */
 const HEADER_HEIGHT = 44;
@@ -33,12 +35,24 @@ interface TabDef {
   label: string;
 }
 
+type PanelRoute = {
+  key: PanelTab;
+  title: string;
+};
+
 const ALL_TABS: TabDef[] = [
   { key: "profile", label: "Profile" },
   { key: "weather", label: "Weather" },
   { key: "climbs", label: "Climbs" },
   { key: "pois", label: "POIs" },
 ];
+
+const TAB_ROUTES: PanelRoute[] = ALL_TABS.map((tab) => ({
+  key: tab.key,
+  title: tab.label,
+}));
+
+type PanelSceneProps = SceneRendererProps & { route: PanelRoute };
 
 interface TabbedBottomPanelProps {
   activeData: ActiveRouteData | null;
@@ -109,6 +123,41 @@ export default function TabbedBottomPanel({ activeData }: TabbedBottomPanelProps
   const compactContentHeight = compactHeight - HEADER_HEIGHT;
   const expandedContentHeight = expandedHeight - HEADER_HEIGHT;
   const effectiveContentHeight = isExpanded ? expandedContentHeight : compactContentHeight;
+  const tabIndex = Math.max(
+    0,
+    TAB_ROUTES.findIndex((route) => route.key === panelTab),
+  );
+
+  const handleTabIndexChange = React.useCallback(
+    (index: number) => {
+      const nextTab = TAB_ROUTES[index];
+      if (!nextTab || nextTab.key === panelTab) return;
+      setPanelTab(nextTab.key);
+    },
+    [panelTab, setPanelTab],
+  );
+
+  const renderScene = React.useCallback(
+    ({ route }: PanelSceneProps) => {
+      switch (route.key) {
+        case "profile":
+          return (
+            <ProfileTabContent
+              activeData={activeData}
+              width={screenWidth}
+              height={effectiveContentHeight}
+            />
+          );
+        case "weather":
+          return <WeatherPanel />;
+        case "climbs":
+          return <ClimbTabContent activeData={activeData} />;
+        case "pois":
+          return <POITabContent activeData={activeData} />;
+      }
+    },
+    [activeData, effectiveContentHeight, screenWidth],
+  );
 
   return (
     <Animated.View
@@ -172,16 +221,18 @@ export default function TabbedBottomPanel({ activeData }: TabbedBottomPanelProps
 
       {/* Content — clips to available height */}
       <View style={{ height: effectiveContentHeight, overflow: "hidden" }}>
-        {panelTab === "profile" && (
-          <ProfileTabContent
-            activeData={activeData}
-            width={screenWidth}
-            height={effectiveContentHeight}
-          />
-        )}
-        {panelTab === "weather" && <WeatherPanel />}
-        {panelTab === "climbs" && <ClimbTabContent activeData={activeData} />}
-        {panelTab === "pois" && <POITabContent activeData={activeData} />}
+        <TabView
+          navigationState={{ index: tabIndex, routes: TAB_ROUTES }}
+          renderScene={renderScene}
+          onIndexChange={handleTabIndexChange}
+          initialLayout={{ width: screenWidth, height: effectiveContentHeight }}
+          renderTabBar={() => null}
+          lazy
+          lazyPreloadDistance={1}
+          swipeEnabled
+          animationEnabled
+          style={{ height: effectiveContentHeight }}
+        />
       </View>
     </Animated.View>
   );
