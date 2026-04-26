@@ -56,6 +56,14 @@ export interface RouteWaypoint {
   distanceAlongRouteMeters: number;
 }
 
+export type StarredEntityType = "downloadedPoi" | "routeWaypoint";
+
+export interface StarredItem {
+  entityType: StarredEntityType;
+  entityId: string;
+  createdAt: string; // ISO 8601
+}
+
 export type SurfaceClass = "paved" | "unpaved" | "unknown";
 
 export interface SurfaceWayGeometryPoint {
@@ -89,16 +97,7 @@ export interface SnappedPosition {
   distanceFromRouteMeters: number;
 }
 
-// --- Phase 2b: Panel types ---
-
-export type PanelMode =
-  | "upcoming-10"
-  | "upcoming-25"
-  | "upcoming-50"
-  | "upcoming-100"
-  | "upcoming-200";
-
-export type PanelTab = "profile" | "weather" | "climbs" | "pois";
+export type PanelTab = "profile" | "weather" | "climbs" | "pois" | "waypoints";
 
 // --- Phase 3: POI types ---
 
@@ -116,7 +115,7 @@ export type POICategory =
 
 export type FetchablePOISource = "osm" | "google";
 
-export type POISource = FetchablePOISource | "gpx";
+export type POISource = FetchablePOISource;
 
 export interface POI {
   id: string;
@@ -171,9 +170,19 @@ export interface ETAResult {
 export interface ParsedRoute {
   name: string;
   points: RoutePoint[];
+  waypoints: ParsedWaypoint[];
   totalDistanceMeters: number;
   totalAscentMeters: number;
   totalDescentMeters: number;
+}
+
+export interface ParsedWaypoint {
+  name: string | null;
+  type: string | null;
+  description: string | null;
+  latitude: number;
+  longitude: number;
+  elevationMeters: number | null;
 }
 
 // --- Phase 5: Weather ---

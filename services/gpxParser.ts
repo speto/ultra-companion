@@ -1,6 +1,6 @@
 import { XMLParser } from "fast-xml-parser";
 import { computeRouteStats } from "@/utils/geo";
-import type { ParsedRoute } from "@/types";
+import type { ParsedRoute, ParsedWaypoint } from "@/types";
 
 const parser = new XMLParser({
   ignoreAttributes: false,
@@ -49,6 +49,30 @@ function extractPointsFromRte(rte: any): RawCoord[] {
     .filter(Boolean) as RawCoord[];
 }
 
+function stringOrNull(val: unknown): string | null {
+  if (val == null) return null;
+  return String(val);
+}
+
+function extractWaypoints(gpx: any): ParsedWaypoint[] {
+  const waypoints = Array.isArray(gpx.wpt) ? gpx.wpt : gpx.wpt ? [gpx.wpt] : [];
+  return waypoints
+    .map((wpt: any) => {
+      const lat = parseFloat0(wpt["@_lat"]);
+      const lon = parseFloat0(wpt["@_lon"]);
+      if (lat == null || lon == null) return null;
+      return {
+        name: stringOrNull(wpt.name),
+        type: stringOrNull(wpt.type),
+        description: stringOrNull(wpt.desc),
+        latitude: lat,
+        longitude: lon,
+        elevationMeters: parseFloat0(wpt.ele),
+      };
+    })
+    .filter((waypoint: ParsedWaypoint | null): waypoint is ParsedWaypoint => waypoint != null);
+}
+
 export function parseGPX(xml: string, fileName: string): ParsedRoute {
   const parsed = parser.parse(xml);
   const gpx = parsed.gpx;
@@ -82,5 +106,5 @@ export function parseGPX(xml: string, fileName: string): ParsedRoute {
   }
 
   const stats = computeRouteStats(coords);
-  return { name: String(name), ...stats };
+  return { name: String(name), waypoints: extractWaypoints(gpx), ...stats };
 }

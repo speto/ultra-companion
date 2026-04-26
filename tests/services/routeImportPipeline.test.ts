@@ -18,7 +18,7 @@ const gpxWithWaypoints = (name = "Route") => `<?xml version="1.0"?>
 <gpx version="1.1" creator="test">
   <wpt lat="48.0" lon="17.0">
     <name>Start Cafe</name>
-    <type>cafe</type>
+    <type>cafe stop</type>
     <desc>Open early</desc>
     <ele>100</ele>
   </wpt>
@@ -76,8 +76,6 @@ describe("routeImportPipeline", () => {
 
   it("converts GPX waypoints into route-owned waypoints during import", async () => {
     const dependencies = deps();
-    const insertPOIs = vi.fn(async () => {});
-    dependencies.insertPOIs = insertPOIs;
 
     const result = await importRouteFileContent(
       { fileName: "alps.gpx", content: gpxWithWaypoints("Alps") },
@@ -86,7 +84,6 @@ describe("routeImportPipeline", () => {
 
     expect(result.status).toBe("success");
     if (result.status !== "success") throw new Error("expected success");
-    expect(insertPOIs).not.toHaveBeenCalled();
     const waypoints = insertRouteMock(dependencies).mock.calls[0][2] as RouteWaypoint[];
     expect(waypoints).toHaveLength(2);
     expect(waypoints[0]).toMatchObject({
@@ -94,7 +91,7 @@ describe("routeImportPipeline", () => {
       sourceIndex: 0,
       origin: "gpx",
       name: "Start Cafe",
-      type: "cafe",
+      type: "cafe stop",
       description: "Open early",
       elevationMeters: 100,
       latitude: 48.0,
@@ -133,8 +130,6 @@ describe("routeImportPipeline", () => {
 
   it("passes an empty route-owned waypoint list for KML imports without parsed waypoints", async () => {
     const dependencies = deps();
-    const insertPOIs = vi.fn(async () => {});
-    dependencies.insertPOIs = insertPOIs;
 
     const result = await importRouteFileContent(
       { fileName: "route.kml", content: validKml("Route") },
@@ -142,14 +137,11 @@ describe("routeImportPipeline", () => {
     );
 
     expect(result.status).toBe("success");
-    expect(insertPOIs).not.toHaveBeenCalled();
     expect(insertRouteMock(dependencies).mock.calls[0][2]).toEqual([]);
   });
 
   it("does not persist route waypoints for duplicate files skipped within a batch", async () => {
     const dependencies = deps();
-    const insertPOIs = vi.fn(async () => {});
-    dependencies.insertPOIs = insertPOIs;
     const duplicate: RouteImportFileContent = {
       fileName: "same.gpx",
       content: gpxWithWaypoints("Same"),
@@ -158,7 +150,6 @@ describe("routeImportPipeline", () => {
     const results = await importRouteBatch([duplicate, duplicate], dependencies);
 
     expect(results.map((result) => result.status)).toEqual(["success", "skipped"]);
-    expect(insertPOIs).not.toHaveBeenCalled();
     expect(dependencies.insertRoute).toHaveBeenCalledOnce();
   });
 

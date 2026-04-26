@@ -2,11 +2,21 @@ import { drizzle } from "drizzle-orm/expo-sqlite";
 import { migrate } from "drizzle-orm/expo-sqlite/migrator";
 import { openDatabaseSync } from "expo-sqlite";
 import { sql, eq, and, inArray, desc, asc, count, max } from "drizzle-orm";
-import { routes, routePoints, pois, collections, collectionSegments, climbs } from "./schema";
+import {
+  routes,
+  routePoints,
+  routeWaypoints,
+  pois,
+  starredItems,
+  collections,
+  collectionSegments,
+  climbs,
+} from "./schema";
 import migrations from "../drizzle/migrations";
 import type {
   Route,
   RoutePoint,
+  RouteWaypoint,
   RouteWithPoints,
   POI,
   POICategory,
@@ -14,6 +24,8 @@ import type {
   Collection,
   CollectionSegment,
   Climb,
+  StarredEntityType,
+  StarredItem,
 } from "@/types";
 
 // --- Database init ---
@@ -23,7 +35,16 @@ expoDb.execSync("PRAGMA journal_mode = WAL;");
 expoDb.execSync("PRAGMA foreign_keys = ON;");
 
 export const db = drizzle(expoDb, {
-  schema: { routes, routePoints, pois, collections, collectionSegments, climbs },
+  schema: {
+    routes,
+    routePoints,
+    routeWaypoints,
+    pois,
+    starredItems,
+    collections,
+    collectionSegments,
+    climbs,
+  },
 });
 
 // Apply schema from drizzle/migrations.ts (generated from db/schema.ts via `npm run db:migrate`)
@@ -31,7 +52,11 @@ migrate(db, migrations);
 
 // --- Route CRUD ---
 
-export async function insertRoute(route: Route, points: RoutePoint[]): Promise<void> {
+export async function insertRoute(
+  route: Route,
+  points: RoutePoint[],
+  waypoints: RouteWaypoint[] = [],
+): Promise<void> {
   db.transaction((tx) => {
     tx.insert(routes)
       .values({
@@ -61,6 +86,28 @@ export async function insertRoute(route: Route, points: RoutePoint[]): Promise<v
             longitude: p.longitude,
             elevationMeters: p.elevationMeters,
             distanceFromStartMeters: p.distanceFromStartMeters,
+          })),
+        )
+        .run();
+    }
+
+    for (let i = 0; i < waypoints.length; i += CHUNK) {
+      const chunk = waypoints.slice(i, i + CHUNK);
+      tx.insert(routeWaypoints)
+        .values(
+          chunk.map((waypoint) => ({
+            id: waypoint.id,
+            routeId: waypoint.routeId,
+            sourceIndex: waypoint.sourceIndex,
+            origin: waypoint.origin,
+            name: waypoint.name,
+            type: waypoint.type,
+            description: waypoint.description,
+            elevationMeters: waypoint.elevationMeters,
+            latitude: waypoint.latitude,
+            longitude: waypoint.longitude,
+            distanceFromRouteMeters: waypoint.distanceFromRouteMeters,
+            distanceAlongRouteMeters: waypoint.distanceAlongRouteMeters,
           })),
         )
         .run();
@@ -139,9 +186,108 @@ export async function getRoutePoints(routeId: string): Promise<RoutePoint[]> {
   return rows;
 }
 
+export async function insertRouteWaypoints(newWaypoints: RouteWaypoint[]): Promise<void> {
+  if (newWaypoints.length === 0) return;
+
+  db.transaction((tx) => {
+    const CHUNK = 500;
+    for (let i = 0; i < newWaypoints.length; i += CHUNK) {
+      const chunk = newWaypoints.slice(i, i + CHUNK);
+      tx.insert(routeWaypoints)
+        .values(
+          chunk.map((waypoint) => ({
+            id: waypoint.id,
+            routeId: waypoint.routeId,
+            sourceIndex: waypoint.sourceIndex,
+            origin: waypoint.origin,
+            name: waypoint.name,
+            type: waypoint.type,
+            description: waypoint.description,
+            elevationMeters: waypoint.elevationMeters,
+            latitude: waypoint.latitude,
+            longitude: waypoint.longitude,
+            distanceFromRouteMeters: waypoint.distanceFromRouteMeters,
+            distanceAlongRouteMeters: waypoint.distanceAlongRouteMeters,
+          })),
+        )
+        .run();
+    }
+  });
+}
+
+export async function getRouteWaypoints(routeId: string): Promise<RouteWaypoint[]> {
+  return db
+    .select()
+    .from(routeWaypoints)
+    .where(eq(routeWaypoints.routeId, routeId))
+    .orderBy(asc(routeWaypoints.distanceAlongRouteMeters))
+    .all();
+}
+
 export async function deleteRoute(routeId: string): Promise<void> {
-  // Foreign keys with ON DELETE CASCADE handle route_points, pois, and race_segments
+  deleteStarredItemsForRoute(routeId);
+  // Foreign keys with ON DELETE CASCADE handle route_points, route_waypoints,
+  // pois, and collection_segments. starred_items has no FK because it stores
+  // multiple entity types, so it is cleaned above.
   db.delete(routes).where(eq(routes.id, routeId)).run();
+}
+
+// --- Starred Items CRUD ---
+
+function starConditions(entityType: StarredEntityType, entityId: string) {
+  return and(eq(starredItems.entityType, entityType), eq(starredItems.entityId, entityId));
+}
+
+function deleteStarredEntityIds(entityType: StarredEntityType, entityIds: string[]): void {
+  if (entityIds.length === 0) return;
+  db.delete(starredItems)
+    .where(and(eq(starredItems.entityType, entityType), inArray(starredItems.entityId, entityIds)))
+    .run();
+}
+
+function poiIdsForRoute(routeId: string, source?: POISource): string[] {
+  const conditions = [eq(pois.routeId, routeId)];
+  if (source) conditions.push(eq(pois.source, source));
+  return db
+    .select({ id: pois.id })
+    .from(pois)
+    .where(and(...conditions))
+    .all()
+    .map((row) => row.id);
+}
+
+function waypointIdsForRoute(routeId: string): string[] {
+  return db
+    .select({ id: routeWaypoints.id })
+    .from(routeWaypoints)
+    .where(eq(routeWaypoints.routeId, routeId))
+    .all()
+    .map((row) => row.id);
+}
+
+function deleteStarredItemsForRoute(routeId: string): void {
+  deleteStarredEntityIds("downloadedPoi", poiIdsForRoute(routeId));
+  deleteStarredEntityIds("routeWaypoint", waypointIdsForRoute(routeId));
+}
+
+export async function getStarredItems(): Promise<StarredItem[]> {
+  return db.select().from(starredItems).all();
+}
+
+export async function setStarredItem(
+  entityType: StarredEntityType,
+  entityId: string,
+  starred: boolean,
+): Promise<void> {
+  if (starred) {
+    db.insert(starredItems)
+      .values({ entityType, entityId, createdAt: new Date().toISOString() })
+      .onConflictDoNothing()
+      .run();
+    return;
+  }
+
+  db.delete(starredItems).where(starConditions(entityType, entityId)).run();
 }
 
 export async function updateRouteVisibility(routeId: string, isVisible: boolean): Promise<void> {
@@ -226,10 +372,19 @@ export async function getPOIsForRoute(
 }
 
 export async function deletePOIsForRoute(routeId: string): Promise<void> {
+  deleteStarredEntityIds("downloadedPoi", poiIdsForRoute(routeId));
   db.delete(pois).where(eq(pois.routeId, routeId)).run();
 }
 
+export async function deleteDownloadedPOIsForRoute(routeId: string): Promise<void> {
+  deleteStarredEntityIds("downloadedPoi", poiIdsForRoute(routeId));
+  db.delete(pois)
+    .where(and(eq(pois.routeId, routeId), inArray(pois.source, ["osm", "google"])))
+    .run();
+}
+
 export async function deletePOIsBySource(routeId: string, source: POISource): Promise<void> {
+  deleteStarredEntityIds("downloadedPoi", poiIdsForRoute(routeId, source));
   db.delete(pois)
     .where(and(eq(pois.routeId, routeId), eq(pois.source, source)))
     .run();
@@ -254,7 +409,7 @@ export async function getPOICountsBySource(
     google = 0;
   for (const row of rows) {
     if (row.source === "google") google = row.cnt;
-    else osm += row.cnt;
+    else if (row.source === "osm") osm = row.cnt;
   }
   return { osm, google };
 }

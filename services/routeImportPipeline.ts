@@ -2,7 +2,7 @@ import { INACTIVE_ROUTE_COLOR } from "@/constants";
 import { computePOIRouteAssociation } from "@/utils/geo";
 import { parseGPX } from "./gpxParser";
 import { parseKML } from "./kmlParser";
-import type { ParsedRoute, ParsedWaypoint, POI, Route, RoutePoint, RouteWaypoint } from "@/types";
+import type { ParsedRoute, ParsedWaypoint, Route, RoutePoint, RouteWaypoint } from "@/types";
 
 export interface RouteImportFileContent {
   fileName: string;
@@ -13,7 +13,6 @@ export interface RouteImportDependencies {
   generateId: () => string;
   now: () => string;
   insertRoute: (route: Route, points: RoutePoint[], waypoints: RouteWaypoint[]) => Promise<void>;
-  insertPOIs?: (pois: POI[]) => Promise<void>;
   detectAndStoreClimbs?: (routeId: string, points: RoutePoint[]) => Promise<void>;
 }
 

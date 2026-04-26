@@ -188,6 +188,12 @@ export const useRouteStore = create<RouteState>((set, get) => ({
       // Scrub per-route POI state (DB cascade handles the rows themselves)
       const { usePoiStore } = await import("@/store/poiStore");
       usePoiStore.getState().cleanupRouteState(id);
+      const { useWaypointStore } = await import("@/store/waypointStore");
+      useWaypointStore.getState().cleanupRouteState(id);
+      const { usePlaceStore } = await import("@/store/placeStore");
+      usePlaceStore.getState().cleanupRouteState(id);
+      const { useStarredStore } = await import("@/store/starredStore");
+      await useStarredStore.getState().loadStarredItems();
       // Drop points cache entry for the deleted route
       const current = get().visibleRoutePoints;
       if (current[id]) {

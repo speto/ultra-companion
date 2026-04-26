@@ -7,7 +7,7 @@ import {
   unique,
   primaryKey,
 } from "drizzle-orm/sqlite-core";
-import type { POICategory, POISource } from "@/types";
+import type { POICategory, POISource, RouteWaypointOrigin, StarredEntityType } from "@/types";
 
 // --- Climbs ---
 
@@ -65,6 +65,31 @@ export const routePoints = sqliteTable(
   (table) => [primaryKey({ columns: [table.routeId, table.idx] })],
 );
 
+// --- Route Waypoints ---
+
+export const routeWaypoints = sqliteTable(
+  "route_waypoints",
+  {
+    id: text("id").primaryKey(),
+    routeId: text("routeId")
+      .notNull()
+      .references(() => routes.id, { onDelete: "cascade" }),
+    sourceIndex: integer("sourceIndex").notNull(),
+    origin: text("origin").notNull().default("gpx").$type<RouteWaypointOrigin>(),
+    name: text("name"),
+    type: text("type"),
+    description: text("description"),
+    elevationMeters: real("elevationMeters"),
+    latitude: real("latitude").notNull(),
+    longitude: real("longitude").notNull(),
+    distanceFromRouteMeters: real("distanceFromRouteMeters").notNull(),
+    distanceAlongRouteMeters: real("distanceAlongRouteMeters").notNull(),
+  },
+  (table) => [
+    index("idx_route_waypoints_route_along").on(table.routeId, table.distanceAlongRouteMeters),
+  ],
+);
+
 // --- POIs ---
 
 export const pois = sqliteTable(
@@ -90,6 +115,18 @@ export const pois = sqliteTable(
     index("idx_pois_route_source").on(table.routeId, table.source),
     unique("uq_pois_route_source").on(table.routeId, table.sourceId),
   ],
+);
+
+// --- Starred Items ---
+
+export const starredItems = sqliteTable(
+  "starred_items",
+  {
+    entityType: text("entityType").notNull().$type<StarredEntityType>(),
+    entityId: text("entityId").notNull(),
+    createdAt: text("createdAt").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.entityType, table.entityId] })],
 );
 
 // --- Collections ---

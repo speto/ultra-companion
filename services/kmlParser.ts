@@ -106,5 +106,5 @@ export function parseKML(xml: string, fileName: string): ParsedRoute {
   }
 
   const stats = computeRouteStats(coords);
-  return { name: String(name), ...stats };
+  return { name: String(name), waypoints: [], ...stats };
 }
