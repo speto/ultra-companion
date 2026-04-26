@@ -8,32 +8,22 @@ import { useRouteStore } from "@/store/routeStore";
 import { useSettingsStore } from "@/store/settingsStore";
 import { usePoiStore } from "@/store/poiStore";
 import { useClimbStore } from "@/store/climbStore";
-import { useColorScheme } from "nativewind";
-import { PANEL_MODES } from "@/constants";
 import { computeSliceAscent, computeSliceDescent, extractRouteSlice } from "@/utils/geo";
 import { formatDistance, formatElevation } from "@/utils/formatters";
 import { climbDifficultyColor } from "@/constants/climbHelpers";
 import { stitchPOIs } from "@/services/stitchingService";
+import { horizonToMeters, horizonWindow } from "@/utils/horizon";
 import { profileSegmentsFromStitchedSegments } from "@/utils/profileSegments";
+import { useColorScheme } from "nativewind";
 import UpcomingElevation from "./UpcomingElevation";
 import ElevationProfile from "@/components/elevation/ElevationProfile";
-import type { PanelMode, POI, ActiveRouteData, Climb } from "@/types";
+import type { POI, ActiveRouteData, Climb } from "@/types";
 
 const MAX_SNAP_DISTANCE_M = 1000;
-const HEADER_HEIGHT = 44;
 const STATS_HEIGHT = 28;
 const CLIMB_ROW_HEIGHT = 36;
 const MAX_CLIMBS_AHEAD = 4;
 const HORIZONTAL_PADDING = 8;
-
-function lookAheadForMode(mode: PanelMode): number {
-  const match = mode.match(/^upcoming-(\d+)$/);
-  return match ? parseInt(match[1], 10) * 1_000 : 50_000;
-}
-
-function kmLabelForMode(mode: PanelMode): string {
-  return mode.replace("upcoming-", "");
-}
 
 interface ProfileTabContentProps {
   activeData: ActiveRouteData | null;
@@ -49,14 +39,13 @@ export default function ProfileTabContent({ activeData, width, height }: Profile
   const activeId = activeData?.id ?? null;
   const activeRouteIds = useMemo(() => activeData?.routeIds ?? [], [activeData?.routeIds]);
   const activeSegments = activeData?.segments ?? null;
+  const activeTotalDistance = activeData?.totalDistanceMeters ?? 0;
   const profileSegments = useMemo(
     () => profileSegmentsFromStitchedSegments(activeSegments, colorScheme),
     [activeSegments, colorScheme],
   );
-  const activeTotalDistance = activeData?.totalDistanceMeters ?? 0;
 
-  const panelMode = usePanelStore((s) => s.panelMode);
-  const setPanelMode = usePanelStore((s) => s.setPanelMode);
+  const horizon = usePanelStore((s) => s.horizon);
   const setPanelTab = usePanelStore((s) => s.setPanelTab);
   const isExpanded = usePanelStore((s) => s.isExpanded);
   const snappedPosition = useRouteStore((s) => s.snappedPosition);
@@ -147,17 +136,16 @@ export default function ProfileTabContent({ activeData, width, height }: Profile
 
   const showClimbZoom = isClimbZoomed && currentClimb && climbSlice && climbSlice.points.length > 1;
 
-  // Slice bounds (matches UpcomingElevation's window)
+  // Slice bounds (uses shared horizon filter)
   const { windowStartDist, windowEndDist, riderIdx } = useMemo(() => {
     if (!isSnapped || !activeRoutePoints?.length) {
       return { windowStartDist: 0, windowEndDist: 0, riderIdx: 0 };
     }
     const idx = snappedPosition!.pointIndex;
     const distDone = activeRoutePoints[idx]?.distanceFromStartMeters ?? 0;
-    const la = lookAheadForMode(panelMode);
-    const endDist = Math.min(distDone + la, activeTotalDistance);
+    const { endDist } = horizonWindow(distDone, horizon, activeTotalDistance);
     return { windowStartDist: distDone, windowEndDist: endDist, riderIdx: idx };
-  }, [isSnapped, snappedPosition, activeRoutePoints, panelMode, activeTotalDistance]);
+  }, [isSnapped, snappedPosition, activeRoutePoints, horizon, activeTotalDistance]);
 
   const statsText = useMemo(() => {
     if (!isSnapped || !activeRoutePoints?.length) return null;
@@ -183,9 +171,8 @@ export default function ProfileTabContent({ activeData, width, height }: Profile
   }
 
   const effectivePointIndex = isSnapped ? snappedPosition!.pointIndex : 0;
-  const lookAhead = lookAheadForMode(panelMode);
+  const lookAhead = horizonToMeters(horizon) ?? activeTotalDistance;
 
-  const showHeader = !showClimbZoom;
   const showClimbBar = isExpanded && showClimbZoom && !!climbProgressText;
   const showStats = isExpanded && !showClimbZoom && !!statsText;
   const showClimbsAhead = isExpanded && !showClimbZoom && climbsAhead.length > 0;
@@ -195,10 +182,7 @@ export default function ProfileTabContent({ activeData, width, height }: Profile
     : 0;
 
   const headerBlockHeight =
-    (showHeader ? HEADER_HEIGHT : 0) +
-    (showStats ? STATS_HEIGHT : 0) +
-    (showClimbBar ? STATS_HEIGHT : 0) +
-    climbsAheadHeight;
+    (showStats ? STATS_HEIGHT : 0) + (showClimbBar ? STATS_HEIGHT : 0) + climbsAheadHeight;
 
   const chartHeight = height - headerBlockHeight - safeBottom;
   const chartWidth = width - HORIZONTAL_PADDING * 2;
@@ -220,19 +204,6 @@ export default function ProfileTabContent({ activeData, width, height }: Profile
           </Text>
         </TouchableOpacity>
       )}
-
-      {showHeader && (
-        <View
-          style={{
-            height: HEADER_HEIGHT,
-            paddingHorizontal: HORIZONTAL_PADDING,
-            justifyContent: "center",
-          }}
-        >
-          <RangePills current={panelMode} onChange={setPanelMode} />
-        </View>
-      )}
-
       {showStats && (
         <View
           className="items-center justify-center"
@@ -296,59 +267,6 @@ export default function ProfileTabContent({ activeData, width, height }: Profile
           />
         )}
       </View>
-    </View>
-  );
-}
-
-function RangePills({
-  current,
-  onChange,
-}: {
-  current: PanelMode;
-  onChange: (mode: PanelMode) => void;
-}) {
-  const colors = useThemeColors();
-  return (
-    <View
-      className="flex-row items-center rounded-full self-center"
-      style={{ backgroundColor: colors.surfaceRaised, padding: 2 }}
-    >
-      {PANEL_MODES.map((mode) => {
-        const isActive = mode === current;
-        return (
-          <TouchableOpacity
-            key={mode}
-            onPress={() => onChange(mode)}
-            accessibilityLabel={`Set range to ${kmLabelForMode(mode)} km`}
-            accessibilityRole="button"
-            accessibilityState={{ selected: isActive }}
-            className="rounded-full items-center justify-center"
-            style={{
-              minWidth: 44,
-              height: 32,
-              paddingHorizontal: 10,
-              backgroundColor: isActive ? colors.accent : "transparent",
-            }}
-          >
-            <Text
-              className="font-barlow-sc-semibold text-[13px]"
-              style={{
-                color: isActive ? colors.accentForeground : colors.textSecondary,
-              }}
-            >
-              {kmLabelForMode(mode)}
-              <Text
-                className="font-barlow-sc-medium text-[10px]"
-                style={{
-                  color: isActive ? colors.accentForeground : colors.textTertiary,
-                }}
-              >
-                {" km"}
-              </Text>
-            </Text>
-          </TouchableOpacity>
-        );
-      })}
     </View>
   );
 }

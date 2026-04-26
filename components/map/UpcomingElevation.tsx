@@ -21,7 +21,7 @@ interface UpcomingElevationProps {
   onPOIPress?: (poi: POI) => void;
   /** Climbs to render as shading */
   climbs?: Climb[];
-  /** Collection segment bands to render behind the profile */
+  /** Collection segments to render on the profile */
   profileSegments?: ProfileSegment[];
   /** Force fit-to-width — disables horizontal scrolling and the overview minimap */
   fitToWidth?: boolean;
@@ -106,7 +106,8 @@ export default function UpcomingElevation({
   const visibleProfileSegments = useMemo(() => {
     if (!profileSegments) return undefined;
     return profileSegments.filter(
-      (s) => s.endDistanceMeters >= offsetMeters && s.startDistanceMeters <= sliceEndDist,
+      (segment) =>
+        segment.endDistanceMeters >= offsetMeters && segment.startDistanceMeters <= sliceEndDist,
     );
   }, [profileSegments, offsetMeters, sliceEndDist]);
 

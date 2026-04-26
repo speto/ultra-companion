@@ -18,6 +18,7 @@ import ProfileTabContent from "./ProfileTabContent";
 import WeatherPanel from "./WeatherPanel";
 import ClimbTabContent from "./ClimbTabContent";
 import POITabContent from "./POITabContent";
+import HorizonOverlay from "./HorizonOverlay";
 import type { ActiveRouteData, PanelTab } from "@/types";
 import type { SceneRendererProps } from "react-native-tab-view";
 
@@ -164,6 +165,8 @@ export default function TabbedBottomPanel({ activeData }: TabbedBottomPanelProps
       className="absolute bottom-0 left-0 right-0 rounded-t-2xl shadow-lg border-t border-border"
       style={[{ height: expandedHeight, backgroundColor: colors.surface }, animatedSheetStyle]}
     >
+      <HorizonOverlay activeData={activeData} />
+
       {/* Handle + tabs — single compact gesture target */}
       <GestureDetector gesture={panGesture}>
         <Animated.View>
