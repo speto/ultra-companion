@@ -39,6 +39,23 @@ export interface RouteWithPoints extends Route {
   points: RoutePoint[];
 }
 
+export type RouteWaypointOrigin = "gpx";
+
+export interface RouteWaypoint {
+  id: string;
+  routeId: string;
+  sourceIndex: number;
+  origin: RouteWaypointOrigin;
+  name: string | null;
+  type: string | null;
+  description: string | null;
+  elevationMeters: number | null;
+  latitude: number;
+  longitude: number;
+  distanceFromRouteMeters: number;
+  distanceAlongRouteMeters: number;
+}
+
 export type SurfaceClass = "paved" | "unpaved" | "unknown";
 
 export interface SurfaceWayGeometryPoint {
