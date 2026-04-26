@@ -1,12 +1,13 @@
-import React, { useMemo, useState, useCallback } from "react";
-import { View, TouchableOpacity, Pressable, Modal, ScrollView } from "react-native";
+import React, { useMemo, useCallback } from "react";
+import { View, TouchableOpacity, ScrollView } from "react-native";
+import { router } from "expo-router";
 import { Text } from "@/components/ui/text";
 import {
   Clock,
   Droplets,
+  Bed,
   ShowerHead,
   UtensilsCrossed,
-  Moon,
   SlidersHorizontal,
   X,
 } from "lucide-react-native";
@@ -16,8 +17,6 @@ import { usePoiStore } from "@/store/poiStore";
 import { POI_CATEGORIES } from "@/constants";
 import { POI_ICON_MAP } from "@/constants/poiIcons";
 import type { POICategory } from "@/types";
-
-type RuntimeThemeColors = ReturnType<typeof useThemeColors>;
 
 const WATER_COLOR = POI_CATEGORIES.find((c) => c.key === "water")!.color;
 const FOOD_COLOR = POI_CATEGORIES.find((c) => c.key === "groceries")!.color;
@@ -66,8 +65,6 @@ export default function POIFilterBar({ routeIds }: POIFilterBarProps) {
   const toggleShowOpenOnly = usePoiStore((s) => s.toggleShowOpenOnly);
   const setAllCategories = usePoiStore((s) => s.setAllCategories);
 
-  const [moreVisible, setMoreVisible] = useState(false);
-
   const enabledSet = useMemo(() => new Set(enabledCategories), [enabledCategories]);
   const isCategoryFilterActive = enabledCategories.length < POI_CATEGORIES.length;
 
@@ -91,26 +88,6 @@ export default function POIFilterBar({ routeIds }: POIFilterBarProps) {
       }
     },
     [isExactMatch, setAllCategories, setEnabledCategories],
-  );
-
-  const handleSheetToggle = useCallback(
-    (category: POICategory) => {
-      if (!isCategoryFilterActive) {
-        setEnabledCategories([category]);
-      } else {
-        if (enabledSet.has(category)) {
-          const next = enabledCategories.filter((c) => c !== category);
-          if (next.length === 0) {
-            setAllCategories(true);
-          } else {
-            setEnabledCategories(next);
-          }
-        } else {
-          setEnabledCategories([...enabledCategories, category]);
-        }
-      }
-    },
-    [isCategoryFilterActive, enabledSet, enabledCategories, setEnabledCategories, setAllCategories],
   );
 
   // POI count for hasPois check
@@ -162,10 +139,25 @@ export default function POIFilterBar({ routeIds }: POIFilterBarProps) {
           accessibilityLabel={getQuickAccessibilityLabel("Food", foodEnabled)}
         />
 
+        {(foodEnabled || showOpenOnly) && (
+          <FilterChip
+            active={showOpenOnly}
+            onPress={toggleShowOpenOnly}
+            icon={<Clock size={14} color={showOpenOnly ? colors.positive : colors.textTertiary} />}
+            label="Open now"
+            accessibilityLabel={
+              showOpenOnly
+                ? "Show closed food and shop stops"
+                : "Show only food and shop stops known open now"
+            }
+            activeTone="positive"
+          />
+        )}
+
         <FilterChip
           active={restEnabled}
           onPress={() => handleQuickToggle(REST_CATEGORIES)}
-          icon={<Moon size={14} color={restEnabled ? REST_COLOR : colors.textTertiary} />}
+          icon={<Bed size={14} color={restEnabled ? REST_COLOR : colors.textTertiary} />}
           label="Rest"
           accessibilityLabel={getQuickAccessibilityLabel("Rest", restEnabled)}
         />
@@ -179,28 +171,19 @@ export default function POIFilterBar({ routeIds }: POIFilterBarProps) {
         />
 
         <FilterChip
-          active={moreVisible || isCustomFilterActive}
-          onPress={() => setMoreVisible((v) => !v)}
+          active={isCustomFilterActive}
+          onPress={() => {
+            router.push("/poi-filters");
+          }}
           icon={
             <SlidersHorizontal
               size={14}
-              color={moreVisible || isCustomFilterActive ? colors.accent : colors.textTertiary}
+              color={isCustomFilterActive ? colors.accent : colors.textTertiary}
             />
           }
-          label="Categories"
+          label="More"
           accessibilityLabel="Open category filters"
           accessibilityRoleOverride="button"
-        />
-
-        <View className="w-[1px] h-6 bg-border mx-0.5" />
-
-        <FilterChip
-          active={showOpenOnly}
-          onPress={toggleShowOpenOnly}
-          icon={<Clock size={14} color={showOpenOnly ? colors.positive : colors.textTertiary} />}
-          label="Open"
-          accessibilityLabel={showOpenOnly ? "Turn off open now filter" : "Show only open POIs"}
-          activeTone="positive"
         />
 
         {isCategoryFilterActive && (
@@ -214,18 +197,6 @@ export default function POIFilterBar({ routeIds }: POIFilterBarProps) {
           />
         )}
       </ScrollView>
-
-      {moreVisible && (
-        <MoreFilterSheet
-          enabledSet={enabledSet}
-          isCategoryFilterActive={isCategoryFilterActive}
-          handleToggleLeaf={handleSheetToggle}
-          colors={colors}
-          onClose={() => setMoreVisible(false)}
-          setAllCategories={setAllCategories}
-          enabledCategories={enabledCategories}
-        />
-      )}
     </>
   );
 }
@@ -290,23 +261,32 @@ function FilterChip({
   );
 }
 
-function MoreFilterSheet({
-  enabledSet,
-  isCategoryFilterActive,
-  handleToggleLeaf,
-  colors,
-  onClose,
-  setAllCategories,
-  enabledCategories,
-}: {
-  enabledSet: Set<POICategory>;
-  isCategoryFilterActive: boolean;
-  handleToggleLeaf: (cat: POICategory) => void;
-  colors: RuntimeThemeColors;
-  onClose: () => void;
-  setAllCategories: (enabled: boolean) => void;
-  enabledCategories: POICategory[];
-}) {
+export function POIFilterSheetContent({ onClose }: { onClose: () => void }) {
+  const colors = useThemeColors();
+  const enabledCategories = usePoiStore((s) => s.enabledCategories);
+  const setEnabledCategories = usePoiStore((s) => s.setEnabledCategories);
+  const showOpenOnly = usePoiStore((s) => s.showOpenOnly);
+  const toggleShowOpenOnly = usePoiStore((s) => s.toggleShowOpenOnly);
+  const setAllCategories = usePoiStore((s) => s.setAllCategories);
+
+  const enabledSet = useMemo(() => new Set(enabledCategories), [enabledCategories]);
+  const isCategoryFilterActive = enabledCategories.length < POI_CATEGORIES.length;
+
+  const handleToggleLeaf = useCallback(
+    (category: POICategory) => {
+      if (!isCategoryFilterActive) {
+        setEnabledCategories([category]);
+      } else if (enabledSet.has(category)) {
+        const next = enabledCategories.filter((c) => c !== category);
+        if (next.length === 0) setAllCategories(true);
+        else setEnabledCategories(next);
+      } else {
+        setEnabledCategories([...enabledCategories, category]);
+      }
+    },
+    [isCategoryFilterActive, enabledSet, enabledCategories, setEnabledCategories, setAllCategories],
+  );
+
   const handleReset = () => {
     setAllCategories(true);
   };
@@ -319,92 +299,103 @@ function MoreFilterSheet({
     return `Add ${label} to filter`;
   };
   return (
-    <Modal transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
-      <View className="flex-1 justify-end">
-        <Pressable
-          className="absolute inset-0"
-          style={{ backgroundColor: "rgba(0,0,0,0.3)" }}
-          onPress={onClose}
-          accessibilityLabel="Close filters"
-        />
-        <View
-          className="rounded-t-2xl border-t border-border"
-          style={{ backgroundColor: colors.surface }}
-        >
-          <View className="flex-row items-center justify-between px-4 pt-4 pb-4">
-            <View className="flex-1 min-h-[48px] justify-center">
-              <Text className="text-lg font-barlow-semibold text-foreground">Categories</Text>
-            </View>
-            <View className="flex-row items-center">
-              {isCategoryFilterActive && (
-                <TouchableOpacity
-                  onPress={handleReset}
-                  className="min-h-[48px] px-3 items-center justify-center mr-2"
-                  accessibilityLabel="Clear category filters"
-                  accessibilityRole="button"
-                >
-                  <Text className="text-sm font-barlow-medium text-accent">Clear</Text>
-                </TouchableOpacity>
-              )}
-              <TouchableOpacity
-                onPress={onClose}
-                className="min-h-[48px] w-[48px] items-center justify-center -mr-2"
-                accessibilityLabel="Close category filters"
-                accessibilityRole="button"
-              >
-                <X size={24} color={colors.textTertiary} />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          <View className="px-4 pb-6">
-            {CATEGORY_GROUPS.map((group) => (
-              <View key={group.label} className="mb-3">
-                <Text className="text-[11px] font-barlow-semibold text-muted-foreground uppercase tracking-wider mb-1.5">
-                  {group.label}
-                </Text>
-                <View className="flex-row flex-wrap gap-2">
-                  {group.keys.map((key) => {
-                    const meta = POI_CATEGORIES.find((c) => c.key === key);
-                    if (!meta) return null;
-                    const isEnabled = isCategoryFilterActive && enabledSet.has(key);
-                    const IconComp = POI_ICON_MAP[meta.iconName];
-                    return (
-                      <TouchableOpacity
-                        key={key}
-                        className={cn(
-                          "flex-row items-center px-3 py-2.5 min-h-[48px] rounded-xl border",
-                          isEnabled ? "border-accent/30 bg-accent/10" : "border-border bg-muted",
-                        )}
-                        onPress={() => handleToggleLeaf(key)}
-                        activeOpacity={0.7}
-                        accessibilityLabel={getLeafAccessibilityLabel(key, meta.label)}
-                        accessibilityRole="switch"
-                        accessibilityState={{ checked: isEnabled }}
-                      >
-                        {IconComp && (
-                          <IconComp
-                            size={16}
-                            color={isEnabled ? meta.color : colors.textTertiary}
-                          />
-                        )}
-                        <Text
-                          className={cn(
-                            "ml-1.5 text-[13px] font-barlow-medium",
-                            isEnabled ? "text-foreground" : "text-muted-foreground",
-                          )}
-                        >
-                          {meta.label}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-            ))}
-          </View>
+    <View className="flex-1" style={{ backgroundColor: colors.surface }}>
+      <View className="flex-row items-center justify-between px-4 pt-4 pb-4">
+        <View className="flex-1 min-h-[48px] justify-center">
+          <Text className="text-lg font-barlow-semibold text-foreground">More filters</Text>
+        </View>
+        <View className="flex-row items-center">
+          {isCategoryFilterActive && (
+            <TouchableOpacity
+              onPress={handleReset}
+              className="min-h-[48px] px-3 items-center justify-center mr-2"
+              accessibilityLabel="Clear category filters"
+              accessibilityRole="button"
+            >
+              <Text className="text-sm font-barlow-medium text-accent">Clear</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            onPress={onClose}
+            className="min-h-[48px] w-[48px] items-center justify-center -mr-2"
+            accessibilityLabel="Close category filters"
+            accessibilityRole="button"
+          >
+            <X size={24} color={colors.textTertiary} />
+          </TouchableOpacity>
         </View>
       </View>
-    </Modal>
+
+      <View className="px-4 pb-6">
+        {CATEGORY_GROUPS.map((group) => (
+          <View key={group.label} className="mb-3">
+            <Text className="text-[11px] font-barlow-semibold text-muted-foreground uppercase tracking-wider mb-1.5">
+              {group.label}
+            </Text>
+            {group.label === "Food" && (
+              <TouchableOpacity
+                onPress={toggleShowOpenOnly}
+                activeOpacity={0.7}
+                className={cn(
+                  "flex-row items-center px-3 py-2.5 min-h-[48px] rounded-xl border mb-2 self-start",
+                  showOpenOnly ? "border-positive/30 bg-positive/10" : "border-border bg-muted",
+                )}
+                accessibilityLabel={
+                  showOpenOnly
+                    ? "Show closed food and shop stops"
+                    : "Show only food and shop stops known open now"
+                }
+                accessibilityRole="switch"
+                accessibilityState={{ checked: showOpenOnly }}
+              >
+                <Clock size={16} color={showOpenOnly ? colors.positive : colors.textTertiary} />
+                <Text
+                  className={cn(
+                    "ml-1.5 text-[13px] font-barlow-medium",
+                    showOpenOnly ? "text-foreground" : "text-muted-foreground",
+                  )}
+                >
+                  Open now
+                </Text>
+              </TouchableOpacity>
+            )}
+            <View className="flex-row flex-wrap gap-2">
+              {group.keys.map((key) => {
+                const meta = POI_CATEGORIES.find((c) => c.key === key);
+                if (!meta) return null;
+                const isEnabled = isCategoryFilterActive && enabledSet.has(key);
+                const IconComp = POI_ICON_MAP[meta.iconName];
+                return (
+                  <TouchableOpacity
+                    key={key}
+                    className={cn(
+                      "flex-row items-center px-3 py-2.5 min-h-[48px] rounded-xl border",
+                      isEnabled ? "border-accent/30 bg-accent/10" : "border-border bg-muted",
+                    )}
+                    onPress={() => handleToggleLeaf(key)}
+                    activeOpacity={0.7}
+                    accessibilityLabel={getLeafAccessibilityLabel(key, meta.label)}
+                    accessibilityRole="switch"
+                    accessibilityState={{ checked: isEnabled }}
+                  >
+                    {IconComp && (
+                      <IconComp size={16} color={isEnabled ? meta.color : colors.textTertiary} />
+                    )}
+                    <Text
+                      className={cn(
+                        "ml-1.5 text-[13px] font-barlow-medium",
+                        isEnabled ? "text-foreground" : "text-muted-foreground",
+                      )}
+                    >
+                      {meta.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        ))}
+      </View>
+    </View>
   );
 }

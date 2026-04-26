@@ -1,6 +1,8 @@
 import { getOpeningHoursStatus } from "@/services/openingHoursParser";
 import type { PlaceViewModel, POI, POICategory, RouteWaypoint, StitchedSegmentInfo } from "@/types";
 
+const FOOD_SHOP_CATEGORIES = new Set<POICategory>(["groceries", "bakery", "gas_station"]);
+
 // --- Adapters: entity -> PlaceViewModel ---
 
 export function downloadedPoiToPlace(poi: POI, distanceOffset = 0): PlaceViewModel {
@@ -64,8 +66,13 @@ export function isKnownOpenNow(openingHours: string | null | undefined): boolean
 export function filterPlacesByOpenNow(places: PlaceViewModel[]): PlaceViewModel[] {
   return places.filter((p) => {
     if (p.entityType === "routeWaypoint") return true;
+    if (!FOOD_SHOP_CATEGORIES.has(p.category as POICategory)) return true;
     return isKnownOpenNow(p.openingHours);
   });
+}
+
+export function isFoodShopCategory(category: POICategory | "waypoint"): boolean {
+  return FOOD_SHOP_CATEGORIES.has(category as POICategory);
 }
 
 // --- Category counts ---

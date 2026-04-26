@@ -63,7 +63,7 @@ describe("POI store visible POI filtering", () => {
     vi.useRealTimers();
   });
 
-  it("treats Open now as a subfilter over enabled categories regardless of filter order", async () => {
+  it("treats Open now as a food/shop subfilter regardless of filter order", async () => {
     const usePoiStore = await loadPoiStore();
     const pois = [
       buildPoi("open-water", routeId, 100, {
@@ -107,33 +107,54 @@ describe("POI store visible POI filtering", () => {
     usePoiStore.getState().toggleCategory("water");
     const openThenCategory = visibleIds(usePoiStore.getState().getVisiblePOIs(routeId));
 
-    expect(categoryThenOpen).toEqual(["open-water"]);
+    expect(categoryThenOpen).toEqual(["open-water", "closed-water", "unknown-water"]);
     expect(openThenCategory).toEqual(categoryThenOpen);
   });
 
-  it("shows only known-open POIs when Open now is enabled", async () => {
+  it("shows only known-open food/shop POIs when Open now is enabled", async () => {
     const usePoiStore = await loadPoiStore();
     const pois = [
-      buildPoi("known-open", routeId, 100, { tags: { opening_hours: mondayOpenHours } }),
-      buildPoi("known-closed", routeId, 200, { tags: { opening_hours: mondayClosedHours } }),
-      buildPoi("missing-hours", routeId, 300, { tags: {} }),
-      buildPoi("malformed-hours", routeId, 400, { tags: { opening_hours: "not-json" } }),
-      buildPoi("unsupported-hours", routeId, 500, { tags: { opening_hours: "Mo-Fr 09:00-17:00" } }),
-      buildPoi("absent-hours", routeId, 600),
+      buildPoi("known-open", routeId, 100, {
+        category: "bakery",
+        tags: { opening_hours: mondayOpenHours },
+      }),
+      buildPoi("known-closed", routeId, 200, {
+        category: "bakery",
+        tags: { opening_hours: mondayClosedHours },
+      }),
+      buildPoi("missing-hours", routeId, 300, { category: "bakery", tags: {} }),
+      buildPoi("malformed-hours", routeId, 400, {
+        category: "bakery",
+        tags: { opening_hours: "not-json" },
+      }),
+      buildPoi("unsupported-hours", routeId, 500, {
+        category: "bakery",
+        tags: { opening_hours: "Mo-Fr 09:00-17:00" },
+      }),
+      buildPoi("water", routeId, 600, { category: "water" }),
     ];
 
     usePoiStore.setState({ pois: { [routeId]: pois } });
     usePoiStore.getState().toggleShowOpenOnly();
 
-    expect(visibleIds(usePoiStore.getState().getVisiblePOIs(routeId))).toEqual(["known-open"]);
+    expect(visibleIds(usePoiStore.getState().getVisiblePOIs(routeId))).toEqual([
+      "known-open",
+      "water",
+    ]);
   });
 
   it("does not let starred known-closed POIs bypass Open now", async () => {
     const usePoiStore = await loadPoiStore();
     const useStarredStore = await loadStarredStore();
     const pois = [
-      buildPoi("known-open", routeId, 100, { tags: { opening_hours: mondayOpenHours } }),
-      buildPoi("starred-closed", routeId, 200, { tags: { opening_hours: mondayClosedHours } }),
+      buildPoi("known-open", routeId, 100, {
+        category: "bakery",
+        tags: { opening_hours: mondayOpenHours },
+      }),
+      buildPoi("starred-closed", routeId, 200, {
+        category: "bakery",
+        tags: { opening_hours: mondayClosedHours },
+      }),
     ];
 
     usePoiStore.setState({ pois: { [routeId]: pois } });

@@ -4,7 +4,7 @@ import type { FetchablePOISource, POI, POICategory, POIFetchStatus, RoutePoint }
 import { DEFAULT_CORRIDOR_WIDTH_M, POI_CATEGORIES } from "@/constants";
 import { getPOIsForRoute, deletePOIsBySource, deleteDownloadedPOIsForRoute } from "@/db/database";
 import { fetchOsmPOIs, fetchGooglePOIs } from "@/services/poiFetcher";
-import { isKnownOpenNow } from "@/utils/placeAdapter";
+import { isFoodShopCategory, isKnownOpenNow } from "@/utils/placeAdapter";
 import { usePanelStore } from "./panelStore";
 import { useStarredStore } from "./starredStore";
 
@@ -407,13 +407,11 @@ export const usePoiStore = create<POIState>((set, get) => ({
     if (!all) return [];
     const enabled = new Set(state.enabledCategories);
     return all.filter((p) => {
-      if (state.showOpenOnly) {
-        if (!enabled.has(p.category)) return false;
+      const isStarred = useStarredStore.getState().isStarred("downloadedPoi", p.id);
+      if (!enabled.has(p.category) && !isStarred) return false;
+      if (state.showOpenOnly && isFoodShopCategory(p.category)) {
         return isKnownOpenNow(p.tags.opening_hours);
       }
-      // Always show starred POIs outside Open now filtering
-      if (useStarredStore.getState().isStarred("downloadedPoi", p.id)) return true;
-      if (!enabled.has(p.category)) return false;
       return true;
     });
   },

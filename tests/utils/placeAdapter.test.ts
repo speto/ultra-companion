@@ -126,7 +126,7 @@ describe("placeAdapter", () => {
   });
 
   describe("filterPlacesByOpenNow", () => {
-    it("keeps only known-open downloaded POIs while passing route waypoints through", () => {
+    it("keeps non-food POIs and only food/shop POIs known open", () => {
       const places = [
         downloadedPoiToPlace({
           ...makePoi("known-open", "r1", 100, "water"),
@@ -144,10 +144,26 @@ describe("placeAdapter", () => {
           ...makePoi("malformed-hours", "r1", 400, "water"),
           tags: { opening_hours: "not-json" },
         }),
+        downloadedPoiToPlace({
+          ...makePoi("open-bakery", "r1", 450, "bakery"),
+          tags: { opening_hours: alwaysOpenHours },
+        }),
+        downloadedPoiToPlace({
+          ...makePoi("closed-bakery", "r1", 460, "bakery"),
+          tags: { opening_hours: mondayClosedHours },
+        }),
+        downloadedPoiToPlace({
+          ...makePoi("unknown-bakery", "r1", 470, "bakery"),
+          tags: {},
+        }),
         routeWaypointToPlace(makeWaypoint("waypoint", "r1", 500)),
       ];
       expect(filterPlacesByOpenNow(places).map((place) => place.entityId)).toEqual([
         "known-open",
+        "known-closed",
+        "missing-hours",
+        "malformed-hours",
+        "open-bakery",
         "waypoint",
       ]);
     });
