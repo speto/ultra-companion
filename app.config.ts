@@ -1,12 +1,19 @@
 import { ExpoConfig, ConfigContext } from "expo/config";
 
+const appName = process.env.EXPO_APP_NAME ?? "Ultra Companion";
+const appSlug = process.env.EXPO_APP_SLUG ?? "ultra-companion";
+const appScheme = process.env.EXPO_APP_SCHEME ?? "ultra";
+const androidPackage = process.env.EXPO_ANDROID_PACKAGE ?? "com.ultra.companion";
+const iosBundleIdentifier = process.env.EXPO_IOS_BUNDLE_IDENTIFIER ?? "com.conqeror.ultracompanion";
+const easProjectId = process.env.EXPO_EAS_PROJECT_ID;
+
 export default (_: ConfigContext): ExpoConfig => ({
-  name: "Ultra Companion",
-  slug: "ultra-companion",
+  name: appName,
+  slug: appSlug,
   version: "1.0.0",
   orientation: "portrait",
   icon: "./assets/images/icon.png",
-  scheme: "ultra",
+  scheme: appScheme,
   userInterfaceStyle: "automatic",
   splash: {
     image: "./assets/images/splash-icon.png",
@@ -14,7 +21,7 @@ export default (_: ConfigContext): ExpoConfig => ({
     backgroundColor: "#0E0E0C",
   },
   android: {
-    package: "com.ultra.companion",
+    package: androidPackage,
     adaptiveIcon: {
       foregroundImage: "./assets/images/android-icon-foreground.png",
       backgroundImage: "./assets/images/android-icon-background.png",
@@ -23,7 +30,7 @@ export default (_: ConfigContext): ExpoConfig => ({
   },
   ios: {
     supportsTablet: false,
-    bundleIdentifier: "com.conqeror.ultracompanion",
+    bundleIdentifier: iosBundleIdentifier,
     infoPlist: {
       NSLocationWhenInUseUsageDescription:
         "Ultra Companion needs your location to show your position on the map during rides.",
@@ -91,8 +98,6 @@ export default (_: ConfigContext): ExpoConfig => ({
   extra: {
     mapboxAccessToken: process.env.MAPBOX_ACCESS_TOKEN,
     googlePlacesApiKey: process.env.GOOGLE_PLACES_API_KEY,
-    eas: {
-      projectId: "cf1ced74-65cd-43ab-8521-6a76eea57adf",
-    },
+    ...(easProjectId ? { eas: { projectId: easProjectId } } : {}),
   },
 });

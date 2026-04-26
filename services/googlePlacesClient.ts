@@ -1,5 +1,9 @@
+import Constants from "expo-constants";
+
 import type { RoutePoint, POICategory } from "@/types";
 import type { ClassifiedPOI } from "./poiClassifier";
+
+const BUNDLE_ID = Constants.expoConfig?.ios?.bundleIdentifier ?? "";
 
 // --- Google Places API response types ---
 
@@ -147,6 +151,7 @@ async function searchAlongRoute(
         "Content-Type": "application/json",
         "X-Goog-Api-Key": apiKey,
         "X-Goog-FieldMask": FIELD_MASK,
+        "X-Ios-Bundle-Identifier": BUNDLE_ID,
       },
       body: JSON.stringify(body),
     });

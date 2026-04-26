@@ -9,11 +9,20 @@
 
 set -euo pipefail
 
-UDID="${1:-$(xcrun simctl list devices booted -j | python3 -c "import sys,json; d=json.load(sys.stdin); print(next(u['udid'] for dl in d['devices'].values() for u in dl if u['state']=='Booted'))")}"
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
+if [ $# -gt 0 ]; then
+  UDID="$1"
+else
+  UDID="$(xcrun simctl list devices booted -j | python3 -c "import sys,json; d=json.load(sys.stdin); print(next(u['udid'] for dl in d['devices'].values() for u in dl if u['state']=='Booted'))")"
+fi
 OUTDIR="$DIR/.axe-screenshots"
 STEPS="$DIR/axe-steps"
-BUNDLE_ID="com.ultra.companion"
+if [ -f "$DIR/.env" ]; then
+  set -a
+  . "$DIR/.env"
+  set +a
+fi
+BUNDLE_ID="${BUNDLE_ID:-${EXPO_IOS_BUNDLE_IDENTIFIER:-com.conqeror.ultracompanion}}"
 N=1
 
 mkdir -p "$OUTDIR"
