@@ -194,6 +194,7 @@ interface POIState {
   setCorridorWidth: (widthM: number) => void;
   setAllCategories: (enabled: boolean) => void;
   toggleShowOpenOnly: () => void;
+  setShowOpenOnly: (show: boolean) => void;
   getStarredPOIs: (routeId: string) => POI[];
   clearPOIs: (routeId: string) => Promise<void>;
   cleanupRouteState: (routeId: string) => void;
@@ -349,6 +350,13 @@ export const usePoiStore = create<POIState>((set, get) => ({
       getStorage().set("showOpenOnly", String(next));
     } catch {}
     set({ showOpenOnly: next });
+  },
+
+  setShowOpenOnly: (show) => {
+    try {
+      getStorage().set("showOpenOnly", String(show));
+    } catch {}
+    set({ showOpenOnly: show });
   },
 
   getStarredPOIs: (routeId) => {
