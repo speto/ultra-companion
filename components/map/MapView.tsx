@@ -19,6 +19,7 @@ import { useMapStyle } from "@/hooks/useMapStyle";
 import { GPS_STALE_THRESHOLD_MS } from "@/constants";
 import MapControls from "./MapControls";
 import RouteLayer, { RouteArrowLayer } from "./RouteLayer";
+import RouteMarkerLayer from "./RouteMarkerLayer";
 import POILayer from "./POILayer";
 import ClimbHighlightLayer from "./ClimbHighlightLayer";
 import TabbedBottomPanel from "./TabbedBottomPanel";
@@ -32,6 +33,7 @@ import { useClimbStore } from "@/store/climbStore";
 import { useEtaStore } from "@/store/etaStore";
 import { useWeatherStore } from "@/store/weatherStore";
 import { useOfflineStore } from "@/store/offlineStore";
+import { selectDistanceMarkerZoomBucket } from "@/utils/routeMarkers";
 
 export default function MapScreen() {
   const themeColors = useThemeColors();
@@ -40,9 +42,11 @@ export default function MapScreen() {
   const cameraRef = useRef<Camera>(null);
   const mapRef = useRef<MapboxMapView>(null);
   const [hasGpsFix, setHasGpsFix] = useState(false);
+  const [routeMarkerZoom, setRouteMarkerZoom] = useState(() => useMapStore.getState().zoom);
   const { height: screenHeight } = useWindowDimensions();
 
   const { followUser, setFollowUser } = useMapStore();
+  const showDistanceMarkers = useMapStore((s) => s.showDistanceMarkers);
   const refreshPosition = useMapStore((s) => s.refreshPosition);
   const persistCamera = useMapStore((s) => s.persistCamera);
   const initialCamera = useRef({
@@ -238,7 +242,13 @@ export default function MapScreen() {
   const handleCameraChanged = useCallback(
     (state: { properties: { center: number[]; zoom: number } }) => {
       const c = state.properties.center;
-      lastCamera.current = { center: [c[0], c[1]], zoom: state.properties.zoom };
+      const nextZoom = state.properties.zoom;
+      lastCamera.current = { center: [c[0], c[1]], zoom: nextZoom };
+      setRouteMarkerZoom((currentZoom) =>
+        selectDistanceMarkerZoomBucket(currentZoom) === selectDistanceMarkerZoomBucket(nextZoom)
+          ? currentZoom
+          : nextZoom,
+      );
     },
     [],
   );
@@ -424,7 +434,7 @@ export default function MapScreen() {
               dimmed={highlightedClimb != null}
               colorOverride={colorOverride ?? singleColor}
               showArrows={showRouteArrows}
-              zoom={initialCamera.current.zoom}
+              zoom={routeMarkerZoom}
               aboveLayerID={`route-line-${route.id}`}
             />
           );
@@ -435,6 +445,13 @@ export default function MapScreen() {
         {highlightedClimb && activeRoutePoints && (
           <ClimbHighlightLayer climb={highlightedClimb} points={activeRoutePoints} />
         )}
+        <RouteMarkerLayer
+          key={`route-markers-${activeData?.id ?? "none"}-${mapStyle.styleKey}`}
+          activeContextKey={activeContextKey}
+          points={activeRoutePoints ?? []}
+          showDistanceMarkers={showDistanceMarkers}
+          zoom={routeMarkerZoom}
+        />
         <LocationPuck
           key={`puck-${renderedRouteKey}`}
           puckBearing="heading"
