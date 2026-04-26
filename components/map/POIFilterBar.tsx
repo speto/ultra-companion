@@ -139,7 +139,7 @@ export default function POIFilterBar({ routeIds }: POIFilterBarProps) {
           accessibilityLabel={getQuickAccessibilityLabel("Food", foodEnabled)}
         />
 
-        {(foodEnabled || showOpenOnly) && (
+        {foodEnabled && (
           <FilterChip
             active={showOpenOnly}
             onPress={toggleShowOpenOnly}
@@ -171,14 +171,18 @@ export default function POIFilterBar({ routeIds }: POIFilterBarProps) {
         />
 
         <FilterChip
-          active={isCustomFilterActive}
+          active={isCustomFilterActive || (!foodEnabled && showOpenOnly)}
           onPress={() => {
             router.push("/poi-filters");
           }}
           icon={
             <SlidersHorizontal
               size={14}
-              color={isCustomFilterActive ? colors.accent : colors.textTertiary}
+              color={
+                isCustomFilterActive || (!foodEnabled && showOpenOnly)
+                  ? colors.accent
+                  : colors.textTertiary
+              }
             />
           }
           label="More"
