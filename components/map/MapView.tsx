@@ -35,6 +35,8 @@ import { useEtaStore } from "@/store/etaStore";
 import { useWeatherStore } from "@/store/weatherStore";
 import { useOfflineStore } from "@/store/offlineStore";
 import { selectDistanceMarkerZoomBucket } from "@/utils/routeMarkers";
+import { nextDisplayHeading } from "@/utils/mapHeading";
+import type { MapState } from "@rnmapbox/maps";
 
 export default function MapScreen() {
   const themeColors = useThemeColors();
@@ -44,6 +46,7 @@ export default function MapScreen() {
   const mapRef = useRef<MapboxMapView>(null);
   const [hasGpsFix, setHasGpsFix] = useState(false);
   const [routeMarkerZoom, setRouteMarkerZoom] = useState(() => useMapStore.getState().zoom);
+  const [heading, setHeading] = useState(0);
   const { height: screenHeight } = useWindowDimensions();
 
   const { followUser, setFollowUser } = useMapStore();
@@ -246,19 +249,18 @@ export default function MapScreen() {
     }
   }, [setFollowUser, refreshPosition, snapAfterRefresh, hasGpsFix]);
 
-  const handleCameraChanged = useCallback(
-    (state: { properties: { center: number[]; zoom: number } }) => {
-      const c = state.properties.center;
-      const nextZoom = state.properties.zoom;
-      lastCamera.current = { center: [c[0], c[1]], zoom: nextZoom };
-      setRouteMarkerZoom((currentZoom) =>
-        selectDistanceMarkerZoomBucket(currentZoom) === selectDistanceMarkerZoomBucket(nextZoom)
-          ? currentZoom
-          : nextZoom,
-      );
-    },
-    [],
-  );
+  const handleCameraChanged = useCallback((state: MapState) => {
+    const c = state.properties.center;
+    const nextZoom = state.properties.zoom;
+    const nextHeading = state.properties.heading;
+    lastCamera.current = { center: [c[0], c[1]], zoom: nextZoom };
+    setRouteMarkerZoom((currentZoom) =>
+      selectDistanceMarkerZoomBucket(currentZoom) === selectDistanceMarkerZoomBucket(nextZoom)
+        ? currentZoom
+        : nextZoom,
+    );
+    setHeading((prev) => nextDisplayHeading(prev, nextHeading));
+  }, []);
 
   // Persist camera to MMKV when app goes to background
   useEffect(() => {
@@ -275,6 +277,14 @@ export default function MapScreen() {
       setFollowUser(false);
     }
   }, [followUser, setFollowUser]);
+
+  const handleResetNorth = useCallback(() => {
+    cameraRef.current?.setCamera({
+      heading: 0,
+      animationDuration: 300,
+      animationMode: "easeTo",
+    });
+  }, []);
 
   const cameraPadding = useMemo(
     () => ({
@@ -371,7 +381,8 @@ export default function MapScreen() {
         {...mapStyle.props}
         compassEnabled={false}
         scaleBarEnabled={false}
-        rotateEnabled={false}
+        rotateEnabled={true}
+        pitchEnabled={false}
         onTouchStart={handleTouchStart}
         onCameraChanged={handleCameraChanged}
       >
@@ -467,7 +478,7 @@ export default function MapScreen() {
         />
       </MapboxMapView>
 
-      <MapControls onLocate={handleLocate} />
+      <MapControls onLocate={handleLocate} heading={heading} onResetNorth={handleResetNorth} />
       <TabbedBottomPanel activeData={activeData} />
     </View>
   );
