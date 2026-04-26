@@ -1,7 +1,7 @@
 import { vi } from "vitest";
 
 export const reactNativeMmkvMocks = {
-  getString: vi.fn(() => null as string | null),
+  getString: vi.fn((_key?: string) => null as string | null),
   set: vi.fn(),
 };
 
