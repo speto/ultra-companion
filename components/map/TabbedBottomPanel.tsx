@@ -18,12 +18,13 @@ import ProfileTabContent from "./ProfileTabContent";
 import WeatherPanel from "./WeatherPanel";
 import ClimbTabContent from "./ClimbTabContent";
 import POITabContent from "./POITabContent";
+import WaypointsTabContent from "./WaypointsTabContent";
 import HorizonOverlay from "./HorizonOverlay";
 import type { ActiveRouteData, PanelTab } from "@/types";
 import type { SceneRendererProps } from "react-native-tab-view";
 
 /** Combined handle + tabs height */
-const HEADER_HEIGHT = 44;
+const HEADER_HEIGHT = 48;
 
 /** No bounce — clamp at snap points */
 const SPRING_CONFIG = { damping: 28, stiffness: 300, overshootClamping: true };
@@ -46,6 +47,7 @@ const ALL_TABS: TabDef[] = [
   { key: "weather", label: "Weather" },
   { key: "climbs", label: "Climbs" },
   { key: "pois", label: "POIs" },
+  { key: "waypoints", label: "Waypoints" },
 ];
 
 const TAB_ROUTES: PanelRoute[] = ALL_TABS.map((tab) => ({
@@ -155,6 +157,8 @@ export default function TabbedBottomPanel({ activeData }: TabbedBottomPanelProps
           return <ClimbTabContent activeData={activeData} />;
         case "pois":
           return <POITabContent activeData={activeData} />;
+        case "waypoints":
+          return <WaypointsTabContent activeData={activeData} />;
       }
     },
     [activeData, effectiveContentHeight, screenWidth],

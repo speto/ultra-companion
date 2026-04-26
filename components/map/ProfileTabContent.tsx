@@ -7,6 +7,7 @@ import { usePanelStore } from "@/store/panelStore";
 import { useRouteStore } from "@/store/routeStore";
 import { useSettingsStore } from "@/store/settingsStore";
 import { usePoiStore } from "@/store/poiStore";
+import { useStarredStore } from "@/store/starredStore";
 import { useClimbStore } from "@/store/climbStore";
 import { computeSliceAscent, computeSliceDescent, extractRouteSlice } from "@/utils/geo";
 import { formatDistance, formatElevation } from "@/utils/formatters";
@@ -59,7 +60,7 @@ export default function ProfileTabContent({ activeData, width, height }: Profile
     snappedPosition.distanceFromRouteMeters <= MAX_SNAP_DISTANCE_M;
 
   const getStarredPOIs = usePoiStore((s) => s.getStarredPOIs);
-  const starredPOIIds = usePoiStore((s) => s.starredPOIIds);
+  const starredKeys = useStarredStore((s) => s.starredKeys);
   const poisForChart = useMemo(() => {
     if (!activeId || activeRouteIds.length === 0) return [];
     if (activeSegments) {
@@ -71,7 +72,7 @@ export default function ProfileTabContent({ activeData, width, height }: Profile
     }
     return getStarredPOIs(activeRouteIds[0]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeId, activeRouteIds, activeSegments, getStarredPOIs, starredPOIIds]);
+  }, [activeId, activeRouteIds, activeSegments, getStarredPOIs, starredKeys]);
 
   const getClimbsForDisplay = useClimbStore((s) => s.getClimbsForDisplay);
   const allClimbs = useClimbStore((s) => s.climbs);

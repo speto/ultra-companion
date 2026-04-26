@@ -4,12 +4,12 @@ import { Text } from "@/components/ui/text";
 import { Star } from "lucide-react-native";
 import { useThemeColors } from "@/theme";
 import { useSettingsStore } from "@/store/settingsStore";
-import { usePoiStore } from "@/store/poiStore";
+import { useStarredStore } from "@/store/starredStore";
 import { POI_CATEGORIES } from "@/constants";
 import { POI_ICON_MAP } from "@/constants/poiIcons";
 import { getWaypointCategoryMeta, WAYPOINT_ICON_MAP } from "@/constants/waypointCategories";
 import { ohStatusColorKey } from "@/constants/poiHelpers";
-import { formatDistance, formatDuration, formatETA } from "@/utils/formatters";
+import { formatDistance, formatDuration, formatETA, formatElevation } from "@/utils/formatters";
 import { getOpeningHoursStatus } from "@/services/openingHoursParser";
 import { useEtaStore } from "@/store/etaStore";
 import type { PlaceViewModel } from "@/types";
@@ -18,12 +18,16 @@ interface PlaceListItemProps {
   place: PlaceViewModel;
   currentDistAlongRoute: number | null;
   onPress: (place: PlaceViewModel) => void;
+  segmentName?: string | null;
+  showAbsoluteDistance?: boolean;
 }
 
 export default function PlaceListItem({
   place,
   currentDistAlongRoute,
   onPress,
+  segmentName = null,
+  showAbsoluteDistance = false,
 }: PlaceListItemProps) {
   const colors = useThemeColors();
   const units = useSettingsStore((s) => s.units);
@@ -40,9 +44,8 @@ export default function PlaceListItem({
       : null;
   const displayColor = meta?.color ?? colors.textTertiary;
 
-  // Starring (only POIs for now)
-  const isStarred = usePoiStore((s) =>
-    place.entityType === "downloadedPoi" ? s.starredPOIIds.has(place.entityId) : false,
+  const isStarred = useStarredStore((s) =>
+    s.starredKeys.has(`${place.entityType}:${place.entityId}`),
   );
 
   // ETA (only for downloaded POIs)
@@ -68,6 +71,43 @@ export default function PlaceListItem({
     const key = ohStatusColorKey(ohStatus);
     return key ? colors[key] : undefined;
   }, [ohStatus, colors]);
+
+  const categoryLabel = meta?.label ?? (isWaypoint ? "Waypoint" : "POI");
+  const elevationText =
+    isWaypoint && place.elevationMeters != null
+      ? formatElevation(place.elevationMeters, units)
+      : null;
+  const offRouteThreshold = isWaypoint ? 0 : 50;
+  const offRouteText =
+    place.distanceFromRouteMeters > offRouteThreshold
+      ? `${formatDistance(place.distanceFromRouteMeters, units)} off route`
+      : null;
+
+  const metadataParts = isWaypoint
+    ? [categoryLabel, segmentName, elevationText, offRouteText]
+    : [segmentName, !ohStatus ? offRouteText : null];
+  const metadataText = metadataParts.filter(Boolean).join(" · ");
+
+  const absoluteDistance = formatDistance(place.effectiveDistanceAlongRouteMeters, units);
+  const shouldShowAbsoluteDistance = showAbsoluteDistance || isWaypoint;
+  const rightPrimaryText =
+    distAhead != null
+      ? formatDistance(Math.abs(distAhead), units)
+      : shouldShowAbsoluteDistance
+        ? absoluteDistance
+        : null;
+  const directionText = distAhead != null ? (distAhead >= 0 ? "ahead" : "behind") : null;
+  const rightSecondaryText = useMemo(() => {
+    if (etaResult && etaResult.ridingTimeSeconds > 0) {
+      return `~${formatDuration(etaResult.ridingTimeSeconds)} · ${formatETA(etaResult.eta)}`;
+    }
+
+    const parts = [directionText];
+    if (distAhead != null && shouldShowAbsoluteDistance) {
+      parts.push(`at ${absoluteDistance}`);
+    }
+    return parts.filter(Boolean).join(" · ") || null;
+  }, [absoluteDistance, directionText, distAhead, etaResult, shouldShowAbsoluteDistance]);
 
   return (
     <TouchableOpacity
@@ -98,11 +138,6 @@ export default function PlaceListItem({
           >
             {place.name ?? meta?.label ?? "Unnamed"}
           </Text>
-          {isWaypoint && (
-            <Text className="ml-1.5 text-[10px] text-muted-foreground/70 font-barlow-sc-medium">
-              WP
-            </Text>
-          )}
         </View>
         <View className="flex-row items-center mt-1">
           {ohStatus && (
@@ -111,32 +146,25 @@ export default function PlaceListItem({
               <Text className="ml-1 text-[12px] font-barlow-medium" style={{ color: ohColor }}>
                 {ohStatus.label}
                 {ohStatus.detail ? ` · ${ohStatus.detail}` : ""}
+                {metadataText ? ` · ${metadataText}` : ""}
               </Text>
             </View>
           )}
-          {!ohStatus && place.distanceFromRouteMeters > 50 && (
-            <Text className="text-[11px] text-muted-foreground/60 font-barlow">
-              {Math.round(place.distanceFromRouteMeters)} m off route
-            </Text>
+          {!ohStatus && metadataText && (
+            <Text className="text-[11px] text-muted-foreground/60 font-barlow">{metadataText}</Text>
           )}
         </View>
       </View>
 
       <View className="items-end ml-2">
-        {distAhead != null && (
+        {rightPrimaryText && (
           <Text className="text-[15px] font-barlow-sc-semibold text-foreground">
-            {distAhead >= 0
-              ? formatDistance(distAhead, units)
-              : `-${formatDistance(Math.abs(distAhead), units)}`}
+            {rightPrimaryText}
           </Text>
         )}
-        {etaResult && etaResult.ridingTimeSeconds > 0 ? (
+        {rightSecondaryText ? (
           <Text className="text-[11px] text-muted-foreground font-barlow-sc-medium">
-            ~{formatDuration(etaResult.ridingTimeSeconds)} · {formatETA(etaResult.eta)}
-          </Text>
-        ) : distAhead != null ? (
-          <Text className="text-[11px] text-muted-foreground font-barlow">
-            {distAhead >= 0 ? "ahead" : "behind"}
+            {rightSecondaryText}
           </Text>
         ) : null}
       </View>

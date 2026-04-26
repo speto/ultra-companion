@@ -1,27 +1,17 @@
 import React, { useMemo, useState, useCallback } from "react";
 import { View, TouchableOpacity, Pressable, Modal } from "react-native";
 import { Text } from "@/components/ui/text";
-import {
-  Clock,
-  Droplets,
-  MapPin,
-  UtensilsCrossed,
-  Moon,
-  SlidersHorizontal,
-} from "lucide-react-native";
+import { Clock, Droplets, UtensilsCrossed, Moon, SlidersHorizontal } from "lucide-react-native";
 import { cn } from "@/lib/cn";
 import { useThemeColors } from "@/theme";
 import { usePoiStore } from "@/store/poiStore";
 import { usePlaceStore } from "@/store/placeStore";
-import { useWaypointStore } from "@/store/waypointStore";
 import { POI_CATEGORIES } from "@/constants";
 import { POI_ICON_MAP } from "@/constants/poiIcons";
 import type { POICategory } from "@/types";
 
 type RuntimeThemeColors = ReturnType<typeof useThemeColors>;
 
-/** Representative icon colors derived from category metadata */
-const WAYPOINT_COLOR = "#0D9488";
 const WATER_COLOR = POI_CATEGORIES.find((c) => c.key === "water")!.color;
 const FOOD_COLOR = POI_CATEGORIES.find((c) => c.key === "groceries")!.color;
 const SLEEP_COLOR = POI_CATEGORIES.find((c) => c.key === "shelter")!.color;
@@ -57,15 +47,12 @@ export default function POIFilterBar({ routeIds }: POIFilterBarProps) {
   const toggleCategory = usePoiStore((s) => s.toggleCategory);
   const showOpenOnly = usePoiStore((s) => s.showOpenOnly);
   const toggleShowOpenOnly = usePoiStore((s) => s.toggleShowOpenOnly);
-  const showWaypoints = useWaypointStore((s) => s.showWaypoints);
-  const toggleShowWaypoints = useWaypointStore((s) => s.toggleShowWaypoints);
-  const waypointsByRoute = useWaypointStore((s) => s.waypoints);
 
   const [moreVisible, setMoreVisible] = useState(false);
 
   const enabledSet = useMemo(() => new Set(enabledCategories), [enabledCategories]);
 
-  // Category counts from placeStore (includes both POIs and waypoints)
+  // Category counts from downloaded POIs only.
   const categoryCounts = useMemo(() => {
     const counts: Partial<Record<POICategory, number>> = {};
     for (const routeId of routeIds) {
@@ -87,10 +74,6 @@ export default function POIFilterBar({ routeIds }: POIFilterBarProps) {
     return false;
   }, [routeIds, allPois]);
 
-  const waypointCount = useMemo(
-    () => routeIds.reduce((sum, routeId) => sum + (waypointsByRoute[routeId]?.length ?? 0), 0),
-    [routeIds, waypointsByRoute],
-  );
   const waterEnabled = enabledSet.has("water");
   const foodEnabled = FOOD_CATEGORIES.some((c) => enabledSet.has(c));
   const sleepEnabled = SLEEP_CATEGORIES.some((c) => enabledSet.has(c));
@@ -112,81 +95,64 @@ export default function POIFilterBar({ routeIds }: POIFilterBarProps) {
     }
   }, [enabledSet, toggleCategory]);
 
-  if (!hasPois && waypointCount === 0) return null;
+  if (!hasPois) return null;
 
   return (
     <>
       <View className="flex-row flex-wrap items-center px-3 py-1.5 gap-2">
         <FilterChip
-          active={showWaypoints}
-          onPress={toggleShowWaypoints}
-          icon={<MapPin color={showWaypoints ? WAYPOINT_COLOR : colors.textTertiary} size={14} />}
-          label="Waypoints"
-          count={waypointCount || undefined}
-          accessibilityLabel={`${showWaypoints ? "Hide" : "Show"} waypoints`}
+          active={showOpenOnly}
+          onPress={toggleShowOpenOnly}
+          icon={<Clock size={14} color={showOpenOnly ? colors.positive : colors.textTertiary} />}
+          label="Open now"
+          accessibilityLabel={showOpenOnly ? "Show all POIs" : "Show only open POIs"}
         />
 
-        {hasPois && (
-          <>
-            <FilterChip
-              active={showOpenOnly}
-              onPress={toggleShowOpenOnly}
-              icon={
-                <Clock size={14} color={showOpenOnly ? colors.positive : colors.textTertiary} />
-              }
-              label="Open now"
-              accessibilityLabel={showOpenOnly ? "Show all POIs" : "Show only open POIs"}
-            />
+        <FilterChip
+          active={foodEnabled}
+          onPress={toggleFood}
+          icon={
+            <UtensilsCrossed size={14} color={foodEnabled ? FOOD_COLOR : colors.textTertiary} />
+          }
+          label="Food"
+          count={FOOD_CATEGORIES.reduce((sum, c) => sum + (categoryCounts[c] ?? 0), 0) || undefined}
+          accessibilityLabel={`${foodEnabled ? "Hide" : "Show"} food`}
+        />
+        <FilterChip
+          active={sleepEnabled}
+          onPress={toggleSleep}
+          icon={<Moon size={14} color={sleepEnabled ? SLEEP_COLOR : colors.textTertiary} />}
+          label="Sleep"
+          count={
+            SLEEP_CATEGORIES.reduce((sum, c) => sum + (categoryCounts[c] ?? 0), 0) || undefined
+          }
+          accessibilityLabel={`${sleepEnabled ? "Hide" : "Show"} sleep/rest stops`}
+        />
+        <FilterChip
+          active={waterEnabled}
+          onPress={() => toggleCategory("water")}
+          icon={<Droplets size={14} color={waterEnabled ? WATER_COLOR : colors.textTertiary} />}
+          label="Water"
+          count={categoryCounts.water}
+          accessibilityLabel={`${waterEnabled ? "Hide" : "Show"} water`}
+        />
 
-            <FilterChip
-              active={foodEnabled}
-              onPress={toggleFood}
-              icon={
-                <UtensilsCrossed size={14} color={foodEnabled ? FOOD_COLOR : colors.textTertiary} />
-              }
-              label="Food"
-              count={
-                FOOD_CATEGORIES.reduce((sum, c) => sum + (categoryCounts[c] ?? 0), 0) || undefined
-              }
-              accessibilityLabel={`${foodEnabled ? "Hide" : "Show"} food`}
+        <FilterChip
+          active={moreVisible}
+          onPress={() => setMoreVisible((v) => !v)}
+          icon={
+            <SlidersHorizontal
+              size={14}
+              color={moreVisible ? colors.accent : colors.textTertiary}
             />
-            <FilterChip
-              active={sleepEnabled}
-              onPress={toggleSleep}
-              icon={<Moon size={14} color={sleepEnabled ? SLEEP_COLOR : colors.textTertiary} />}
-              label="Sleep"
-              count={
-                SLEEP_CATEGORIES.reduce((sum, c) => sum + (categoryCounts[c] ?? 0), 0) || undefined
-              }
-              accessibilityLabel={`${sleepEnabled ? "Hide" : "Show"} sleep/rest stops`}
-            />
-            <FilterChip
-              active={waterEnabled}
-              onPress={() => toggleCategory("water")}
-              icon={<Droplets size={14} color={waterEnabled ? WATER_COLOR : colors.textTertiary} />}
-              label="Water"
-              count={categoryCounts.water}
-              accessibilityLabel={`${waterEnabled ? "Hide" : "Show"} water`}
-            />
-
-            <FilterChip
-              active={moreVisible}
-              onPress={() => setMoreVisible((v) => !v)}
-              icon={
-                <SlidersHorizontal
-                  size={14}
-                  color={moreVisible ? colors.accent : colors.textTertiary}
-                />
-              }
-              label="More"
-              accessibilityLabel="More filters"
-              accessibilityRoleOverride="button"
-            />
-          </>
-        )}
+          }
+          label="More"
+          accessibilityLabel="More filters"
+          accessibilityRoleOverride="button"
+        />
       </View>
 
-      {hasPois && moreVisible && (
+      {moreVisible && (
         <MoreFilterSheet
           enabledSet={enabledSet}
           toggleCategory={toggleCategory}

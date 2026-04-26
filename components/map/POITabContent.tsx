@@ -20,7 +20,6 @@ import { useEtaStore } from "@/store/etaStore";
 import { useActiveRouteData } from "@/hooks/useActiveRouteData";
 import { POI_CATEGORIES, POI_BEHIND_THRESHOLD_M } from "@/constants";
 import { POI_ICON_MAP } from "@/constants/poiIcons";
-import { getWaypointCategoryMeta, WAYPOINT_ICON_MAP } from "@/constants/waypointCategories";
 import { ohStatusColorKey } from "@/constants/poiHelpers";
 import { formatDistance, formatDuration, formatETA } from "@/utils/formatters";
 import { horizonWindow } from "@/utils/horizon";
@@ -36,7 +35,7 @@ import {
 } from "@/utils/poiActions";
 import type { ActiveRouteData, POI, PlaceViewModel } from "@/types";
 import { usePlaceStore } from "@/store/placeStore";
-import { useWaypointStore } from "@/store/waypointStore";
+import { useStarredStore } from "@/store/starredStore";
 import PlaceListItem from "@/components/place/PlaceListItem";
 
 interface POITabContentProps {
@@ -48,7 +47,7 @@ export default function POITabContent({ activeData }: POITabContentProps) {
   const { bottom: safeBottom } = useSafeAreaInsets();
   const snappedPosition = useRouteStore((s) => s.snappedPosition);
   const getStarredPOIs = usePoiStore((s) => s.getStarredPOIs);
-  const starredPOIIds = usePoiStore((s) => s.starredPOIIds);
+  const starredKeys = useStarredStore((s) => s.starredKeys);
   const selectedPOI = usePoiStore((s) => s.selectedPOI);
   const setSelectedPOI = usePoiStore((s) => s.setSelectedPOI);
   const allPois = usePoiStore((s) => s.pois);
@@ -63,6 +62,10 @@ export default function POITabContent({ activeData }: POITabContentProps) {
   const routeIds = useMemo(() => activeData?.routeIds ?? [], [activeData?.routeIds]);
   const routePoints = activeData?.points ?? null;
   const segments = activeData?.segments ?? null;
+  const segmentNameByRouteId = useMemo(
+    () => new Map((segments ?? []).map((segment) => [segment.routeId, segment.routeName])),
+    [segments],
+  );
   const currentDist = snappedPosition?.distanceAlongRouteMeters ?? null;
   const currentIdx = snappedPosition?.pointIndex ?? null;
   const horizonEndDist = useMemo(() => {
@@ -107,13 +110,13 @@ export default function POITabContent({ activeData }: POITabContentProps) {
         p.effectiveDist >= currentDist - POI_BEHIND_THRESHOLD_M &&
         (horizonEndDist == null || p.effectiveDist <= horizonEndDist),
     );
-    // starredPOIIds is a reactivity trigger: getStarredPOIs reads from store via get() and is not itself reactive
+    // starredKeys is a reactivity trigger: getStarredPOIs reads from starredStore via get().
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     routeIds,
     segments,
     getStarredPOIs,
-    starredPOIIds,
+    starredKeys,
     currentDist,
     currentIdx,
     horizonEndDist,
@@ -124,7 +127,6 @@ export default function POITabContent({ activeData }: POITabContentProps) {
   const allPlaces = usePlaceStore((s) => s.places);
   const selectedPlace = usePlaceStore((s) => s.selectedPlace);
   const setSelectedPlace = usePlaceStore((s) => s.setSelectedPlace);
-  const showWaypoints = useWaypointStore((s) => s.showWaypoints);
 
   const totalPOICount = usePoiStore((s) => {
     let count = 0;
@@ -133,17 +135,6 @@ export default function POITabContent({ activeData }: POITabContentProps) {
     }
     return count;
   });
-
-  // Count route waypoints for empty-state check
-  const totalWaypointCount = useMemo(() => {
-    let count = 0;
-    for (const routeId of routeIds) {
-      count += (allPlaces[routeId] ?? []).filter((p) => p.entityType === "routeWaypoint").length;
-    }
-    return count;
-  }, [routeIds, allPlaces]);
-
-  const hasAnyData = totalPOICount > 0 || totalWaypointCount > 0;
 
   // --- Expanded: full place list with search + filters ---
   const visiblePlaces = useMemo(() => {
@@ -158,7 +149,7 @@ export default function POITabContent({ activeData }: POITabContentProps) {
       return result;
     }
     return [];
-    // allPois/enabledCategories/showOpenOnly/starredPOIIds/allPlaces are reactivity triggers
+    // allPois/enabledCategories/showOpenOnly/starredKeys/allPlaces are reactivity triggers
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     isExpanded,
@@ -167,9 +158,8 @@ export default function POITabContent({ activeData }: POITabContentProps) {
     allPois,
     enabledCategories,
     showOpenOnly,
-    starredPOIIds,
+    starredKeys,
     allPlaces,
-    showWaypoints,
   ]);
 
   const sortedPlaces = useMemo(() => {
@@ -201,10 +191,7 @@ export default function POITabContent({ activeData }: POITabContentProps) {
   );
 
   // Show inline detail when a place is selected
-  if (selectedPlace) {
-    if (selectedPlace.entityType === "routeWaypoint") {
-      return <InlineWaypointDetail place={selectedPlace} onBack={() => setSelectedPlace(null)} />;
-    }
+  if (selectedPlace?.entityType === "downloadedPoi") {
     const poi = selectedPOI ?? (selectedPlace.raw as POI | undefined);
     if (poi) {
       return (
@@ -219,13 +206,13 @@ export default function POITabContent({ activeData }: POITabContentProps) {
     }
   }
 
-  // Empty state — no POI or waypoint data at all
-  if (!hasAnyData) {
+  // Empty state — no downloaded POI data at all
+  if (totalPOICount === 0) {
     return (
       <View className="flex-1 items-center justify-center">
         <MapPin size={24} color={colors.textTertiary} />
         <Text className="text-[13px] text-muted-foreground font-barlow-medium mt-2">
-          No POIs or waypoints on this route
+          No POIs on this route
         </Text>
         <Text className="text-[11px] text-muted-foreground mt-1">
           Fetch POI data from the route detail screen
@@ -270,6 +257,8 @@ export default function POITabContent({ activeData }: POITabContentProps) {
             <PlaceListItem
               place={item}
               currentDistAlongRoute={currentDist}
+              segmentName={segmentNameByRouteId.get(item.routeId) ?? null}
+              showAbsoluteDistance={segments != null}
               onPress={handlePlacePress}
             />
           )}
@@ -320,97 +309,6 @@ export default function POITabContent({ activeData }: POITabContentProps) {
         </View>
       )}
     </View>
-  );
-}
-
-function InlineWaypointDetail({ place, onBack }: { place: PlaceViewModel; onBack: () => void }) {
-  const colors = useThemeColors();
-  const units = useSettingsStore((s) => s.units);
-  const snappedPosition = useRouteStore((s) => s.snappedPosition);
-  const meta = getWaypointCategoryMeta(place.waypointType);
-  const IconComp = WAYPOINT_ICON_MAP[meta.iconName];
-  const distAhead =
-    snappedPosition != null
-      ? place.effectiveDistanceAlongRouteMeters - snappedPosition.distanceAlongRouteMeters
-      : null;
-
-  const openUrl = useCallback(async (url: string) => {
-    await Linking.openURL(url);
-  }, []);
-
-  const label = place.name ?? meta.label ?? "Waypoint";
-  const encodedLabel = encodeURIComponent(label);
-  const appleUrl = `https://maps.apple.com/?ll=${place.latitude},${place.longitude}&q=${encodedLabel}`;
-  const googleUrl = `https://www.google.com/maps/search/?api=1&query=${encodedLabel}%20${place.latitude},${place.longitude}`;
-
-  return (
-    <ScrollView className="flex-1 px-3 pt-1">
-      <View className="flex-row items-center">
-        <TouchableOpacity
-          className="w-[32px] h-[32px] items-center justify-center"
-          hitSlop={8}
-          onPress={onBack}
-          accessibilityLabel="Back to POI list"
-        >
-          <ChevronLeft size={20} color={colors.textSecondary} />
-        </TouchableOpacity>
-        <View className="flex-1 mx-1">
-          <Text className="text-[16px] font-barlow-semibold text-foreground" numberOfLines={1}>
-            {label}
-          </Text>
-          <View className="flex-row items-center mt-1">
-            {IconComp && <IconComp size={12} color={meta.color} />}
-            <Text className="ml-1 text-[11px] font-barlow-medium" style={{ color: meta.color }}>
-              {meta.label}
-            </Text>
-          </View>
-        </View>
-      </View>
-
-      <View className="flex-row items-center mt-2">
-        <MapPin size={13} color={colors.textSecondary} />
-        <Text className="ml-1.5 text-[13px] text-muted-foreground font-barlow">
-          {Math.round(place.distanceFromRouteMeters)} m off route
-        </Text>
-        {distAhead != null && (
-          <Text className="ml-2 text-[13px] font-barlow-sc-semibold text-foreground">
-            {distAhead >= 0
-              ? `${formatDistance(distAhead, units)} ahead`
-              : `${formatDistance(Math.abs(distAhead), units)} behind`}
-          </Text>
-        )}
-      </View>
-
-      {place.elevationMeters != null && (
-        <Text className="mt-2 text-[13px] text-muted-foreground font-barlow">
-          Elevation {Math.round(place.elevationMeters)} m
-        </Text>
-      )}
-
-      {place.description && (
-        <Text className="mt-3 text-[13px] text-foreground font-barlow leading-5">
-          {place.description}
-        </Text>
-      )}
-
-      <View className="mt-4 gap-2">
-        <Text className="text-[12px] font-barlow-semibold text-muted-foreground">Actions</Text>
-        <View className="flex-row gap-2">
-          <Button
-            className="flex-1"
-            variant="secondary"
-            label="Apple Maps"
-            onPress={() => openUrl(appleUrl)}
-          />
-          <Button
-            className="flex-1"
-            variant="secondary"
-            label="Google Maps"
-            onPress={() => openUrl(googleUrl)}
-          />
-        </View>
-      </View>
-    </ScrollView>
   );
 }
 
@@ -494,8 +392,8 @@ function InlinePOIDetail({ poi, onBack }: { poi: POI; onBack: () => void }) {
   const colors = useThemeColors();
   const units = useSettingsStore((s) => s.units);
   const snappedPosition = useRouteStore((s) => s.snappedPosition);
-  const toggleStarred = usePoiStore((s) => s.toggleStarred);
-  const isStarred = usePoiStore((s) => s.starredPOIIds.has(poi.id));
+  const toggleStarred = useStarredStore((s) => s.toggleStarred);
+  const isStarred = useStarredStore((s) => s.starredKeys.has(`downloadedPoi:${poi.id}`));
   const getETAToPOI = useEtaStore((s) => s.getETAToPOI);
   const activeData = useActiveRouteData();
 
@@ -590,7 +488,7 @@ function InlinePOIDetail({ poi, onBack }: { poi: POI; onBack: () => void }) {
         <TouchableOpacity
           className="w-[32px] h-[32px] items-center justify-center"
           hitSlop={8}
-          onPress={() => toggleStarred(poi.id)}
+          onPress={() => toggleStarred("downloadedPoi", poi.id)}
           accessibilityLabel={isStarred ? "Unstar POI" : "Star POI"}
         >
           <Star

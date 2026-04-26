@@ -19,6 +19,8 @@ import { resolveActiveClimb } from "@/utils/climbSelect";
 import { snapToRoute } from "@/services/routeSnapping";
 import { useActiveRouteData, getActiveRouteDataImperative } from "@/hooks/useActiveRouteData";
 import { usePoiStore } from "@/store/poiStore";
+import { useWaypointStore } from "@/store/waypointStore";
+import { useStarredStore } from "@/store/starredStore";
 import { useClimbStore } from "@/store/climbStore";
 import { useEtaStore } from "@/store/etaStore";
 import { useWeatherStore } from "@/store/weatherStore";
@@ -51,6 +53,8 @@ export default function MapScreen() {
   const setSnappedPosition = useRouteStore((s) => s.setSnappedPosition);
   const loadCollections = useCollectionStore((s) => s.loadCollections);
   const loadPOIs = usePoiStore((s) => s.loadPOIs);
+  const loadWaypoints = useWaypointStore((s) => s.loadWaypoints);
+  const loadStarredItems = useStarredStore((s) => s.loadStarredItems);
   const computeETAForRoute = useEtaStore((s) => s.computeETAForRoute);
   const cumulativeTime = useEtaStore((s) => s.cumulativeTime);
   const fetchWeather = useWeatherStore((s) => s.fetchWeather);
@@ -71,7 +75,8 @@ export default function MapScreen() {
   useEffect(() => {
     loadRoutesAndPoints();
     loadCollections();
-  }, [loadRoutesAndPoints, loadCollections]);
+    loadStarredItems();
+  }, [loadRoutesAndPoints, loadCollections, loadStarredItems]);
 
   const loadClimbs = useClimbStore((s) => s.loadClimbs);
   const updateCurrentClimb = useClimbStore((s) => s.updateCurrentClimb);
@@ -90,14 +95,15 @@ export default function MapScreen() {
     }
   }, [activeContextKey, setSelectedClimb]);
 
-  // Load POIs and climbs when active context changes
+  // Load POIs, waypoints, and climbs when active context changes
   useEffect(() => {
     if (activeRouteIds.length === 0) return;
     for (const routeId of activeRouteIds) {
       loadPOIs(routeId);
+      loadWaypoints(routeId);
       loadClimbs(routeId);
     }
-  }, [activeRouteIds, activeRouteIdsKey, loadPOIs, loadClimbs]);
+  }, [activeRouteIds, activeRouteIdsKey, loadPOIs, loadWaypoints, loadClimbs]);
 
   useEffect(() => {
     if (activeData && activeRoutePoints?.length) {

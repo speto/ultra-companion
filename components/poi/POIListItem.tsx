@@ -4,7 +4,7 @@ import { Text } from "@/components/ui/text";
 import { Star } from "lucide-react-native";
 import { useThemeColors } from "@/theme";
 import { useSettingsStore } from "@/store/settingsStore";
-import { usePoiStore } from "@/store/poiStore";
+import { useStarredStore } from "@/store/starredStore";
 import { POI_CATEGORIES } from "@/constants";
 import { POI_ICON_MAP } from "@/constants/poiIcons";
 import { ohStatusColorKey } from "@/constants/poiHelpers";
@@ -26,7 +26,7 @@ export default function POIListItem({ poi, currentDistAlongRoute, onPress }: POI
   const catMeta = POI_CATEGORIES.find((c) => c.key === poi.category);
   const IconComp = catMeta ? POI_ICON_MAP[catMeta.iconName] : null;
 
-  const isStarred = usePoiStore((s) => s.starredPOIIds.has(poi.id));
+  const isStarred = useStarredStore((s) => s.starredKeys.has(`downloadedPoi:${poi.id}`));
   const getETAToPOI = useEtaStore((s) => s.getETAToPOI);
 
   const distAhead =

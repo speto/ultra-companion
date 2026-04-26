@@ -2,8 +2,9 @@ import React, { useMemo, useCallback } from "react";
 import { ShapeSource, SymbolLayer, CircleLayer, Images, Image } from "@rnmapbox/maps";
 import { SvgXml } from "react-native-svg";
 import { usePoiStore } from "@/store/poiStore";
+import { usePanelStore } from "@/store/panelStore";
 import { usePlaceStore } from "@/store/placeStore";
-import { useWaypointStore } from "@/store/waypointStore";
+import { useStarredStore } from "@/store/starredStore";
 import { useThemeColors } from "@/theme";
 import { haversineDistance } from "@/utils/geo";
 import { waypointCategoryForType } from "@/constants/waypointCategories";
@@ -23,17 +24,22 @@ interface POILayerProps {
 export default function POILayer({ routeIds }: POILayerProps) {
   const enabledCategories = usePoiStore((s) => s.enabledCategories);
   const showOpenOnly = usePoiStore((s) => s.showOpenOnly);
-  const starredPOIIds = usePoiStore((s) => s.starredPOIIds);
+  const starredKeys = useStarredStore((s) => s.starredKeys);
+  const panelTab = usePanelStore((s) => s.panelTab);
   const allPlaces = usePlaceStore((s) => s.places);
   const getVisiblePlaces = usePlaceStore((s) => s.getVisiblePlaces);
   const setSelectedPlace = usePlaceStore((s) => s.setSelectedPlace);
-  const showWaypoints = useWaypointStore((s) => s.showWaypoints);
   const colors = useThemeColors();
 
   const visiblePlaces = useMemo(() => {
     const places: PlaceViewModel[] = [];
     for (const routeId of routeIds) {
       places.push(...getVisiblePlaces(routeId));
+      if (panelTab === "waypoints") {
+        places.push(
+          ...(allPlaces[routeId] ?? []).filter((place) => place.entityType === "routeWaypoint"),
+        );
+      }
     }
     return places;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -42,8 +48,8 @@ export default function POILayer({ routeIds }: POILayerProps) {
     allPlaces,
     enabledCategories,
     showOpenOnly,
-    starredPOIIds,
-    showWaypoints,
+    starredKeys,
+    panelTab,
     getVisiblePlaces,
   ]);
 
@@ -55,8 +61,7 @@ export default function POILayer({ routeIds }: POILayerProps) {
           place.entityType === "routeWaypoint"
             ? `wp-${waypointCategoryForType(place.waypointType)}`
             : `poi-${place.category}`;
-        const starred =
-          place.entityType === "downloadedPoi" && starredPOIIds.has(place.entityId) ? 1 : 0;
+        const starred = starredKeys.has(`${place.entityType}:${place.entityId}`) ? 1 : 0;
         return {
           type: "Feature",
           properties: {
@@ -74,7 +79,7 @@ export default function POILayer({ routeIds }: POILayerProps) {
         };
       }),
     }),
-    [visiblePlaces, starredPOIIds],
+    [visiblePlaces, starredKeys],
   );
 
   const handlePress = useCallback(
