@@ -1,7 +1,6 @@
 import React, { useRef, useCallback, useEffect, useState, useMemo } from "react";
 import { View, AppState, useWindowDimensions } from "react-native";
-import Mapbox, { Camera, MapView as MapboxMapView, LocationPuck } from "@rnmapbox/maps";
-import Constants from "expo-constants";
+import { Camera, MapView as MapboxMapView, LocationPuck } from "@rnmapbox/maps";
 import { useMapStore } from "@/store/mapStore";
 import { useRouteStore } from "@/store/routeStore";
 import { useCollectionStore } from "@/store/collectionStore";
@@ -24,16 +23,6 @@ import { useClimbStore } from "@/store/climbStore";
 import { useEtaStore } from "@/store/etaStore";
 import { useWeatherStore } from "@/store/weatherStore";
 import { useOfflineStore } from "@/store/offlineStore";
-
-// Initialize Mapbox with access token from app config
-try {
-  const mapboxToken = Constants.expoConfig?.extra?.mapboxAccessToken;
-  if (mapboxToken) {
-    Mapbox.setAccessToken(mapboxToken);
-  }
-} catch (e) {
-  console.warn("Failed to set Mapbox access token:", e);
-}
 
 export default function MapScreen() {
   const themeColors = useThemeColors();

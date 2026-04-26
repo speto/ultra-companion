@@ -13,6 +13,7 @@ import { useOfflineStore } from "@/store/offlineStore";
 import { useRouteStore } from "@/store/routeStore";
 import { useCollectionStore } from "@/store/collectionStore";
 import { COLORS } from "@/theme";
+import { initializeMapboxAccessToken } from "@/services/mapboxAuth";
 
 export { ErrorBoundary } from "expo-router";
 
@@ -21,6 +22,7 @@ export const unstable_settings = {
 };
 
 SplashScreen.preventAutoHideAsync();
+initializeMapboxAccessToken();
 
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
