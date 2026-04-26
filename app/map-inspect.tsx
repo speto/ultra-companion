@@ -1,18 +1,20 @@
-import React, { useEffect, useState, useMemo, useRef } from "react";
+import React, { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import { View, ActivityIndicator, Pressable } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Camera, MapView as MapboxMapView } from "@rnmapbox/maps";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { X, Maximize } from "lucide-react-native";
+import { X, Maximize, Compass } from "lucide-react-native";
 import { Text } from "@/components/ui/text";
 import { useThemeColors } from "@/theme";
 import { useMapStyle } from "@/hooks/useMapStyle";
 import { useRouteStore } from "@/store/routeStore";
 import { parseMapInspectParams } from "@/utils/mapInspect";
 import { computeBounds } from "@/utils/geo";
+import { isNorthUp, nextDisplayHeading } from "@/utils/mapHeading";
 import { stitchCollection } from "@/services/stitchingService";
 import RouteLayer from "@/components/map/RouteLayer";
 import { INACTIVE_ROUTE_COLOR } from "@/constants";
+import type { MapState } from "@rnmapbox/maps";
 import type { Route, RouteWithPoints, StitchedCollection, StitchedSegmentInfo } from "@/types";
 
 function routeFromStitchedSegment(segment: StitchedSegmentInfo): Route {
@@ -44,6 +46,7 @@ export default function MapInspectScreen() {
   const [route, setRoute] = useState<RouteWithPoints | null>(null);
   const [stitched, setStitched] = useState<StitchedCollection | null>(null);
   const [loading, setLoading] = useState(true);
+  const [heading, setHeading] = useState(0);
 
   const getRouteDetail = useRouteStore((s) => s.getRouteDetail);
 
@@ -101,6 +104,19 @@ export default function MapInspectScreen() {
       animationDuration: 300,
     });
   };
+
+  const handleCameraChanged = useCallback((state: MapState) => {
+    const nextHeading = state.properties.heading;
+    setHeading((prev) => nextDisplayHeading(prev, nextHeading));
+  }, []);
+
+  const handleResetNorth = useCallback(() => {
+    cameraRef.current?.setCamera({
+      heading: 0,
+      animationDuration: 300,
+      animationMode: "easeTo",
+    });
+  }, []);
 
   if (!params.isValid) {
     return (
@@ -163,6 +179,7 @@ export default function MapInspectScreen() {
         scrollEnabled={true}
         zoomEnabled={true}
         pitchEnabled={false}
+        onCameraChanged={handleCameraChanged}
       >
         <Camera
           ref={cameraRef}
@@ -221,6 +238,19 @@ export default function MapInspectScreen() {
         className="absolute right-4 gap-3 pointer-events-box-none"
         style={{ bottom: insets.bottom + 24 }}
       >
+        {!isNorthUp(heading) && (
+          <Pressable
+            className="w-[52px] h-[52px] bg-background/90 rounded-full items-center justify-center shadow-sm pointer-events-auto"
+            onPress={handleResetNorth}
+            accessibilityLabel="Reset map north"
+            accessibilityRole="button"
+          >
+            <View style={{ transform: [{ rotate: `${-heading}deg` }] }}>
+              <Compass size={24} color={colors.textPrimary} />
+            </View>
+          </Pressable>
+        )}
+
         <Pressable
           className="w-[52px] h-[52px] bg-background/90 rounded-full items-center justify-center shadow-sm pointer-events-auto"
           onPress={fitRoute}

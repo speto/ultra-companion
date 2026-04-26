@@ -10,15 +10,21 @@ function getStorage(): MMKV {
   return storage;
 }
 
-function readPersistedCamera(): { center: [number, number]; zoom: number } {
-  try {
-    const raw = getStorage().getString("camera");
-    if (raw) return JSON.parse(raw);
-  } catch {}
+function defaultCamera(): { center: [number, number]; zoom: number } {
   return {
     center: [DEFAULT_MAP_CENTER.longitude, DEFAULT_MAP_CENTER.latitude],
     zoom: DEFAULT_ZOOM,
   };
+}
+
+function readPersistedCamera(): { center: [number, number]; zoom: number } {
+  try {
+    const raw = getStorage().getString("camera");
+    if (raw) return JSON.parse(raw);
+  } catch {
+    return defaultCamera();
+  }
+  return defaultCamera();
 }
 
 function readPersistedBoolean(key: string, defaultValue: boolean): boolean {
@@ -75,7 +81,9 @@ export const useMapStore = create<MapState>((set, get) => ({
     set({ center, zoom });
     try {
       getStorage().set("camera", JSON.stringify({ center, zoom }));
-    } catch {}
+    } catch (error) {
+      console.warn("Failed to persist map camera:", error);
+    }
   },
 
   refreshPosition: async () => {

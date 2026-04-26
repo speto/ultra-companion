@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { View, TouchableOpacity } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Text } from "@/components/ui/text";
-import { Locate, LocateFixed, Menu } from "lucide-react-native";
+import { Locate, LocateFixed, Menu, Compass } from "lucide-react-native";
 import Animated, {
   useAnimatedStyle,
   withRepeat,
@@ -13,11 +14,14 @@ import Animated, {
 import { cn } from "@/lib/cn";
 import { useThemeColors } from "@/theme";
 import { useMapStore } from "@/store/mapStore";
+import { isNorthUp } from "@/utils/mapHeading";
 import { formatTimeDelta } from "@/utils/formatters";
 import { POSITION_AGE_VISIBLE_THRESHOLD_MS, GPS_STALE_THRESHOLD_MS } from "@/constants";
 
 interface MapControlsProps {
   onLocate: () => void;
+  heading?: number;
+  onResetNorth?: () => void;
 }
 
 function usePositionAge() {
@@ -39,8 +43,9 @@ function usePositionAge() {
   return { label: formatTimeDelta(ageMs), isStale };
 }
 
-export default function MapControls({ onLocate }: MapControlsProps) {
+export default function MapControls({ onLocate, heading, onResetNorth }: MapControlsProps) {
   const colors = useThemeColors();
+  const { top: safeTop } = useSafeAreaInsets();
   const router = useRouter();
   const positionAge = usePositionAge();
 
@@ -80,10 +85,13 @@ export default function MapControls({ onLocate }: MapControlsProps) {
     </Animated.View>
   );
 
+  const topControlOffset = safeTop + 12;
+  const secondaryControlOffset = topControlOffset + 64;
+
   return (
     <>
       {/* Menu — top-left */}
-      <View className="absolute left-4 top-[64px]">
+      <View className="absolute left-4" style={{ top: topControlOffset }}>
         <TouchableOpacity
           className="w-[52px] h-[52px] rounded-xl items-center justify-center shadow-md bg-surface/95 border border-border-subtle"
           onPress={() => router.push("/menu")}
@@ -93,8 +101,20 @@ export default function MapControls({ onLocate }: MapControlsProps) {
         </TouchableOpacity>
       </View>
 
-      {/* Locate — top-right */}
-      <View className="absolute right-4 top-[64px] items-center">
+      {/* Navigation controls — below the status area, not in the top-right corner */}
+      <View className="absolute right-4 items-center gap-3" style={{ top: secondaryControlOffset }}>
+        {heading !== undefined && onResetNorth !== undefined && !isNorthUp(heading) && (
+          <TouchableOpacity
+            className="w-[52px] h-[52px] rounded-xl items-center justify-center shadow-md bg-surface/95 border border-border-subtle"
+            onPress={onResetNorth}
+            accessibilityLabel="Reset map north"
+            accessibilityRole="button"
+          >
+            <View style={{ transform: [{ rotate: `${-heading}deg` }] }}>
+              <Compass size={24} color={colors.textPrimary} />
+            </View>
+          </TouchableOpacity>
+        )}
         <TouchableOpacity
           className={cn(
             "w-[52px] min-h-[52px] rounded-xl items-center justify-center shadow-md",
