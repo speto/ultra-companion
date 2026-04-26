@@ -27,10 +27,10 @@ export interface RouteMarkerProperties {
   kind: RouteMarkerKind;
   label: string;
   markerLabel: string;
+  iconName?: string;
   distanceMeters: number;
   sortKey: number;
 }
-
 export type RouteMarkerFeature = GeoJSON.Feature<GeoJSON.Point, RouteMarkerProperties>;
 
 const NEAR_OVERLAP_THRESHOLD_M = 100;
@@ -230,6 +230,7 @@ export function buildDistanceMarkerFeatures(
         kind: "distance",
         label: formatDistanceLabel(distanceMeters),
         markerLabel: formatDistanceMarkerLabel(distanceMeters),
+        iconName: `distance-${formatDistanceMarkerLabel(distanceMeters)}`,
         sortKey: 10 + distanceMeters / intervalMeters,
       }),
     );

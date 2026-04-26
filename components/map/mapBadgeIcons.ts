@@ -298,3 +298,50 @@ export function buildStartFinishBadgeSvgs(): BadgeSvgMap {
     [FINISH_ICON_NAME]: FINISH_ICON_SVG,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Distance markers (Strava-like chip)
+// ---------------------------------------------------------------------------
+
+/**
+ * Generates a distance marker SVG with a rounded black chip and a bottom pointer.
+ * The width scales with the text length.
+ */
+export function makeDistanceMarkerSvg(label: string): string {
+  // Approximate Barlow semibold width so every label gets real chip padding.
+  const charWidth = 8;
+  const textWidth = label.length * charWidth;
+  const paddingX = 8;
+  const width = Math.max(26, textWidth + paddingX);
+  const height = 25;
+  const chipHeight = 20;
+  const radius = 5;
+  const pointerWidth = 7;
+  const pointerHeight = 5;
+
+  const centerX = width / 2;
+
+  // Single path for rounded rect + bottom pointer to avoid antialias seams
+  const path = `
+    M ${radius} 0
+    H ${width - radius}
+    A ${radius} ${radius} 0 0 1 ${width} ${radius}
+    V ${chipHeight - radius}
+    A ${radius} ${radius} 0 0 1 ${width - radius} ${chipHeight}
+    H ${centerX + pointerWidth / 2}
+    L ${centerX} ${chipHeight + pointerHeight}
+    L ${centerX - pointerWidth / 2} ${chipHeight}
+    H ${radius}
+    A ${radius} ${radius} 0 0 1 0 ${chipHeight - radius}
+    V ${radius}
+    A ${radius} ${radius} 0 0 1 ${radius} 0
+    Z
+  `
+    .trim()
+    .replace(/\s+/g, " ");
+
+  return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
+  <path d="${path}" fill="#1C1A18" />
+  <text x="${centerX}" y="14.5" font-family="Barlow, sans-serif" font-weight="700" font-size="12" fill="#FFFFFF" text-anchor="middle">${label}</text>
+</svg>`;
+}
