@@ -17,8 +17,9 @@ import { useThemeColors } from "@/theme";
 import { useRouteStore } from "@/store/routeStore";
 import { useSettingsStore } from "@/store/settingsStore";
 import { usePoiStore } from "@/store/poiStore";
+import { useStarredStore } from "@/store/starredStore";
 import { useClimbStore } from "@/store/climbStore";
-import type { RouteWithPoints, Climb } from "@/types";
+import type { RouteWithPoints, Climb, RouteWaypoint } from "@/types";
 import { useMapStyle } from "@/hooks/useMapStyle";
 import { formatDistance, formatElevation } from "@/utils/formatters";
 import { computeElevationProgress, computeBounds } from "@/utils/geo";
@@ -28,6 +29,8 @@ import StatBox from "@/components/common/StatBox";
 import DataSection from "@/components/route/DataSection";
 import { getMapInspectHref } from "@/utils/mapInspect";
 import { Maximize2 } from "lucide-react-native";
+import { useWaypointStore } from "@/store/waypointStore";
+import { getWaypointCategoryMeta, WAYPOINT_ICON_MAP } from "@/constants/waypointCategories";
 
 const EMPTY_CLIMBS: Climb[] = [];
 
@@ -46,8 +49,11 @@ export default function RouteDetailScreen() {
   const units = useSettingsStore((s) => s.units);
   const loadPOIs = usePoiStore((s) => s.loadPOIs);
   const getStarredPOIs = usePoiStore((s) => s.getStarredPOIs);
-  const starredPOIIds = usePoiStore((s) => s.starredPOIIds);
+  const loadStarredItems = useStarredStore((s) => s.loadStarredItems);
+  const starredKeys = useStarredStore((s) => s.starredKeys);
   const setSelectedPOI = usePoiStore((s) => s.setSelectedPOI);
+  const loadWaypoints = useWaypointStore((s) => s.loadWaypoints);
+  const waypointsByRoute = useWaypointStore((s) => s.waypoints);
 
   useEffect(() => {
     if (!id) return;
@@ -64,9 +70,11 @@ export default function RouteDetailScreen() {
   useEffect(() => {
     if (id) {
       loadPOIs(id);
+      loadStarredItems();
       loadClimbs(id);
+      loadWaypoints(id);
     }
-  }, [id, loadPOIs, loadClimbs]);
+  }, [id, loadPOIs, loadStarredItems, loadClimbs, loadWaypoints]);
 
   const currentPointIndex = useMemo(() => {
     if (snappedPosition?.routeId === id) return snappedPosition.pointIndex;
@@ -83,14 +91,21 @@ export default function RouteDetailScreen() {
   const chartPOIs = useMemo(() => {
     if (!id) return [];
     return getStarredPOIs(id);
-    // starredPOIIds is a reactivity trigger: getStarredPOIs reads store via get() and is not itself reactive
+    // starredKeys is a reactivity trigger: getStarredPOIs reads starredStore via get().
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, getStarredPOIs, starredPOIIds]);
+  }, [id, getStarredPOIs, starredKeys]);
 
   const bounds = useMemo(() => {
     if (!route?.points.length) return null;
     return computeBounds(route.points);
   }, [route]);
+
+  const routeWaypoints = useMemo(() => {
+    if (!id) return [];
+    return (waypointsByRoute[id] ?? [])
+      .slice()
+      .sort((a, b) => a.distanceAlongRouteMeters - b.distanceAlongRouteMeters);
+  }, [id, waypointsByRoute]);
 
   if (loading) {
     return (
@@ -111,7 +126,10 @@ export default function RouteDetailScreen() {
   const handleExportGPX = async () => {
     if (!route) return;
     try {
-      const gpx = serializeRouteToGPX(route, { waypoints: chartPOIs });
+      const gpx = serializeRouteToGPX(route, {
+        routeWaypoints,
+        poisAsWaypoints: chartPOIs,
+      });
       await shareGPXFile(gpx, route.name);
     } catch (error) {
       Alert.alert("Export Failed", error instanceof Error ? error.message : "Unknown error");
@@ -197,6 +215,22 @@ export default function RouteDetailScreen() {
           />
         </View>
 
+        {routeWaypoints.length > 0 && (
+          <View className="mt-4">
+            <View className="flex-row items-baseline justify-between px-4 mb-2">
+              <Text className="text-[22px] font-barlow-semibold text-foreground">Waypoints</Text>
+              <Text className="text-[12px] text-muted-foreground font-barlow-sc-medium">
+                {routeWaypoints.length}
+              </Text>
+            </View>
+            <View className="mx-4 rounded-xl overflow-hidden border border-border bg-surface">
+              {routeWaypoints.map((waypoint) => (
+                <RouteWaypointRow key={waypoint.id} waypoint={waypoint} units={units} />
+              ))}
+            </View>
+          </View>
+        )}
+
         {/* Data: Map tiles, Google Places, OSM */}
         <DataSection routeId={id!} points={route.points} />
 
@@ -252,5 +286,53 @@ export default function RouteDetailScreen() {
         </View>
       </ScrollView>
     </>
+  );
+}
+
+function RouteWaypointRow({
+  waypoint,
+  units,
+}: {
+  waypoint: RouteWaypoint;
+  units: "metric" | "imperial";
+}) {
+  const meta = getWaypointCategoryMeta(waypoint.type);
+  const IconComp = WAYPOINT_ICON_MAP[meta.iconName];
+
+  return (
+    <View
+      className="flex-row items-center px-3 py-2.5 min-h-[56px] border-b border-border/60 last:border-b-0"
+      accessibilityLabel={waypoint.name ?? meta.label}
+    >
+      <View
+        className="w-[32px] h-[32px] rounded-full items-center justify-center"
+        style={{ backgroundColor: `${meta.color}1A` }}
+      >
+        {IconComp && <IconComp size={16} color={meta.color} />}
+      </View>
+
+      <View className="flex-1 ml-2.5">
+        <Text className="text-[14px] font-barlow-medium text-foreground" numberOfLines={1}>
+          {waypoint.name ?? meta.label}
+        </Text>
+        <Text
+          className="mt-0.5 text-[11px] text-muted-foreground font-barlow-medium"
+          numberOfLines={1}
+        >
+          {meta.label}
+        </Text>
+      </View>
+
+      <View className="items-end ml-2">
+        <Text className="text-[14px] font-barlow-sc-semibold text-foreground">
+          {formatDistance(waypoint.distanceAlongRouteMeters, units)}
+        </Text>
+        {waypoint.distanceFromRouteMeters > 0 && (
+          <Text className="text-[10px] text-muted-foreground font-barlow-sc-medium">
+            {formatDistance(waypoint.distanceFromRouteMeters, units)} off route
+          </Text>
+        )}
+      </View>
+    </View>
   );
 }
