@@ -34,6 +34,10 @@ export const SEGMENT_COLORS_DARK = [
   "#A99850",
 ] as const;
 
+// Active route color for single-route direction arrows
+export const ACTIVE_ROUTE_POLISHED = "#C65A4A";
+export const ACTIVE_ROUTE_POLISHED_DARK = "#D97868";
+
 // Max points before downsampling elevation chart
 export const ELEVATION_CHART_MAX_POINTS = 500;
 
@@ -45,15 +49,6 @@ export const SHEET_EXPANDED_RATIO = 0.75;
 
 /** Fraction of chart width to show behind current position */
 export const LOOK_BACK_RATIO = 0.25;
-
-/** Panel modes in cycle order */
-export const PANEL_MODES = [
-  "upcoming-10",
-  "upcoming-25",
-  "upcoming-50",
-  "upcoming-100",
-  "upcoming-200",
-] as const;
 
 // --- Phase 3: POI constants ---
 

@@ -99,6 +99,18 @@ export interface SnappedPosition {
 
 export type PanelTab = "profile" | "weather" | "climbs" | "pois" | "waypoints";
 
+// --- Horizon filter ---
+
+/** Horizon distance in km, or null for whole-route view */
+export type HorizonKm = 10 | 20 | 50 | 100 | 200 | null;
+
+export const HORIZON_CHOICES: readonly HorizonKm[] = [10, 20, 50, 100, 200, null];
+
+// --- Climb map scope ---
+
+/** Climb-specific map scope: exact climb bounds, collection segment, or full route */
+export type ClimbZoomScope = "climb" | "segment" | "all";
+
 // --- Phase 3: POI types ---
 
 export type POICategory =

@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { createMMKV, type MMKV } from "react-native-mmkv";
-import type { PanelMode, PanelTab } from "@/types";
-import { PANEL_MODES } from "@/constants";
+import type { ClimbZoomScope, HorizonKm, PanelTab } from "@/types";
+import { HORIZON_CHOICES } from "@/types";
 
 let storage: MMKV | null = null;
 
@@ -20,10 +20,30 @@ function readString(key: string): string | undefined {
   }
 }
 
+function writeString(key: string, value: string): void {
+  try {
+    getStorage().set(key, value);
+  } catch {}
+}
+
 interface PanelState {
-  panelMode: PanelMode;
-  cyclePanelMode: () => void;
-  setPanelMode: (mode: PanelMode) => void;
+  /** Global horizon distance (km or null for whole route) */
+  horizon: HorizonKm;
+  /** Set global horizon for all panel tabs and map fitting */
+  setHorizon: (km: HorizonKm) => void;
+  /** Get active global horizon */
+  activeHorizon: () => HorizonKm;
+  /** Increments when an explicit UI horizon selection should fit the camera */
+  horizonFitRequestId: number;
+
+  /** Whether the horizon selector popover is currently open */
+  isHorizonPopoverOpen: boolean;
+  /** Open/close the horizon selector popover */
+  setHorizonPopoverOpen: (open: boolean) => void;
+  /** Update horizon from map zoom level (skips if popover is open) */
+  setHorizonFromZoom: (km: HorizonKm) => void;
+  /** Sync horizon from programmatic camera moves (no fit request, no popover guard) */
+  setHorizonFromCamera: (km: HorizonKm) => void;
 
   /** Which tab is active in the bottom panel */
   panelTab: PanelTab;
@@ -32,17 +52,22 @@ interface PanelState {
   /** Whether the bottom sheet is in expanded mode */
   isExpanded: boolean;
   setIsExpanded: (isExpanded: boolean) => void;
+
+  /** Climb-specific map scope: climb bounds, collection segment, or full route */
+  climbZoomScope: ClimbZoomScope;
+  /** Set climb map scope and request camera refit */
+  setClimbZoomScope: (scope: ClimbZoomScope) => void;
+  /** Increments when a climb scope change should fit the camera */
+  climbScopeFitRequestId: number;
 }
 
-const DEFAULT_PANEL_MODE: PanelMode = "upcoming-50";
-
-const PANEL_TABS: ReadonlySet<PanelTab> = new Set(["profile", "weather", "climbs", "pois"]);
-
-function readPanelMode(): PanelMode {
-  const raw = readString("panelMode");
-  if (raw && (PANEL_MODES as readonly string[]).includes(raw)) return raw as PanelMode;
-  return DEFAULT_PANEL_MODE;
-}
+const PANEL_TABS: ReadonlySet<PanelTab> = new Set([
+  "profile",
+  "weather",
+  "climbs",
+  "pois",
+  "waypoints",
+]);
 
 function readPanelTab(): PanelTab {
   const raw = readString("panelTab");
@@ -50,24 +75,71 @@ function readPanelTab(): PanelTab {
   return "profile";
 }
 
-export const usePanelStore = create<PanelState>((set, get) => ({
-  panelMode: readPanelMode(),
+const VALID_CLIMB_ZOOM_SCOPES: ReadonlySet<ClimbZoomScope> = new Set(["climb", "segment", "all"]);
 
-  cyclePanelMode: () => {
-    const current = get().panelMode;
-    const idx = PANEL_MODES.indexOf(current);
-    const next = PANEL_MODES[(idx + 1) % PANEL_MODES.length];
+function readClimbZoomScope(): ClimbZoomScope {
+  const raw = readString("climbZoomScope");
+  if (raw && VALID_CLIMB_ZOOM_SCOPES.has(raw as ClimbZoomScope)) return raw as ClimbZoomScope;
+  return "climb";
+}
+
+function isValidHorizon(value: unknown): value is HorizonKm {
+  return (
+    value === null ||
+    (typeof value === "number" && (HORIZON_CHOICES as readonly (number | null)[]).includes(value))
+  );
+}
+
+function readHorizon(): HorizonKm {
+  const rawGlobal = readString("horizon");
+  if (rawGlobal) {
     try {
-      getStorage().set("panelMode", next);
-    } catch {}
-    set({ panelMode: next });
+      const parsed = JSON.parse(rawGlobal) as unknown;
+      if (isValidHorizon(parsed)) return parsed;
+    } catch {
+      // Fall through to default
+    }
+  }
+  return 50;
+}
+
+function persistHorizon(horizon: HorizonKm): void {
+  writeString("horizon", JSON.stringify(horizon));
+}
+
+export const usePanelStore = create<PanelState>((set, get) => ({
+  horizon: readHorizon(),
+
+  setHorizon: (km) => {
+    persistHorizon(km);
+    set((state) => ({
+      horizon: km,
+      isHorizonPopoverOpen: false,
+      horizonFitRequestId: state.horizonFitRequestId + 1,
+    }));
   },
 
-  setPanelMode: (panelMode) => {
-    try {
-      getStorage().set("panelMode", panelMode);
-    } catch {}
-    set({ panelMode });
+  activeHorizon: () => {
+    return get().horizon;
+  },
+
+  horizonFitRequestId: 0,
+
+  isHorizonPopoverOpen: false,
+  setHorizonPopoverOpen: (open) => {
+    if (get().isHorizonPopoverOpen === open) return;
+    set({ isHorizonPopoverOpen: open });
+  },
+  setHorizonFromZoom: (km) => {
+    if (get().isHorizonPopoverOpen) return;
+    if (get().horizon === km) return;
+    persistHorizon(km);
+    set({ horizon: km });
+  },
+  setHorizonFromCamera: (km) => {
+    if (get().horizon === km) return;
+    persistHorizon(km);
+    set({ horizon: km });
   },
 
   panelTab: readPanelTab(),
@@ -76,7 +148,7 @@ export const usePanelStore = create<PanelState>((set, get) => ({
     try {
       getStorage().set("panelTab", panelTab);
     } catch {}
-    set({ panelTab });
+    set({ panelTab, isHorizonPopoverOpen: false });
   },
 
   isExpanded: false,
@@ -84,4 +156,17 @@ export const usePanelStore = create<PanelState>((set, get) => ({
     if (get().isExpanded === isExpanded) return;
     set({ isExpanded });
   },
+
+  climbZoomScope: readClimbZoomScope(),
+  setClimbZoomScope: (scope) => {
+    try {
+      getStorage().set("climbZoomScope", scope);
+    } catch {}
+    set((state) => ({
+      climbZoomScope: scope,
+      isHorizonPopoverOpen: false,
+      climbScopeFitRequestId: state.climbScopeFitRequestId + 1,
+    }));
+  },
+  climbScopeFitRequestId: 0,
 }));
