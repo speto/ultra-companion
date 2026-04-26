@@ -21,7 +21,7 @@ import { ACTIVE_ROUTE_COLOR, INACTIVE_ROUTE_COLOR } from "@/constants";
 import { formatDistance, formatElevation } from "@/utils/formatters";
 import { useThemeColors } from "@/theme";
 import type { Route, Collection } from "@/types";
-
+import { ImportSummary } from "@/components/route/ImportSummary";
 type SectionItem = { type: "collection"; data: Collection } | { type: "route"; data: Route };
 
 export default function RoutesScreen() {
@@ -31,6 +31,8 @@ export default function RoutesScreen() {
     routes,
     isLoading,
     error,
+    importProgress,
+    lastImportResults,
     loadRouteMetadata,
     importRoute,
     deleteRoute,
@@ -320,7 +322,9 @@ export default function RoutesScreen() {
     [],
   );
 
-  const isEmpty = unassignedRoutes.length === 0 && collections.length === 0 && !isLoading;
+  const hasImportData = importProgress.length > 0 || lastImportResults.length > 0;
+  const isEmpty =
+    unassignedRoutes.length === 0 && collections.length === 0 && !isLoading && !hasImportData;
 
   return (
     <View className="flex-1 bg-background">
@@ -339,6 +343,15 @@ export default function RoutesScreen() {
           keyExtractor={(item) => `${item.type}-${item.data.id}`}
           renderItem={renderItem}
           renderSectionHeader={renderSectionHeader}
+          ListHeaderComponent={
+            hasImportData ? (
+              <ImportSummary
+                progress={importProgress}
+                results={lastImportResults}
+                isLoading={isLoading}
+              />
+            ) : null
+          }
           contentContainerStyle={{ padding: 16, paddingBottom: 112 }}
           stickySectionHeadersEnabled={false}
         />

@@ -10,16 +10,22 @@ import {
   getRouteWithPoints,
   getRoutePoints,
 } from "@/db/database";
-import { parseGPX } from "@/services/gpxParser";
-import { parseKML } from "@/services/kmlParser";
-import { INACTIVE_ROUTE_COLOR } from "@/constants";
 import { generateId } from "@/utils/generateId";
+import {
+  importRouteBatch,
+  importRouteFileContent,
+  type RouteImportDependencies,
+  type RouteImportProgress,
+  type RouteImportResult,
+} from "@/services/routeImportPipeline";
 import type { Route, RouteWithPoints, RoutePoint, SnappedPosition } from "@/types";
 
 interface RouteState {
   routes: Route[];
   isLoading: boolean;
   error: string | null;
+  importProgress: RouteImportProgress[];
+  lastImportResults: RouteImportResult[];
   // Cached points for visible routes (for map rendering)
   visibleRoutePoints: Record<string, RoutePoint[]>;
   // Snapped position on active route
@@ -45,10 +51,50 @@ interface RouteState {
   clearError: () => void;
 }
 
+function routeFileExtension(fileName: string): string | null {
+  return fileName.toLowerCase().split(".").pop() ?? null;
+}
+
+async function readRouteFileText(uri: string, fileName: string): Promise<string> {
+  const ext = routeFileExtension(fileName);
+  try {
+    return await new File(uri).text();
+  } catch {
+    // Fallback: AppDelegate copies share-sheet files to Caches/pending-import.<ext>
+    // while iOS security scope is still active (see AppDelegate.swift copyImportedFileToTmpIfNeeded)
+    const fallback = new File(Paths.cache, `pending-import.${ext}`);
+    const content = await fallback.text();
+    try {
+      fallback.delete();
+    } catch {}
+    return content;
+  }
+}
+
+function routeImportDependencies(): RouteImportDependencies {
+  return {
+    generateId,
+    now: () => new Date().toISOString(),
+    insertRoute,
+    detectAndStoreClimbs: async (routeId, points) => {
+      const { detectAndStoreClimbs } = await import("@/services/climbDetector");
+      await detectAndStoreClimbs(routeId, points);
+    },
+  };
+}
+
+function throwFailedImport(result: RouteImportResult): never {
+  if (result.status === "failed") throw new Error(result.error);
+  if (result.status === "skipped") throw new Error("Route was skipped as a duplicate.");
+  throw new Error("Failed to import route");
+}
+
 export const useRouteStore = create<RouteState>((set, get) => ({
   routes: [],
   isLoading: false,
   error: null,
+  importProgress: [],
+  lastImportResults: [],
   visibleRoutePoints: {},
   snappedPosition: null,
 
@@ -67,58 +113,23 @@ export const useRouteStore = create<RouteState>((set, get) => ({
   },
 
   importFromUri: async (uri: string, fileName: string) => {
-    const ext = fileName.toLowerCase().split(".").pop();
+    const content = await readRouteFileText(uri, fileName);
+    const result = await importRouteFileContent({ fileName, content }, routeImportDependencies());
 
-    if (!["gpx", "kml"].includes(ext || "")) {
-      throw new Error("Unsupported file type. Use .gpx or .kml files.");
-    }
-
-    let content: string;
-    try {
-      content = await new File(uri).text();
-    } catch {
-      // Fallback: AppDelegate copies share-sheet files to Caches/pending-import.<ext>
-      // while iOS security scope is still active (see AppDelegate.swift copyImportedFileToTmpIfNeeded)
-      const fallback = new File(Paths.cache, `pending-import.${ext}`);
-      content = await fallback.text();
-      try {
-        fallback.delete();
-      } catch {}
-    }
-
-    const parsed = ext === "gpx" ? parseGPX(content, fileName) : parseKML(content, fileName);
-
-    const route: Route = {
-      id: generateId(),
-      name: parsed.name,
-      fileName,
-      color: INACTIVE_ROUTE_COLOR,
-      isActive: false,
-      isVisible: true,
-      totalDistanceMeters: parsed.totalDistanceMeters,
-      totalAscentMeters: parsed.totalAscentMeters,
-      totalDescentMeters: parsed.totalDescentMeters,
-      pointCount: parsed.points.length,
-      createdAt: new Date().toISOString(),
-    };
-
-    await insertRoute(route, parsed.points);
-
-    // Detect and store climbs
-    const { detectAndStoreClimbs } = await import("@/services/climbDetector");
-    await detectAndStoreClimbs(route.id, parsed.points);
+    if (result.status !== "success") throwFailedImport(result);
 
     await get().loadRoutesAndPoints();
-    return route;
+    return result.route;
   },
 
   importRoute: async () => {
     try {
-      set({ isLoading: true, error: null });
+      set({ isLoading: true, error: null, importProgress: [], lastImportResults: [] });
 
       const result = await DocumentPicker.getDocumentAsync({
         type: ["application/gpx+xml", "application/vnd.google-earth.kml+xml", "*/*"],
         copyToCacheDirectory: true,
+        multiple: true,
       });
 
       if (result.canceled || !result.assets?.[0]) {
@@ -126,10 +137,42 @@ export const useRouteStore = create<RouteState>((set, get) => ({
         return;
       }
 
-      const asset = result.assets[0];
-      const fileName = asset.name || "route";
+      const pendingProgress = result.assets.map((asset, index) => ({
+        index,
+        fileName: asset.name || "route",
+        status: "pending" as const,
+      }));
+      set({ importProgress: pendingProgress });
 
-      await get().importFromUri(asset.uri, fileName);
+      const files = await Promise.all(
+        result.assets.map(async (asset) => {
+          const fileName = asset.name || "route";
+          return { fileName, content: await readRouteFileText(asset.uri, fileName) };
+        }),
+      );
+      const results = await importRouteBatch(files, routeImportDependencies(), {
+        onProgress: (progress) => {
+          set((state) => ({
+            importProgress: state.importProgress.map((item) =>
+              item.index === progress.index ? progress : item,
+            ),
+          }));
+        },
+      });
+      const failures = results.filter((importResult) => importResult.status === "failed");
+      const successes = results.filter((importResult) => importResult.status === "success");
+      const skipped = results.filter((importResult) => importResult.status === "skipped");
+      set({ lastImportResults: results });
+
+      if (successes.length > 0) await get().loadRoutesAndPoints();
+      if (failures.length > 0 && successes.length === 0) {
+        throw new Error(failures[0].error);
+      }
+      if (failures.length > 0 || skipped.length > 0) {
+        set({
+          error: `Imported ${successes.length}, skipped ${skipped.length}, failed ${failures.length}.`,
+        });
+      }
       set({ isLoading: false });
     } catch (e: any) {
       set({ isLoading: false, error: e.message || "Failed to import route" });
