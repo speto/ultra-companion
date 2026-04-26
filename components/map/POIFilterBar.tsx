@@ -8,11 +8,11 @@ import {
   UtensilsCrossed,
   Moon,
   SlidersHorizontal,
+  X,
 } from "lucide-react-native";
 import { cn } from "@/lib/cn";
 import { useThemeColors } from "@/theme";
 import { usePoiStore } from "@/store/poiStore";
-import { usePlaceStore } from "@/store/placeStore";
 import { POI_CATEGORIES } from "@/constants";
 import { POI_ICON_MAP } from "@/constants/poiIcons";
 import type { POICategory } from "@/types";
@@ -49,32 +49,59 @@ const CATEGORY_GROUPS = [
 
 export default function POIFilterBar({ routeIds }: POIFilterBarProps) {
   const colors = useThemeColors();
-  const allPlaces = usePlaceStore((s) => s.places);
   const allPois = usePoiStore((s) => s.pois);
   const enabledCategories = usePoiStore((s) => s.enabledCategories);
-  const toggleCategory = usePoiStore((s) => s.toggleCategory);
+  const setEnabledCategories = usePoiStore((s) => s.setEnabledCategories);
   const showOpenOnly = usePoiStore((s) => s.showOpenOnly);
   const toggleShowOpenOnly = usePoiStore((s) => s.toggleShowOpenOnly);
-  const setShowOpenOnly = usePoiStore((s) => s.setShowOpenOnly);
   const setAllCategories = usePoiStore((s) => s.setAllCategories);
 
   const [moreVisible, setMoreVisible] = useState(false);
 
   const enabledSet = useMemo(() => new Set(enabledCategories), [enabledCategories]);
+  const isCategoryFilterActive = enabledCategories.length < POI_CATEGORIES.length;
 
-  // Category counts from downloaded POIs only.
-  const categoryCounts = useMemo(() => {
-    const counts: Partial<Record<POICategory, number>> = {};
-    for (const routeId of routeIds) {
-      const places = allPlaces[routeId] ?? [];
-      for (const place of places) {
-        if (place.entityType === "downloadedPoi") {
-          counts[place.category as POICategory] = (counts[place.category as POICategory] ?? 0) + 1;
+  const isExactMatch = useCallback(
+    (targetCategories: POICategory[]) => {
+      return (
+        isCategoryFilterActive &&
+        enabledCategories.length === targetCategories.length &&
+        targetCategories.every((c) => enabledSet.has(c))
+      );
+    },
+    [isCategoryFilterActive, enabledCategories, enabledSet],
+  );
+
+  const handleQuickToggle = useCallback(
+    (targetCategories: POICategory[]) => {
+      if (isExactMatch(targetCategories)) {
+        setAllCategories(true);
+      } else {
+        setEnabledCategories(targetCategories);
+      }
+    },
+    [isExactMatch, setAllCategories, setEnabledCategories],
+  );
+
+  const handleSheetToggle = useCallback(
+    (category: POICategory) => {
+      if (!isCategoryFilterActive) {
+        setEnabledCategories([category]);
+      } else {
+        if (enabledSet.has(category)) {
+          const next = enabledCategories.filter((c) => c !== category);
+          if (next.length === 0) {
+            setAllCategories(true);
+          } else {
+            setEnabledCategories(next);
+          }
+        } else {
+          setEnabledCategories([...enabledCategories, category]);
         }
       }
-    }
-    return counts;
-  }, [routeIds, allPlaces]);
+    },
+    [isCategoryFilterActive, enabledSet, enabledCategories, setEnabledCategories, setAllCategories],
+  );
 
   // POI count for hasPois check
   const hasPois = useMemo(() => {
@@ -84,68 +111,19 @@ export default function POIFilterBar({ routeIds }: POIFilterBarProps) {
     return false;
   }, [routeIds, allPois]);
 
-  const waterEnabled = enabledSet.has("water");
-  const wcEnabled = enabledSet.has("toilet_shower");
+  const waterEnabled = isExactMatch(["water"]);
+  const wcEnabled = isExactMatch(["toilet_shower"]);
+  const foodEnabled = isExactMatch(FOOD_CATEGORIES);
+  const sleepEnabled = isExactMatch(SLEEP_CATEGORIES);
 
-  const foodSelectedCount = FOOD_CATEGORIES.filter((c) => enabledSet.has(c)).length;
-  const foodEnabled = foodSelectedCount > 0;
-  const foodBadge =
-    foodSelectedCount > 0 && foodSelectedCount < FOOD_CATEGORIES.length
-      ? `${foodSelectedCount}/${FOOD_CATEGORIES.length}`
-      : undefined;
-  const foodAccessibilityLabel = getGroupAccessibilityLabel(
-    "food categories",
-    foodSelectedCount,
-    FOOD_CATEGORIES.length,
-  );
-  const foodAccessibilityState = getGroupAccessibilityState(
-    foodSelectedCount,
-    FOOD_CATEGORIES.length,
-  );
+  const isCustomFilterActive =
+    isCategoryFilterActive && !waterEnabled && !wcEnabled && !foodEnabled && !sleepEnabled;
 
-  const sleepSelectedCount = SLEEP_CATEGORIES.filter((c) => enabledSet.has(c)).length;
-  const sleepEnabled = sleepSelectedCount > 0;
-  const sleepBadge =
-    sleepSelectedCount > 0 && sleepSelectedCount < SLEEP_CATEGORIES.length
-      ? `${sleepSelectedCount}/${SLEEP_CATEGORIES.length}`
-      : undefined;
-  const sleepAccessibilityLabel = getGroupAccessibilityLabel(
-    "sleep/rest categories",
-    sleepSelectedCount,
-    SLEEP_CATEGORIES.length,
-  );
-  const sleepAccessibilityState = getGroupAccessibilityState(
-    sleepSelectedCount,
-    SLEEP_CATEGORIES.length,
-  );
-
-  const toggleGroup = useCallback(
-    (categories: POICategory[], selectedCount: number) => {
-      if (selectedCount > 0 && selectedCount < categories.length) {
-        for (const cat of categories) {
-          if (!enabledSet.has(cat)) toggleCategory(cat);
-        }
-      } else if (selectedCount === categories.length) {
-        for (const cat of categories) {
-          if (enabledSet.has(cat)) toggleCategory(cat);
-        }
-      } else {
-        for (const cat of categories) {
-          if (!enabledSet.has(cat)) toggleCategory(cat);
-        }
-      }
-    },
-    [enabledSet, toggleCategory],
-  );
-
-  const toggleFood = useCallback(
-    () => toggleGroup(FOOD_CATEGORIES, foodSelectedCount),
-    [toggleGroup, foodSelectedCount],
-  );
-  const toggleSleep = useCallback(
-    () => toggleGroup(SLEEP_CATEGORIES, sleepSelectedCount),
-    [toggleGroup, sleepSelectedCount],
-  );
+  const getQuickAccessibilityLabel = (label: string, isActive: boolean) => {
+    if (!isCategoryFilterActive) return `Show only ${label}`;
+    if (isActive) return `Clear ${label} filter`;
+    return `Switch to ${label} filter`;
+  };
 
   if (!hasPois) return null;
 
@@ -169,77 +147,73 @@ export default function POIFilterBar({ routeIds }: POIFilterBarProps) {
 
         <FilterChip
           active={waterEnabled}
-          onPress={() => toggleCategory("water")}
+          onPress={() => handleQuickToggle(["water"])}
           icon={<Droplets size={14} color={waterEnabled ? WATER_COLOR : colors.textTertiary} />}
           label="Water"
-          count={categoryCounts.water}
-          accessibilityLabel={`${waterEnabled ? "Hide" : "Show"} water`}
+          accessibilityLabel={getQuickAccessibilityLabel("Water", waterEnabled)}
         />
 
         <FilterChip
           active={foodEnabled}
-          onPress={toggleFood}
+          onPress={() => handleQuickToggle(FOOD_CATEGORIES)}
           icon={
             <UtensilsCrossed size={14} color={foodEnabled ? FOOD_COLOR : colors.textTertiary} />
           }
           label="Food"
-          count={FOOD_CATEGORIES.reduce((sum, c) => sum + (categoryCounts[c] ?? 0), 0) || undefined}
-          badgeText={foodBadge}
-          accessibilityLabel={foodAccessibilityLabel}
-          accessibilityCheckedState={foodAccessibilityState}
+          accessibilityLabel={getQuickAccessibilityLabel("Food", foodEnabled)}
         />
 
         <FilterChip
           active={sleepEnabled}
-          onPress={toggleSleep}
+          onPress={() => handleQuickToggle(SLEEP_CATEGORIES)}
           icon={<Moon size={14} color={sleepEnabled ? SLEEP_COLOR : colors.textTertiary} />}
           label="Sleep"
-          count={
-            SLEEP_CATEGORIES.reduce((sum, c) => sum + (categoryCounts[c] ?? 0), 0) || undefined
-          }
-          badgeText={sleepBadge}
-          accessibilityLabel={sleepAccessibilityLabel}
-          accessibilityCheckedState={sleepAccessibilityState}
+          accessibilityLabel={getQuickAccessibilityLabel("Sleep", sleepEnabled)}
         />
 
         <FilterChip
           active={wcEnabled}
-          onPress={() => toggleCategory("toilet_shower")}
+          onPress={() => handleQuickToggle(["toilet_shower"])}
           icon={<ShowerHead size={14} color={wcEnabled ? WC_COLOR : colors.textTertiary} />}
           label="WC"
-          count={categoryCounts.toilet_shower}
-          accessibilityLabel={`${wcEnabled ? "Hide" : "Show"} WC`}
+          accessibilityLabel={getQuickAccessibilityLabel("WC", wcEnabled)}
         />
 
         <FilterChip
-          active={moreVisible || enabledCategories.length < POI_CATEGORIES.length}
+          active={moreVisible || isCustomFilterActive}
           onPress={() => setMoreVisible((v) => !v)}
           icon={
             <SlidersHorizontal
               size={14}
-              color={
-                moreVisible || enabledCategories.length < POI_CATEGORIES.length
-                  ? colors.accent
-                  : colors.textTertiary
-              }
+              color={moreVisible || isCustomFilterActive ? colors.accent : colors.textTertiary}
             />
           }
           label="Categories"
           accessibilityLabel="Open category filters"
           accessibilityRoleOverride="button"
         />
+
+        {isCategoryFilterActive && (
+          <FilterChip
+            active={false}
+            onPress={() => setAllCategories(true)}
+            icon={<X size={14} color={colors.textTertiary} />}
+            label="Clear"
+            accessibilityLabel="Clear category filters"
+            accessibilityRoleOverride="button"
+          />
+        )}
       </ScrollView>
 
       {moreVisible && (
         <MoreFilterSheet
           enabledSet={enabledSet}
-          toggleCategory={toggleCategory}
-          categoryCounts={categoryCounts}
+          isCategoryFilterActive={isCategoryFilterActive}
+          handleToggleLeaf={handleSheetToggle}
           colors={colors}
           onClose={() => setMoreVisible(false)}
-          showOpenOnly={showOpenOnly}
-          setShowOpenOnly={setShowOpenOnly}
           setAllCategories={setAllCategories}
+          enabledCategories={enabledCategories}
         />
       )}
     </>
@@ -251,7 +225,6 @@ function FilterChip({
   onPress,
   icon,
   label,
-  count,
   badgeText,
   activeTone = "accent",
   accessibilityLabel,
@@ -262,7 +235,6 @@ function FilterChip({
   onPress: () => void;
   icon: React.ReactNode;
   label: string;
-  count?: number;
   badgeText?: string;
   activeTone?: "accent" | "positive";
   accessibilityLabel: string;
@@ -304,58 +276,38 @@ function FilterChip({
           <Text className="text-[10px] font-barlow-sc-medium text-foreground">{badgeText}</Text>
         </View>
       )}
-      {count != null && count > 0 && !badgeText && (
-        <Text
-          className={cn(
-            "ml-0.5 text-[10px] font-barlow-sc-medium",
-            active ? "text-muted-foreground" : "text-muted-foreground/50",
-          )}
-        >
-          {count}
-        </Text>
-      )}
     </TouchableOpacity>
   );
 }
 
-function getGroupAccessibilityLabel(label: string, selectedCount: number, totalCount: number) {
-  if (selectedCount === 0) return `Show all ${label}`;
-  if (selectedCount === totalCount) return `Hide all ${label}`;
-  return `Show all ${label}; ${selectedCount} of ${totalCount} selected`;
-}
-
-function getGroupAccessibilityState(selectedCount: number, totalCount: number): boolean | "mixed" {
-  if (selectedCount === 0) return false;
-  if (selectedCount === totalCount) return true;
-  return "mixed";
-}
-
 function MoreFilterSheet({
   enabledSet,
-  toggleCategory,
-  categoryCounts,
+  isCategoryFilterActive,
+  handleToggleLeaf,
   colors,
   onClose,
-  showOpenOnly,
-  setShowOpenOnly,
   setAllCategories,
+  enabledCategories,
 }: {
   enabledSet: Set<POICategory>;
-  toggleCategory: (cat: POICategory) => void;
-  categoryCounts: Partial<Record<POICategory, number>>;
+  isCategoryFilterActive: boolean;
+  handleToggleLeaf: (cat: POICategory) => void;
   colors: RuntimeThemeColors;
   onClose: () => void;
-  showOpenOnly: boolean;
-  setShowOpenOnly: (show: boolean) => void;
   setAllCategories: (enabled: boolean) => void;
+  enabledCategories: POICategory[];
 }) {
-  const isDefault = !showOpenOnly && enabledSet.size === POI_CATEGORIES.length;
-
   const handleReset = () => {
-    setShowOpenOnly(false);
     setAllCategories(true);
   };
 
+  const getLeafAccessibilityLabel = (key: POICategory, label: string) => {
+    if (!isCategoryFilterActive) return `Show only ${label}`;
+    if (enabledSet.has(key)) {
+      return enabledCategories.length === 1 ? `Clear ${label} filter` : `Hide ${label}`;
+    }
+    return `Add ${label} to filter`;
+  };
   return (
     <Modal transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
       <View className="flex-1 justify-end">
@@ -378,12 +330,12 @@ function MoreFilterSheet({
 
           <View className="flex-row items-center justify-between px-4 pt-2 pb-4">
             <Text className="text-lg font-barlow-semibold text-foreground">Categories</Text>
-            {!isDefault && (
+            {isCategoryFilterActive && (
               <TouchableOpacity
                 onPress={handleReset}
                 className="min-h-[48px] px-3 items-center justify-center"
               >
-                <Text className="text-sm font-barlow-medium text-accent">Reset</Text>
+                <Text className="text-sm font-barlow-medium text-accent">Clear</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -398,8 +350,7 @@ function MoreFilterSheet({
                   {group.keys.map((key) => {
                     const meta = POI_CATEGORIES.find((c) => c.key === key);
                     if (!meta) return null;
-                    const isEnabled = enabledSet.has(key);
-                    const count = categoryCounts[key] ?? 0;
+                    const isEnabled = isCategoryFilterActive && enabledSet.has(key);
                     const IconComp = POI_ICON_MAP[meta.iconName];
                     return (
                       <TouchableOpacity
@@ -408,9 +359,9 @@ function MoreFilterSheet({
                           "flex-row items-center px-3 py-2.5 min-h-[48px] rounded-xl border",
                           isEnabled ? "border-accent/30 bg-accent/10" : "border-border bg-muted",
                         )}
-                        onPress={() => toggleCategory(key)}
+                        onPress={() => handleToggleLeaf(key)}
                         activeOpacity={0.7}
-                        accessibilityLabel={`${isEnabled ? "Hide" : "Show"} ${meta.label}`}
+                        accessibilityLabel={getLeafAccessibilityLabel(key, meta.label)}
                         accessibilityRole="switch"
                         accessibilityState={{ checked: isEnabled }}
                       >
@@ -428,16 +379,6 @@ function MoreFilterSheet({
                         >
                           {meta.label}
                         </Text>
-                        {count > 0 && (
-                          <Text
-                            className={cn(
-                              "ml-1 text-[11px] font-barlow-sc-medium",
-                              isEnabled ? "text-muted-foreground" : "text-muted-foreground/50",
-                            )}
-                          >
-                            {count}
-                          </Text>
-                        )}
                       </TouchableOpacity>
                     );
                   })}

@@ -37,6 +37,11 @@ function parseCategories(raw: string | undefined): POICategory[] {
   }
 }
 
+function normalizeCategories(categories: POICategory[]): POICategory[] {
+  const valid = new Set<string>(POI_CATEGORIES.map((c) => c.key));
+  return Array.from(new Set(categories)).filter((c) => valid.has(c)) as POICategory[];
+}
+
 export interface ProgressInfo {
   phase: string;
   done: number;
@@ -195,6 +200,7 @@ interface POIState {
   setAllCategories: (enabled: boolean) => void;
   toggleShowOpenOnly: () => void;
   setShowOpenOnly: (show: boolean) => void;
+  setEnabledCategories: (categories: POICategory[]) => void;
   getStarredPOIs: (routeId: string) => POI[];
   clearPOIs: (routeId: string) => Promise<void>;
   cleanupRouteState: (routeId: string) => void;
@@ -323,6 +329,13 @@ export const usePoiStore = create<POIState>((set, get) => ({
     const next = current.includes(category)
       ? current.filter((c) => c !== category)
       : [...current, category];
+    try {
+      getStorage().set("enabledCategories", JSON.stringify(next));
+    } catch {}
+    set({ enabledCategories: next });
+  },
+  setEnabledCategories: (categories) => {
+    const next = normalizeCategories(categories);
     try {
       getStorage().set("enabledCategories", JSON.stringify(next));
     } catch {}
