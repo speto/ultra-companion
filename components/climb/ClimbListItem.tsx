@@ -12,6 +12,7 @@ interface ClimbListItemProps {
   currentDistAlongRoute: number | null;
   isPast: boolean;
   onPress: (climb: Climb) => void;
+  ordinal?: { current: number; total: number } | null;
 }
 
 export default function ClimbListItem({
@@ -19,6 +20,7 @@ export default function ClimbListItem({
   currentDistAlongRoute,
   isPast,
   onPress,
+  ordinal,
 }: ClimbListItemProps) {
   const units = useSettingsStore((s) => s.units);
   const getETAToDistance = useEtaStore((s) => s.getETAToDistance);
@@ -38,7 +40,11 @@ export default function ClimbListItem({
       className="flex-row items-center px-4 py-3 border-b border-border"
       style={isPast ? { opacity: 0.4 } : undefined}
       onPress={() => onPress(climb)}
-      accessibilityLabel={climb.name ?? `Climb ${formatElevation(climb.totalAscentMeters, units)}`}
+      accessibilityLabel={
+        ordinal
+          ? `Climb ${ordinal.current} of ${ordinal.total}${climb.name ? `, ${climb.name}` : ""}`
+          : (climb.name ?? `Climb ${formatElevation(climb.totalAscentMeters, units)}`)
+      }
     >
       <View
         className="w-[4px] self-stretch rounded-full mr-3"
@@ -46,11 +52,23 @@ export default function ClimbListItem({
       />
 
       <View className="flex-1">
-        {climb.name && (
-          <Text className="text-[15px] font-barlow-medium text-foreground mb-0.5" numberOfLines={1}>
-            {climb.name}
-          </Text>
-        )}
+        <View className="flex-row items-center mb-0.5">
+          {climb.name && (
+            <Text
+              className="text-[15px] font-barlow-medium text-foreground flex-shrink"
+              numberOfLines={1}
+            >
+              {climb.name}
+            </Text>
+          )}
+          {ordinal && (
+            <Text
+              className={`text-[13px] font-barlow-medium text-muted-foreground ${climb.name ? "ml-2" : ""}`}
+            >
+              {ordinal.current}/{ordinal.total}
+            </Text>
+          )}
+        </View>
         <Text className="text-[14px] font-barlow-sc-semibold text-foreground">
           {formatElevation(climb.totalAscentMeters, units)} ↑{"  ·  "}
           {formatDistance(climb.lengthMeters, units)}

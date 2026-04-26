@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback, useEffect } from "react";
+import React, { useMemo, useState, useCallback } from "react";
 import {
   View,
   TouchableOpacity,
@@ -8,7 +8,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text } from "@/components/ui/text";
-import { Mountain, Pencil, Check } from "lucide-react-native";
+import { Mountain, Pencil, Check, ChevronLeft, ChevronRight } from "lucide-react-native";
 import { useThemeColors } from "@/theme";
 import { useSettingsStore } from "@/store/settingsStore";
 import { useRouteStore } from "@/store/routeStore";
@@ -23,7 +23,7 @@ import { extractRouteSlice } from "@/utils/geo";
 import { formatDistance, formatElevation } from "@/utils/formatters";
 import ElevationProfile from "@/components/elevation/ElevationProfile";
 import ClimbListItem from "@/components/climb/ClimbListItem";
-import { resolveActiveClimb } from "@/utils/climbSelect";
+import { resolveActiveClimb, getClimbOrdinal, getAdjacentClimb } from "@/utils/climbSelect";
 import type { Climb, ActiveRouteData } from "@/types";
 
 interface ClimbTabContentProps {
@@ -42,19 +42,15 @@ export default function ClimbTabContent({ activeData }: ClimbTabContentProps) {
   const setSelectedClimb = useClimbStore((s) => s.setSelectedClimb);
   const renameClimb = useClimbStore((s) => s.renameClimb);
   const isExpanded = usePanelStore((s) => s.isExpanded);
-  // Reset to current/upcoming climb when tab mounts
-  useEffect(() => {
-    setSelectedClimb(null);
-  }, [setSelectedClimb]);
-
-  const [isEditing, setIsEditing] = useState(false);
-  const [editName, setEditName] = useState("");
-  const [editingClimb, setEditingClimb] = useState<Climb | null>(null);
-  const [graphHeight, setGraphHeight] = useState(0);
+  // No horizon filtering: show all climbs for stable ordinal/navigation
 
   const routeIds = useMemo(() => activeData?.routeIds ?? [], [activeData?.routeIds]);
   const segments = activeData?.segments ?? null;
   const currentDist = snappedPosition?.distanceAlongRouteMeters ?? null;
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState("");
+  const [editingClimb, setEditingClimb] = useState<Climb | null>(null);
+  const [graphHeight, setGraphHeight] = useState(0);
 
   const displayedClimbs = useMemo(
     () => getClimbsForDisplay(routeIds, segments),
@@ -119,14 +115,26 @@ export default function ClimbTabContent({ activeData }: ClimbTabContentProps) {
     setEditingClimb(null);
   };
 
-  // Sorted climbs for the expanded list
+  // Sorted climbs for display and navigation
   const sortedClimbs = useMemo(
-    () =>
-      isExpanded
-        ? [...displayedClimbs].sort((a, b) => a.startDistanceMeters - b.startDistanceMeters)
-        : [],
-    [isExpanded, displayedClimbs],
+    () => [...displayedClimbs].sort((a, b) => a.startDistanceMeters - b.startDistanceMeters),
+    [displayedClimbs],
   );
+
+  const ordinal = useMemo(() => {
+    if (!climb) return null;
+    return getClimbOrdinal(sortedClimbs, climb.id);
+  }, [climb, sortedClimbs]);
+
+  const prevClimb = useMemo(() => {
+    if (!climb) return null;
+    return getAdjacentClimb(sortedClimbs, climb.id, "prev");
+  }, [climb, sortedClimbs]);
+
+  const nextClimb = useMemo(() => {
+    if (!climb) return null;
+    return getAdjacentClimb(sortedClimbs, climb.id, "next");
+  }, [climb, sortedClimbs]);
 
   const handleClimbPress = useCallback(
     (c: Climb) => {
@@ -193,9 +201,45 @@ export default function ClimbTabContent({ activeData }: ClimbTabContentProps) {
               <Pencil size={10} color={colors.textTertiary} style={{ marginLeft: 4 }} />
             </TouchableOpacity>
           ) : (
-            <Text className="text-[15px] font-barlow-semibold text-foreground" numberOfLines={1}>
-              {climb.name ?? "Unnamed climb"}
-            </Text>
+            <View className="flex-row items-center justify-between">
+              <View className="flex-1 flex-row items-center">
+                <Text
+                  className="text-[15px] font-barlow-semibold text-foreground flex-shrink"
+                  numberOfLines={1}
+                >
+                  {climb.name ?? "Unnamed climb"}
+                </Text>
+                {ordinal && (
+                  <Text className="ml-2 text-[13px] font-barlow-medium text-muted-foreground">
+                    {ordinal.current}/{ordinal.total}
+                  </Text>
+                )}
+              </View>
+              <View className="flex-row items-center ml-2">
+                <TouchableOpacity
+                  className="w-[48px] h-[48px] items-center justify-center"
+                  onPress={() => prevClimb && setSelectedClimb(prevClimb)}
+                  disabled={!prevClimb}
+                  accessibilityLabel="Previous climb"
+                >
+                  <ChevronLeft
+                    size={24}
+                    color={prevClimb ? colors.textPrimary : colors.textTertiary}
+                  />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  className="w-[48px] h-[48px] items-center justify-center"
+                  onPress={() => nextClimb && setSelectedClimb(nextClimb)}
+                  disabled={!nextClimb}
+                  accessibilityLabel="Next climb"
+                >
+                  <ChevronRight
+                    size={24}
+                    color={nextClimb ? colors.textPrimary : colors.textTertiary}
+                  />
+                </TouchableOpacity>
+              </View>
+            </View>
           )}
           <View className="flex-row items-center">
             <Mountain size={11} color={diffColor} />
@@ -261,6 +305,7 @@ export default function ClimbTabContent({ activeData }: ClimbTabContentProps) {
                 currentDistAlongRoute={currentDist}
                 isPast={currentDist != null && item.endDistanceMeters < currentDist}
                 onPress={handleClimbPress}
+                ordinal={getClimbOrdinal(sortedClimbs, item.id)}
               />
             )}
             contentContainerStyle={{ paddingBottom: safeBottom }}
