@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { createMMKV, type MMKV } from "react-native-mmkv";
-import type { POI, POICategory, POIFetchStatus, POISource, RoutePoint } from "@/types";
+import type { FetchablePOISource, POI, POICategory, POIFetchStatus, RoutePoint } from "@/types";
 import { DEFAULT_CORRIDOR_WIDTH_M, POI_CATEGORIES } from "@/constants";
 import { getPOIsForRoute, deletePOIsBySource, deletePOIsForRoute } from "@/db/database";
 import { fetchOsmPOIs, fetchGooglePOIs } from "@/services/poiFetcher";
@@ -68,10 +68,10 @@ export const DEFAULT_SOURCE_INFO: SourceInfo = {
 };
 
 const SOURCE_INFO_KEY_PREFIX = "sourceInfo_";
-const sourceInfoKey = (routeId: string, source: POISource) =>
+const sourceInfoKey = (routeId: string, source: FetchablePOISource) =>
   `${SOURCE_INFO_KEY_PREFIX}${source}_${routeId}`;
 
-function readSourceInfo(routeId: string, source: POISource): SourceInfo {
+function readSourceInfo(routeId: string, source: FetchablePOISource): SourceInfo {
   try {
     const raw = getStorage().getString(sourceInfoKey(routeId, source));
     if (raw) {
@@ -82,14 +82,14 @@ function readSourceInfo(routeId: string, source: POISource): SourceInfo {
   return { ...DEFAULT_SOURCE_INFO };
 }
 
-function persistSourceInfo(routeId: string, source: POISource, info: SourceInfo): void {
+function persistSourceInfo(routeId: string, source: FetchablePOISource, info: SourceInfo): void {
   try {
     const { progress: _progress, ...persisted } = info;
     getStorage().set(sourceInfoKey(routeId, source), JSON.stringify(persisted));
   } catch {}
 }
 
-function clearSourceInfo(routeId: string, source: POISource): void {
+function clearSourceInfo(routeId: string, source: FetchablePOISource): void {
   try {
     getStorage().remove(sourceInfoKey(routeId, source));
   } catch {}
@@ -137,7 +137,7 @@ type ScrubMode = "reset" | "remove";
 function buildRouteScrubPatch(
   s: {
     pois: Record<string, POI[]>;
-    sourceInfo: Record<string, Record<POISource, SourceInfo>>;
+    sourceInfo: Record<string, Record<FetchablePOISource, SourceInfo>>;
     starredPOIIds: Set<string>;
     selectedPOI: POI | null;
   },
@@ -184,15 +184,19 @@ interface POIState {
   starredPOIIds: Set<string>;
 
   // Fetch state per source per route
-  sourceInfo: Record<string, Record<POISource, SourceInfo>>; // routeId -> source -> info
+  sourceInfo: Record<string, Record<FetchablePOISource, SourceInfo>>; // routeId -> source -> info
 
   // UI state
   selectedPOI: POI | null;
 
   // Actions
   loadPOIs: (routeId: string) => Promise<void>;
-  fetchSource: (routeId: string, source: POISource, routePoints: RoutePoint[]) => Promise<void>;
-  clearSource: (routeId: string, source: POISource) => Promise<void>;
+  fetchSource: (
+    routeId: string,
+    source: FetchablePOISource,
+    routePoints: RoutePoint[],
+  ) => Promise<void>;
+  clearSource: (routeId: string, source: FetchablePOISource) => Promise<void>;
   toggleCategory: (category: POICategory) => void;
   setCorridorWidth: (widthM: number) => void;
   setAllCategories: (enabled: boolean) => void;

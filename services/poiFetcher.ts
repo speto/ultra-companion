@@ -1,5 +1,5 @@
 import Constants from "expo-constants";
-import type { POI, POISource, RoutePoint } from "@/types";
+import type { FetchablePOISource, POI, RoutePoint } from "@/types";
 import { fetchAllPOIs } from "./overpassClient";
 import { mapOverpassToPOIs, type ClassifiedPOI } from "./poiClassifier";
 import { fetchGooglePlacesPOIs } from "./googlePlacesClient";
@@ -12,7 +12,7 @@ function associateAndFilter(
   routeId: string,
   routePoints: RoutePoint[],
   corridorWidthM: number,
-  source: POISource,
+  source: FetchablePOISource,
 ): POI[] {
   const pois: POI[] = [];
   for (const c of classified) {

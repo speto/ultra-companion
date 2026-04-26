@@ -38,6 +38,7 @@ export default function CollectionDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [isBusy, setIsBusy] = useState(false);
   const [showAddSheet, setShowAddSheet] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
 
   const collections = useCollectionStore((s) => s.collections);
   const getCollectionSegmentsWithRoutes = useCollectionStore(
@@ -49,6 +50,7 @@ export default function CollectionDetailScreen() {
   const setActiveCollection = useCollectionStore((s) => s.setActiveCollection);
   const deleteCollection = useCollectionStore((s) => s.deleteCollection);
   const visibleRoutePoints = useRouteStore((s) => s.visibleRoutePoints);
+  const importRoute = useRouteStore((s) => s.importRoute);
   const units = useSettingsStore((s) => s.units);
 
   const loadData = useCallback(async () => {
@@ -134,12 +136,25 @@ export default function CollectionDetailScreen() {
       if (!id) return;
       setShowAddSheet(false);
       setIsBusy(true);
-      await addSegment(id, routeId);
-      await loadData();
-      setIsBusy(false);
+      try {
+        await addSegment(id, routeId);
+        await loadData();
+      } finally {
+        setIsBusy(false);
+      }
     },
     [id, addSegment, loadData],
   );
+
+  const handleImportRoute = useCallback(async () => {
+    setIsBusy(true);
+    try {
+      await importRoute();
+      await loadData();
+    } finally {
+      setIsBusy(false);
+    }
+  }, [importRoute, loadData]);
 
   const handleRemoveSegment = useCallback(
     async (routeId: string) => {
@@ -151,9 +166,12 @@ export default function CollectionDetailScreen() {
           style: "destructive",
           onPress: async () => {
             setIsBusy(true);
-            await removeSegment(id, routeId);
-            await loadData();
-            setIsBusy(false);
+            try {
+              await removeSegment(id, routeId);
+              await loadData();
+            } finally {
+              setIsBusy(false);
+            }
           },
         },
       ]);
@@ -165,9 +183,12 @@ export default function CollectionDetailScreen() {
     async (routeId: string) => {
       if (!id) return;
       setIsBusy(true);
-      await selectVariant(id, routeId);
-      await loadData();
-      setIsBusy(false);
+      try {
+        await selectVariant(id, routeId);
+        await loadData();
+      } finally {
+        setIsBusy(false);
+      }
     },
     [id, selectVariant, loadData],
   );
@@ -176,10 +197,13 @@ export default function CollectionDetailScreen() {
     async (positions: { routeId: string; position: number }[]) => {
       if (!id) return;
       setIsBusy(true);
-      const { updateSegmentPositions } = await import("@/db/database");
-      await updateSegmentPositions(id, positions);
-      await loadData();
-      setIsBusy(false);
+      try {
+        const { updateSegmentPositions } = await import("@/db/database");
+        await updateSegmentPositions(id, positions);
+        await loadData();
+      } finally {
+        setIsBusy(false);
+      }
     },
     [id, loadData],
   );
@@ -332,9 +356,20 @@ export default function CollectionDetailScreen() {
         )}
 
         {/* Segments */}
-        <Text className="text-[22px] font-barlow-semibold text-foreground px-4 mt-2 mb-3">
-          Segments
-        </Text>
+        <View className="flex-row items-center justify-between px-4 mt-2 mb-3">
+          <Text className="text-[22px] font-barlow-semibold text-foreground">Segments</Text>
+          <Button
+            variant="ghost"
+            onPress={() => setIsEditing(!isEditing)}
+            label={isEditing ? "Done" : "Edit Segments"}
+          />
+        </View>
+        {isEditing && (
+          <View className="px-4 mt-3 gap-3">
+            <Button variant="secondary" onPress={() => setShowAddSheet(true)} label="Add Segment" />
+            <Button variant="secondary" onPress={handleImportRoute} label="Import Route" />
+          </View>
+        )}
         <View className="px-4">
           <SegmentList
             segmentsWithRoutes={segmentsWithRoutes}
@@ -342,11 +377,8 @@ export default function CollectionDetailScreen() {
             onSelectVariant={handleSelectVariant}
             onReorder={handleReorder}
             onRemove={handleRemoveSegment}
+            isEditing={isEditing}
           />
-        </View>
-
-        <View className="px-4 mt-3">
-          <Button variant="secondary" onPress={() => setShowAddSheet(true)} label="Add Segment" />
         </View>
 
         {/* Elevation Profile */}

@@ -4,8 +4,13 @@ import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { useOfflineStore } from "@/store/offlineStore";
 import { usePoiStore } from "@/store/poiStore";
-import type { POISource, StitchedCollection } from "@/types";
+import type { FetchablePOISource, StitchedCollection } from "@/types";
 import { formatFileSize } from "@/utils/formatters";
+import {
+  formatCollectionPoiProgress,
+  formatSegmentProgress,
+  formatTileSegmentProgress,
+} from "@/utils/offlineProgress";
 import { estimateDownloadSize } from "@/services/offlineTiles";
 import { getRoutePoints } from "@/db/database";
 
@@ -59,7 +64,7 @@ export default function CollectionOfflineSection({ stitched }: CollectionOffline
   const allReady = stats.readyCount === stats.total && stats.total > 0;
 
   const poiErrors = useMemo(() => {
-    const out: { routeName: string; source: POISource; error: string }[] = [];
+    const out: { routeName: string; source: FetchablePOISource; error: string }[] = [];
     for (const seg of segments) {
       const src = allSourceInfo[seg.routeId];
       if (src?.osm?.error)
@@ -76,10 +81,14 @@ export default function CollectionOfflineSection({ stitched }: CollectionOffline
     for (const seg of segments) {
       const src = allSourceInfo[seg.routeId];
       if (src?.osm?.status === "fetching" && src.osm.progress) {
-        return { routeName: seg.routeName, progress: src.osm.progress };
+        return { routeName: seg.routeName, source: "osm" as const, progress: src.osm.progress };
       }
       if (src?.google?.status === "fetching" && src.google.progress) {
-        return { routeName: seg.routeName, progress: src.google.progress };
+        return {
+          routeName: seg.routeName,
+          source: "google" as const,
+          progress: src.google.progress,
+        };
       }
     }
     return null;
@@ -158,7 +167,7 @@ export default function CollectionOfflineSection({ stitched }: CollectionOffline
           <Text className="text-[14px] font-barlow-sc-medium text-muted-foreground">
             {allReady
               ? formatFileSize(stats.downloadedBytes)
-              : `${stats.readyCount} / ${stats.total} segments`}
+              : formatSegmentProgress(stats.readyCount, stats.total)}
           </Text>
         </View>
         <View className="border-b border-border my-1" />
@@ -188,8 +197,14 @@ export default function CollectionOfflineSection({ stitched }: CollectionOffline
           </View>
           <Text className="text-[13px] text-muted-foreground font-barlow mt-1">
             {activePoiFetch
-              ? `${activePoiFetch.progress.phase} POIs... ${activePoiFetch.progress.done}/${activePoiFetch.progress.total} (segment ${progress.done + 1} / ${progress.total})`
-              : `Downloading tiles... segment ${progress.done} / ${progress.total}`}
+              ? formatCollectionPoiProgress(
+                  activePoiFetch.routeName,
+                  activePoiFetch.progress,
+                  activePoiFetch.source,
+                  progress.done + 1,
+                  progress.total,
+                )
+              : formatTileSegmentProgress(progress.done, progress.total)}
           </Text>
         </View>
       )}

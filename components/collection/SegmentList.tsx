@@ -15,6 +15,7 @@ import { useSettingsStore } from "@/store/settingsStore";
 import { useEtaStore } from "@/store/etaStore";
 import { computeRouteETA } from "@/services/etaCalculator";
 import { formatDistance, formatElevation, formatDuration } from "@/utils/formatters";
+import { getSegmentControlVisibility } from "@/utils/collectionEditMode";
 import type { CollectionSegmentWithRoute, RoutePoint } from "@/types";
 
 /** A position slot: one or more variants grouped together */
@@ -30,6 +31,7 @@ interface SegmentListProps {
   onSelectVariant: (routeId: string) => void;
   onReorder: (orderedPositions: { routeId: string; position: number }[]) => Promise<void>;
   onRemove: (routeId: string) => void;
+  isEditing: boolean;
 }
 
 function groupByPosition(segments: CollectionSegmentWithRoute[]): PositionGroup[] {
@@ -67,6 +69,7 @@ function SegmentRow({
   drag,
   onSelect,
   onRemove,
+  isEditing,
 }: {
   sw: CollectionSegmentWithRoute;
   isSelected: boolean;
@@ -76,11 +79,13 @@ function SegmentRow({
   drag?: () => void;
   onSelect: () => void;
   onRemove: () => void;
+  isEditing: boolean;
 }) {
   const colors = useThemeColors();
   const units = useSettingsStore((s) => s.units);
   const router = useRouter();
   const ridingTime = useSegmentTime(points);
+  const { showLeftControls, showRemove, showChevron } = getSegmentControlVisibility(isEditing);
 
   return (
     <View
@@ -90,33 +95,34 @@ function SegmentRow({
       )}
     >
       {/* Left: drag handle or radio button */}
-      {isSelected && drag ? (
-        <TouchableOpacity
-          onLongPress={drag}
-          delayLongPress={150}
-          className="w-[48px] h-[48px] items-center justify-center -ml-2"
-        >
-          <GripVertical size={20} color={colors.textTertiary} />
-        </TouchableOpacity>
-      ) : (
-        <TouchableOpacity
-          className="w-[48px] h-[48px] items-center justify-center -ml-2"
-          onPress={onSelect}
-          disabled={isSelected || !hasVariants}
-        >
-          <View
-            className="w-[18px] h-[18px] rounded-full border-2 items-center justify-center"
-            style={{ borderColor: isSelected ? colors.accent : colors.textTertiary }}
+      {showLeftControls &&
+        (isSelected && drag ? (
+          <TouchableOpacity
+            onLongPress={drag}
+            delayLongPress={150}
+            className="w-[48px] h-[48px] items-center justify-center -ml-2"
           >
-            {isSelected && (
-              <View
-                className="w-[10px] h-[10px] rounded-full"
-                style={{ backgroundColor: colors.accent }}
-              />
-            )}
-          </View>
-        </TouchableOpacity>
-      )}
+            <GripVertical size={20} color={colors.textTertiary} />
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            className="w-[48px] h-[48px] items-center justify-center -ml-2"
+            onPress={onSelect}
+            disabled={isSelected || !hasVariants}
+          >
+            <View
+              className="w-[18px] h-[18px] rounded-full border-2 items-center justify-center"
+              style={{ borderColor: isSelected ? colors.accent : colors.textTertiary }}
+            >
+              {isSelected && (
+                <View
+                  className="w-[10px] h-[10px] rounded-full"
+                  style={{ backgroundColor: colors.accent }}
+                />
+              )}
+            </View>
+          </TouchableOpacity>
+        ))}
 
       {/* Center: segment info — tap to open route detail */}
       <TouchableOpacity
@@ -147,13 +153,15 @@ function SegmentRow({
       </TouchableOpacity>
 
       {/* Right: chevron + remove */}
-      <TouchableOpacity
-        className="w-[36px] h-[48px] items-center justify-center"
-        onPress={() => router.push(`/route/${sw.route.id}`)}
-      >
-        <ChevronRight size={18} color={colors.textTertiary} />
-      </TouchableOpacity>
-      {(isSelected || hasVariants) && (
+      {showChevron && (
+        <TouchableOpacity
+          className="w-[36px] h-[48px] items-center justify-center"
+          onPress={() => router.push(`/route/${sw.route.id}`)}
+        >
+          <ChevronRight size={18} color={colors.textTertiary} />
+        </TouchableOpacity>
+      )}
+      {showRemove && (isSelected || hasVariants) && (
         <TouchableOpacity
           className="w-[48px] h-[48px] items-center justify-center"
           onPress={onRemove}
@@ -172,6 +180,7 @@ export default function SegmentList({
   onSelectVariant,
   onReorder,
   onRemove,
+  isEditing,
 }: SegmentListProps) {
   const colors = useThemeColors();
 
@@ -205,72 +214,90 @@ export default function SegmentList({
     setLocalGroups(data);
   }, []);
 
-  const renderItem = useCallback(
-    ({ item: group, drag, isActive: isDragging }: RenderItemParams<PositionGroup>) => {
+  const renderGroup = useCallback(
+    ({
+      group,
+      drag,
+      isDragging,
+      decorate,
+    }: {
+      group: PositionGroup;
+      drag?: () => void;
+      isDragging: boolean;
+      decorate: boolean;
+    }) => {
       const posIdx = localGroups.indexOf(group);
       const hasVariants = group.variants.length > 1;
 
-      return (
-        <ScaleDecorator>
-          <View
-            className="mb-2"
-            style={
-              isDragging
-                ? { backgroundColor: colors.surfaceRaised, borderRadius: 12, opacity: 0.9 }
-                : undefined
-            }
-          >
-            {hasVariants && (
-              <Text className="text-[11px] text-muted-foreground font-barlow-semibold uppercase tracking-wide ml-1 mb-1">
-                {posIdx + 1}. Choose variant
-              </Text>
-            )}
+      const content = (
+        <View
+          className="mb-2"
+          style={
+            isDragging
+              ? { backgroundColor: colors.surfaceRaised, borderRadius: 12, opacity: 0.9 }
+              : undefined
+          }
+        >
+          {hasVariants && (
+            <Text className="text-[11px] text-muted-foreground font-barlow-semibold uppercase tracking-wide ml-1 mb-1">
+              {posIdx + 1}. Choose variant
+            </Text>
+          )}
 
-            {hasVariants ? (
-              <View className="rounded-xl overflow-hidden border border-border">
-                {group.variants.map((sw, vIdx) => {
-                  const isSelected = sw.segment.isSelected;
-                  return (
-                    <View key={sw.route.id}>
-                      {vIdx > 0 && (
-                        <View
-                          className="mx-3"
-                          style={{ height: 1, backgroundColor: colors.border }}
-                        />
-                      )}
-                      <SegmentRow
-                        sw={sw}
-                        isSelected={isSelected}
-                        hasVariants
-                        posIdx={posIdx}
-                        points={pointsByRouteId[sw.route.id]}
-                        onSelect={() => onSelectVariant(sw.route.id)}
-                        onRemove={() => onRemove(sw.route.id)}
+          {hasVariants ? (
+            <View className="rounded-xl overflow-hidden border border-border">
+              {group.variants.map((sw, vIdx) => {
+                const isSelected = sw.segment.isSelected;
+                return (
+                  <View key={sw.route.id}>
+                    {vIdx > 0 && (
+                      <View
+                        className="mx-3"
+                        style={{ height: 1, backgroundColor: colors.border }}
                       />
-                    </View>
-                  );
-                })}
-              </View>
-            ) : (
-              group.variants.map((sw) => (
-                <SegmentRow
-                  key={sw.route.id}
-                  sw={sw}
-                  isSelected={sw.segment.isSelected}
-                  hasVariants={false}
-                  posIdx={posIdx}
-                  points={pointsByRouteId[sw.route.id]}
-                  drag={drag}
-                  onSelect={() => {}}
-                  onRemove={() => onRemove(sw.route.id)}
-                />
-              ))
-            )}
-          </View>
-        </ScaleDecorator>
+                    )}
+                    <SegmentRow
+                      sw={sw}
+                      isSelected={isSelected}
+                      hasVariants
+                      posIdx={posIdx}
+                      points={pointsByRouteId[sw.route.id]}
+                      onSelect={() => onSelectVariant(sw.route.id)}
+                      onRemove={() => onRemove(sw.route.id)}
+                      isEditing={isEditing}
+                    />
+                  </View>
+                );
+              })}
+            </View>
+          ) : (
+            group.variants.map((sw) => (
+              <SegmentRow
+                key={sw.route.id}
+                sw={sw}
+                isSelected={sw.segment.isSelected}
+                hasVariants={false}
+                posIdx={posIdx}
+                points={pointsByRouteId[sw.route.id]}
+                drag={drag}
+                onSelect={() => {}}
+                onRemove={() => onRemove(sw.route.id)}
+                isEditing={isEditing}
+              />
+            ))
+          )}
+        </View>
       );
+
+      return decorate ? <ScaleDecorator>{content}</ScaleDecorator> : content;
     },
-    [localGroups, colors, pointsByRouteId, onSelectVariant, onRemove],
+    [localGroups, colors, pointsByRouteId, onSelectVariant, onRemove, isEditing],
+  );
+
+  const renderItem = useCallback(
+    ({ item: group, drag, isActive: isDragging }: RenderItemParams<PositionGroup>) =>
+      renderGroup({ group, drag, isDragging, decorate: true }),
+    [renderGroup],
   );
 
   if (localGroups.length === 0) {
@@ -283,13 +310,19 @@ export default function SegmentList({
 
   return (
     <View>
-      <NestableDraggableFlatList
-        data={localGroups}
-        keyExtractor={(item) => item.key}
-        renderItem={renderItem}
-        onDragEnd={handleDragEnd}
-      />
-      {hasOrderChanged && (
+      {isEditing ? (
+        <NestableDraggableFlatList
+          data={localGroups}
+          keyExtractor={(item) => item.key}
+          renderItem={renderItem}
+          onDragEnd={handleDragEnd}
+        />
+      ) : (
+        localGroups.map((group) => (
+          <View key={group.key}>{renderGroup({ group, isDragging: false, decorate: false })}</View>
+        ))
+      )}
+      {isEditing && hasOrderChanged && (
         <Button
           className="mt-2"
           onPress={handleSaveOrder}

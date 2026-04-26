@@ -114,7 +114,9 @@ export type POICategory =
   | "cemetery"
   | "school";
 
-export type POISource = "osm" | "google";
+export type FetchablePOISource = "osm" | "google";
+
+export type POISource = FetchablePOISource | "gpx";
 
 export interface POI {
   id: string;

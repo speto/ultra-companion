@@ -2,10 +2,11 @@ import React from "react";
 import { View, Alert } from "react-native";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
-import type { POISource, RoutePoint } from "@/types";
+import type { FetchablePOISource, RoutePoint } from "@/types";
 import { usePoiStore, DEFAULT_SOURCE_INFO, type SourceInfo } from "@/store/poiStore";
 import { useOfflineStore } from "@/store/offlineStore";
 import { formatFileSize } from "@/utils/formatters";
+import { formatPoiProgress } from "@/utils/offlineProgress";
 import { estimateDownloadSize } from "@/services/offlineTiles";
 
 interface DataSectionProps {
@@ -51,7 +52,7 @@ export default function DataSection({ routeId, points }: DataSectionProps) {
     ]);
   };
 
-  const handleDeleteSource = (source: POISource, label: string) => {
+  const handleDeleteSource = (source: FetchablePOISource, label: string) => {
     Alert.alert(`Delete ${label}`, `Remove ${label.toLowerCase()} for this route?`, [
       { text: "Keep", style: "cancel" },
       { text: "Delete", style: "destructive", onPress: () => clearSource(routeId, source) },
@@ -110,6 +111,7 @@ export default function DataSection({ routeId, points }: DataSectionProps) {
       <SourceRow
         title="Google Places"
         info={googleInfo}
+        source="google"
         onFetch={() => fetchSource(routeId, "google", points)}
         onDelete={() => handleDeleteSource("google", "Google Places data")}
         isConnected={isConnected}
@@ -119,6 +121,7 @@ export default function DataSection({ routeId, points }: DataSectionProps) {
       <SourceRow
         title="OpenStreetMap"
         info={osmInfo}
+        source="osm"
         onFetch={() => fetchSource(routeId, "osm", points)}
         onDelete={() => handleDeleteSource("osm", "OSM data")}
         isConnected={isConnected}
@@ -169,12 +172,14 @@ function DataRow({
 function SourceRow({
   title,
   info,
+  source,
   onFetch,
   onDelete,
   isConnected,
 }: {
   title: string;
   info: SourceInfo;
+  source: FetchablePOISource;
   onFetch: () => void;
   onDelete: () => void;
   isConnected: boolean;
@@ -189,7 +194,7 @@ function SourceRow({
         title={title}
         subtitle={
           isFetching && progress
-            ? `${progress.phase}: ${progress.done}/${progress.total}`
+            ? formatPoiProgress(progress, source)
             : hasData
               ? `${info.count} POIs`
               : "Not fetched"
