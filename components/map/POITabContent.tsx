@@ -5,9 +5,11 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput as RNTextInput,
+  Linking,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text } from "@/components/ui/text";
+import { Button } from "@/components/ui/button";
 import { Star, MapPin, Clock, ChevronLeft, Phone, Search } from "lucide-react-native";
 import { useThemeColors } from "@/theme";
 import { useSettingsStore } from "@/store/settingsStore";
@@ -18,13 +20,24 @@ import { useEtaStore } from "@/store/etaStore";
 import { useActiveRouteData } from "@/hooks/useActiveRouteData";
 import { POI_CATEGORIES, POI_BEHIND_THRESHOLD_M } from "@/constants";
 import { POI_ICON_MAP } from "@/constants/poiIcons";
+import { getWaypointCategoryMeta, WAYPOINT_ICON_MAP } from "@/constants/waypointCategories";
 import { ohStatusColorKey } from "@/constants/poiHelpers";
 import { formatDistance, formatDuration, formatETA } from "@/utils/formatters";
+import { horizonWindow } from "@/utils/horizon";
 import { getOpeningHoursStatus, isOpenAt, getDaySchedules } from "@/services/openingHoursParser";
-import { stitchPOIs } from "@/services/stitchingService";
 import POIFilterBar from "@/components/map/POIFilterBar";
-import POIListItem from "@/components/poi/POIListItem";
-import type { ActiveRouteData, POI } from "@/types";
+import {
+  buildAppleMapsUrl,
+  buildGoogleMapsUrl,
+  buildMapyActionLabel,
+  buildMapyUrl,
+  buildPhoneUrl,
+  shouldPromoteMapy,
+} from "@/utils/poiActions";
+import type { ActiveRouteData, POI, PlaceViewModel } from "@/types";
+import { usePlaceStore } from "@/store/placeStore";
+import { useWaypointStore } from "@/store/waypointStore";
+import PlaceListItem from "@/components/place/PlaceListItem";
 
 interface POITabContentProps {
   activeData: ActiveRouteData | null;
@@ -38,12 +51,12 @@ export default function POITabContent({ activeData }: POITabContentProps) {
   const starredPOIIds = usePoiStore((s) => s.starredPOIIds);
   const selectedPOI = usePoiStore((s) => s.selectedPOI);
   const setSelectedPOI = usePoiStore((s) => s.setSelectedPOI);
-  const getVisiblePOIs = usePoiStore((s) => s.getVisiblePOIs);
   const allPois = usePoiStore((s) => s.pois);
   const enabledCategories = usePoiStore((s) => s.enabledCategories);
   const showOpenOnly = usePoiStore((s) => s.showOpenOnly);
   const cumulativeTime = useEtaStore((s) => s.cumulativeTime);
   const isExpanded = usePanelStore((s) => s.isExpanded);
+  const horizon = usePanelStore((s) => s.horizon);
 
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -52,6 +65,10 @@ export default function POITabContent({ activeData }: POITabContentProps) {
   const segments = activeData?.segments ?? null;
   const currentDist = snappedPosition?.distanceAlongRouteMeters ?? null;
   const currentIdx = snappedPosition?.pointIndex ?? null;
+  const horizonEndDist = useMemo(() => {
+    if (currentDist == null || !activeData) return null;
+    return horizonWindow(currentDist, horizon, activeData.totalDistanceMeters).endDist;
+  }, [currentDist, horizon, activeData]);
 
   const starredUpcoming = useMemo(() => {
     if (routeIds.length === 0) return [];
@@ -85,7 +102,11 @@ export default function POITabContent({ activeData }: POITabContentProps) {
     }
     allStarred.sort((a, b) => a.effectiveDist - b.effectiveDist);
     if (currentDist == null) return allStarred;
-    return allStarred.filter((p) => p.effectiveDist >= currentDist - POI_BEHIND_THRESHOLD_M);
+    return allStarred.filter(
+      (p) =>
+        p.effectiveDist >= currentDist - POI_BEHIND_THRESHOLD_M &&
+        (horizonEndDist == null || p.effectiveDist <= horizonEndDist),
+    );
     // starredPOIIds is a reactivity trigger: getStarredPOIs reads from store via get() and is not itself reactive
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -95,9 +116,15 @@ export default function POITabContent({ activeData }: POITabContentProps) {
     starredPOIIds,
     currentDist,
     currentIdx,
+    horizonEndDist,
     cumulativeTime,
     routePoints,
   ]);
+
+  const allPlaces = usePlaceStore((s) => s.places);
+  const selectedPlace = usePlaceStore((s) => s.selectedPlace);
+  const setSelectedPlace = usePlaceStore((s) => s.setSelectedPlace);
+  const showWaypoints = useWaypointStore((s) => s.showWaypoints);
 
   const totalPOICount = usePoiStore((s) => {
     let count = 0;
@@ -107,58 +134,98 @@ export default function POITabContent({ activeData }: POITabContentProps) {
     return count;
   });
 
-  // --- Expanded: full POI list with search + filters ---
-  const visiblePOIs = useMemo(() => {
-    if (!isExpanded) return [];
-    if (segments) {
-      const poisByRoute: Record<string, POI[]> = {};
-      for (const routeId of routeIds) {
-        poisByRoute[routeId] = getVisiblePOIs(routeId);
-      }
-      return stitchPOIs(segments, poisByRoute);
+  // Count route waypoints for empty-state check
+  const totalWaypointCount = useMemo(() => {
+    let count = 0;
+    for (const routeId of routeIds) {
+      count += (allPlaces[routeId] ?? []).filter((p) => p.entityType === "routeWaypoint").length;
     }
-    return routeIds.length > 0 ? getVisiblePOIs(routeIds[0]) : [];
-    // allPois/enabledCategories/showOpenOnly/starredPOIIds are reactivity triggers: getVisiblePOIs reads store via get() and is not itself reactive
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isExpanded, routeIds, segments, allPois, enabledCategories, showOpenOnly, starredPOIIds]);
+    return count;
+  }, [routeIds, allPlaces]);
 
-  const sortedAllPOIs = useMemo(() => {
+  const hasAnyData = totalPOICount > 0 || totalWaypointCount > 0;
+
+  // --- Expanded: full place list with search + filters ---
+  const visiblePlaces = useMemo(() => {
+    if (!isExpanded) return [];
+    const getStitchedVisible = usePlaceStore.getState().getStitchedVisiblePlaces;
+    if (segments) {
+      return getStitchedVisible(segments, routeIds);
+    }
+    // Single route
+    if (routeIds.length > 0) {
+      const result = usePlaceStore.getState().getVisiblePlaces(routeIds[0]);
+      return result;
+    }
+    return [];
+    // allPois/enabledCategories/showOpenOnly/starredPOIIds/allPlaces are reactivity triggers
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    isExpanded,
+    routeIds,
+    segments,
+    allPois,
+    enabledCategories,
+    showOpenOnly,
+    starredPOIIds,
+    allPlaces,
+    showWaypoints,
+  ]);
+
+  const sortedPlaces = useMemo(() => {
     if (currentDist == null) {
-      return [...visiblePOIs].sort(
-        (a, b) => a.distanceAlongRouteMeters - b.distanceAlongRouteMeters,
+      return [...visiblePlaces].sort(
+        (a, b) => a.effectiveDistanceAlongRouteMeters - b.effectiveDistanceAlongRouteMeters,
       );
     }
-    return visiblePOIs
-      .filter((p) => p.distanceAlongRouteMeters >= currentDist - POI_BEHIND_THRESHOLD_M)
-      .sort((a, b) => a.distanceAlongRouteMeters - b.distanceAlongRouteMeters);
-  }, [visiblePOIs, currentDist]);
+    return visiblePlaces
+      .filter(
+        (p) =>
+          p.effectiveDistanceAlongRouteMeters >= currentDist - POI_BEHIND_THRESHOLD_M &&
+          (horizonEndDist == null || p.effectiveDistanceAlongRouteMeters <= horizonEndDist),
+      )
+      .sort((a, b) => a.effectiveDistanceAlongRouteMeters - b.effectiveDistanceAlongRouteMeters);
+  }, [visiblePlaces, currentDist, horizonEndDist]);
 
-  const filteredPOIs = useMemo(() => {
-    if (!searchQuery.trim()) return sortedAllPOIs;
+  const filteredPlaces = useMemo(() => {
+    if (!searchQuery.trim()) return sortedPlaces;
     const q = searchQuery.trim().toLowerCase();
-    return sortedAllPOIs.filter((p) => p.name?.toLowerCase().includes(q));
-  }, [sortedAllPOIs, searchQuery]);
+    return sortedPlaces.filter((p) => p.name?.toLowerCase().includes(q));
+  }, [sortedPlaces, searchQuery]);
 
-  const handlePOIPress = useCallback(
-    (poi: POI) => {
-      const raw = usePoiStore.getState().pois[poi.routeId]?.find((p) => p.id === poi.id);
-      setSelectedPOI(raw ?? poi);
+  const handlePlacePress = useCallback(
+    (place: PlaceViewModel) => {
+      setSelectedPlace(place);
     },
-    [setSelectedPOI],
+    [setSelectedPlace],
   );
 
-  // Show inline detail when a POI is selected
-  if (selectedPOI) {
-    return <InlinePOIDetail poi={selectedPOI} onBack={() => setSelectedPOI(null)} />;
+  // Show inline detail when a place is selected
+  if (selectedPlace) {
+    if (selectedPlace.entityType === "routeWaypoint") {
+      return <InlineWaypointDetail place={selectedPlace} onBack={() => setSelectedPlace(null)} />;
+    }
+    const poi = selectedPOI ?? (selectedPlace.raw as POI | undefined);
+    if (poi) {
+      return (
+        <InlinePOIDetail
+          poi={poi}
+          onBack={() => {
+            setSelectedPlace(null);
+            setSelectedPOI(null);
+          }}
+        />
+      );
+    }
   }
 
-  // Empty state — no POI data at all
-  if (totalPOICount === 0) {
+  // Empty state — no POI or waypoint data at all
+  if (!hasAnyData) {
     return (
       <View className="flex-1 items-center justify-center">
         <MapPin size={24} color={colors.textTertiary} />
         <Text className="text-[13px] text-muted-foreground font-barlow-medium mt-2">
-          No POIs on this route
+          No POIs or waypoints on this route
         </Text>
         <Text className="text-[11px] text-muted-foreground mt-1">
           Fetch POI data from the route detail screen
@@ -195,12 +262,16 @@ export default function POITabContent({ activeData }: POITabContentProps) {
           <POIFilterBar routeIds={routeIds} />
         </View>
 
-        {/* Full POI list */}
+        {/* Full place list */}
         <FlatList
-          data={filteredPOIs}
-          keyExtractor={(item) => item.id}
+          data={filteredPlaces}
+          keyExtractor={(item) => item.placeId}
           renderItem={({ item }) => (
-            <POIListItem poi={item} currentDistAlongRoute={currentDist} onPress={handlePOIPress} />
+            <PlaceListItem
+              place={item}
+              currentDistAlongRoute={currentDist}
+              onPress={handlePlacePress}
+            />
           )}
           contentContainerStyle={{ paddingBottom: 8 }}
           showsVerticalScrollIndicator={false}
@@ -249,6 +320,97 @@ export default function POITabContent({ activeData }: POITabContentProps) {
         </View>
       )}
     </View>
+  );
+}
+
+function InlineWaypointDetail({ place, onBack }: { place: PlaceViewModel; onBack: () => void }) {
+  const colors = useThemeColors();
+  const units = useSettingsStore((s) => s.units);
+  const snappedPosition = useRouteStore((s) => s.snappedPosition);
+  const meta = getWaypointCategoryMeta(place.waypointType);
+  const IconComp = WAYPOINT_ICON_MAP[meta.iconName];
+  const distAhead =
+    snappedPosition != null
+      ? place.effectiveDistanceAlongRouteMeters - snappedPosition.distanceAlongRouteMeters
+      : null;
+
+  const openUrl = useCallback(async (url: string) => {
+    await Linking.openURL(url);
+  }, []);
+
+  const label = place.name ?? meta.label ?? "Waypoint";
+  const encodedLabel = encodeURIComponent(label);
+  const appleUrl = `https://maps.apple.com/?ll=${place.latitude},${place.longitude}&q=${encodedLabel}`;
+  const googleUrl = `https://www.google.com/maps/search/?api=1&query=${encodedLabel}%20${place.latitude},${place.longitude}`;
+
+  return (
+    <ScrollView className="flex-1 px-3 pt-1">
+      <View className="flex-row items-center">
+        <TouchableOpacity
+          className="w-[32px] h-[32px] items-center justify-center"
+          hitSlop={8}
+          onPress={onBack}
+          accessibilityLabel="Back to POI list"
+        >
+          <ChevronLeft size={20} color={colors.textSecondary} />
+        </TouchableOpacity>
+        <View className="flex-1 mx-1">
+          <Text className="text-[16px] font-barlow-semibold text-foreground" numberOfLines={1}>
+            {label}
+          </Text>
+          <View className="flex-row items-center mt-1">
+            {IconComp && <IconComp size={12} color={meta.color} />}
+            <Text className="ml-1 text-[11px] font-barlow-medium" style={{ color: meta.color }}>
+              {meta.label}
+            </Text>
+          </View>
+        </View>
+      </View>
+
+      <View className="flex-row items-center mt-2">
+        <MapPin size={13} color={colors.textSecondary} />
+        <Text className="ml-1.5 text-[13px] text-muted-foreground font-barlow">
+          {Math.round(place.distanceFromRouteMeters)} m off route
+        </Text>
+        {distAhead != null && (
+          <Text className="ml-2 text-[13px] font-barlow-sc-semibold text-foreground">
+            {distAhead >= 0
+              ? `${formatDistance(distAhead, units)} ahead`
+              : `${formatDistance(Math.abs(distAhead), units)} behind`}
+          </Text>
+        )}
+      </View>
+
+      {place.elevationMeters != null && (
+        <Text className="mt-2 text-[13px] text-muted-foreground font-barlow">
+          Elevation {Math.round(place.elevationMeters)} m
+        </Text>
+      )}
+
+      {place.description && (
+        <Text className="mt-3 text-[13px] text-foreground font-barlow leading-5">
+          {place.description}
+        </Text>
+      )}
+
+      <View className="mt-4 gap-2">
+        <Text className="text-[12px] font-barlow-semibold text-muted-foreground">Actions</Text>
+        <View className="flex-row gap-2">
+          <Button
+            className="flex-1"
+            variant="secondary"
+            label="Apple Maps"
+            onPress={() => openUrl(appleUrl)}
+          />
+          <Button
+            className="flex-1"
+            variant="secondary"
+            label="Google Maps"
+            onPress={() => openUrl(googleUrl)}
+          />
+        </View>
+      </View>
+    </ScrollView>
   );
 }
 
@@ -390,6 +552,12 @@ function InlinePOIDetail({ poi, onBack }: { poi: POI; onBack: () => void }) {
   }, [poi]);
 
   const phone = poi.tags?.phone ?? poi.tags?.["contact:phone"] ?? null;
+  const phoneUrl = phone ? buildPhoneUrl(phone) : null;
+  const mapyIsProminent = shouldPromoteMapy(poi);
+
+  const openUrl = useCallback(async (url: string) => {
+    await Linking.openURL(url);
+  }, []);
 
   return (
     <ScrollView className="flex-1 px-3 pt-1">
@@ -507,6 +675,45 @@ function InlinePOIDetail({ poi, onBack }: { poi: POI; onBack: () => void }) {
           <Text className="ml-1.5 text-[13px] text-muted-foreground font-barlow">{phone}</Text>
         </View>
       )}
+
+      <View className="mt-4">
+        <Text className="text-[12px] font-barlow-semibold text-muted-foreground mb-2">Actions</Text>
+        <Text className="text-[11px] text-muted-foreground font-barlow mb-2">
+          Mapy.com may include online-only place/photos context.
+        </Text>
+        <View className="gap-2">
+          <View className="flex-row gap-2">
+            <Button
+              className="flex-1"
+              variant="secondary"
+              label="Apple Maps"
+              onPress={() => openUrl(buildAppleMapsUrl(poi))}
+            />
+            <Button
+              className="flex-1"
+              variant="secondary"
+              label="Google Maps"
+              onPress={() => openUrl(buildGoogleMapsUrl(poi))}
+            />
+          </View>
+          <View className="flex-row gap-2">
+            <Button
+              className="flex-1"
+              variant={mapyIsProminent ? "default" : "secondary"}
+              label={buildMapyActionLabel()}
+              onPress={() => openUrl(buildMapyUrl(poi))}
+            />
+            {phoneUrl && (
+              <Button
+                className="flex-1"
+                variant="secondary"
+                label="Call"
+                onPress={() => openUrl(phoneUrl)}
+              />
+            )}
+          </View>
+        </View>
+      </View>
 
       {poi.source === "google" && (
         <Text className="text-[10px] text-muted-foreground font-barlow mt-3">
