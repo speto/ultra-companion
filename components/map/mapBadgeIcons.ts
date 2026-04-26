@@ -264,3 +264,37 @@ export function buildWaypointBadgeSvgs(): BadgeSvgMap {
   }
   return svgs;
 }
+
+// ---------------------------------------------------------------------------
+// Start / Finish endpoint markers (soft chip family)
+// ---------------------------------------------------------------------------
+
+/** Soft green start chip: opaque pale green fill, play-triangle glyph. */
+const START_ICON_SVG = `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="16" cy="16" r="13" fill="${tintColor("#22C55E", 0.2)}"/>
+  <circle cx="16" cy="16" r="13" fill="none" stroke="${tintColor("#22C55E", 0.4)}" stroke-width="0.75"/>
+  <path d="M13 10L22 16L13 22Z" fill="#22C55E"/>
+</svg>`;
+
+/** Soft neutral finish chip: opaque pale neutral fill, checkered pattern. */
+const FINISH_ICON_SVG = `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="16" cy="16" r="13" fill="${tintColor("#1C1A18", 0.12)}"/>
+  <circle cx="16" cy="16" r="13" fill="none" stroke="${tintColor("#1C1A18", 0.3)}" stroke-width="0.75"/>
+  <g>
+    <rect x="9" y="9" width="4.67" height="4.67" fill="#1C1A18"/>
+    <rect x="18.33" y="9" width="4.67" height="4.67" fill="#1C1A18"/>
+    <rect x="13.67" y="13.67" width="4.67" height="4.67" fill="#1C1A18"/>
+    <rect x="9" y="18.33" width="4.67" height="4.67" fill="#1C1A18"/>
+    <rect x="18.33" y="18.33" width="4.67" height="4.67" fill="#1C1A18"/>
+  </g>
+</svg>`;
+
+export const START_ICON_NAME = "route-start-play" as const;
+export const FINISH_ICON_NAME = "route-finish-checkered" as const;
+
+export function buildStartFinishBadgeSvgs(): BadgeSvgMap {
+  return {
+    [START_ICON_NAME]: START_ICON_SVG,
+    [FINISH_ICON_NAME]: FINISH_ICON_SVG,
+  };
+}
