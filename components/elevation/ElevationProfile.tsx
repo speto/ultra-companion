@@ -21,6 +21,7 @@ import { Text } from "@/components/ui/text";
 import { useThemeColors, gradientColor } from "@/theme";
 import { ELEVATION_STOPS } from "@/theme/elevation";
 import { formatDistance, formatElevation } from "@/utils/formatters";
+import { downsampleElevationM4 } from "@/utils/elevationLod";
 import { getOpeningHoursStatus } from "@/services/openingHoursParser";
 import { categoryColor, categoryLetter, ohStatusColorKey } from "@/constants/poiHelpers";
 import { climbDifficultyColor } from "@/constants/climbHelpers";
@@ -57,14 +58,27 @@ interface ElevationProfileProps {
   climbs?: Climb[];
   /** Force fit-to-width — disables horizontal scrolling and the overview minimap */
   fitToWidth?: boolean;
+  /** Optional local distance domain to map into the chart width without scaling labels/text. */
+  visibleDomainMeters?: { start: number; end: number };
+  showSegmentLabels?: boolean;
+  showSegmentLengths?: boolean;
+  showBoundaryLabels?: boolean;
+  showStartAxisLine?: boolean;
+  climbRenderMode?: "profile" | "range";
 }
 
 const PADDING = { top: 30, right: 16, bottom: 38, left: 48 };
 const BASE_INTERVAL_M = 100;
 const MAX_DETAIL_SAMPLES = 8000;
+const FIT_LOD_POINTS_PER_PX = 3;
+const FIT_LOD_MAX_POINTS = 1800;
+const PROFILE_RENDER_LOG_MIN_SAMPLES = 1600;
 // Scrolling kicks in when fit-to-width would produce less than this many px/km.
 const MIN_PX_PER_KM = 2;
 const MAX_GRADIENT_STOPS = 120;
+const REDUCED_GRADIENT_STOPS = 80;
+const REDUCED_DETAIL_MIN_DOMAIN_M = 100_000;
+const REDUCED_POI_MARKER_LIMIT = 80;
 const MAX_EXAGGERATION = 200;
 const OVERVIEW_HEIGHT = 52;
 const OVERVIEW_BAR_HEIGHT = 32;
@@ -135,6 +149,13 @@ function resampleAtInterval(points: RoutePoint[], intervalM: number): Sample[] {
   return result;
 }
 
+function routePointsToSamples(points: RoutePoint[]): Sample[] {
+  return points.map((point) => ({
+    distance: point.distanceFromStartMeters,
+    elevation: point.elevationMeters ?? 0,
+  }));
+}
+
 function interpolateElevation(samples: Sample[], distance: number): number {
   if (samples.length === 0) return 0;
   const first = samples[0].distance;
@@ -182,8 +203,7 @@ function buildYLabels(yMin: number, yMax: number, dataMin: number, dataMax: numb
   // Floor step to avoid dense tick stacks on flat profiles (e.g. 138/140/142/144).
   const step = Math.max(Y_LABEL_MIN_STEP_M, niceStep(range, 3));
   const first = Math.ceil(lo / step) * step;
-  const lastCandidate = Math.ceil(hi / step) * step;
-  const last = lastCandidate <= yMax + 1e-6 ? lastCandidate : Math.floor(hi / step) * step;
+  const last = Math.floor(hi / step) * step;
   const ticks: number[] = [];
   for (let v = first; v <= last + 1e-6; v += step) ticks.push(Math.round(v));
 
@@ -223,6 +243,14 @@ interface POIMarkerPos {
   ohRingColor: string | null;
 }
 
+interface ClimbRegion {
+  id: string;
+  color: string;
+  fillPath?: string;
+  x?: number;
+  width?: number;
+}
+
 export default function ElevationProfile({
   points,
   units,
@@ -237,6 +265,12 @@ export default function ElevationProfile({
   profileSegments,
   climbs,
   fitToWidth = false,
+  visibleDomainMeters,
+  showSegmentLabels = true,
+  showSegmentLengths = true,
+  showBoundaryLabels = true,
+  showStartAxisLine = false,
+  climbRenderMode = "profile",
 }: ElevationProfileProps) {
   const colors = useThemeColors();
 
@@ -271,6 +305,85 @@ export default function ElevationProfile({
     [points, detailInterval],
   );
 
+  const domainStart = visibleDomainMeters
+    ? Math.max(0, Math.min(totalMeters, visibleDomainMeters.start))
+    : 0;
+  const domainEnd = visibleDomainMeters
+    ? Math.max(domainStart + 1, Math.min(totalMeters, visibleDomainMeters.end))
+    : totalMeters;
+  const domainLength = Math.max(1, domainEnd - domainStart);
+
+  const visibleSamples = useMemo(() => {
+    if (!visibleDomainMeters || samples.length < 2 || totalMeters <= 0) return samples;
+
+    const domainSamples: Sample[] = [
+      { distance: domainStart, elevation: interpolateElevation(samples, domainStart) },
+    ];
+    for (const sample of samples) {
+      if (sample.distance > domainStart && sample.distance < domainEnd) {
+        domainSamples.push(sample);
+      }
+    }
+    domainSamples.push({
+      distance: domainEnd,
+      elevation: interpolateElevation(samples, domainEnd),
+    });
+    return domainSamples;
+  }, [visibleDomainMeters, samples, totalMeters, domainStart, domainEnd]);
+
+  const reducedDetail = fitToWidth && !isScrollable && domainLength >= REDUCED_DETAIL_MIN_DOMAIN_M;
+
+  const forcedDistances = useMemo(() => {
+    const distances: number[] = [domainStart, domainEnd];
+    if (currentPointIndex != null && currentPointIndex >= 0 && currentPointIndex < points.length) {
+      distances.push(points[currentPointIndex].distanceFromStartMeters);
+    }
+    for (const segment of profileSegments ?? []) {
+      distances.push(segment.startDistanceMeters - distanceOffsetMeters);
+      distances.push(segment.endDistanceMeters - distanceOffsetMeters);
+    }
+    for (const boundary of segmentBoundaries ?? []) {
+      distances.push(boundary.distanceMeters - distanceOffsetMeters);
+    }
+    for (const climb of climbs ?? []) {
+      distances.push(climb.startDistanceMeters - distanceOffsetMeters);
+      distances.push(climb.endDistanceMeters - distanceOffsetMeters);
+    }
+    return distances.filter((distance) => distance >= domainStart && distance <= domainEnd);
+  }, [
+    climbs,
+    currentPointIndex,
+    distanceOffsetMeters,
+    domainEnd,
+    domainStart,
+    points,
+    profileSegments,
+    segmentBoundaries,
+  ]);
+
+  const pathSamples = useMemo(() => {
+    if (visibleSamples.length <= 2) return visibleSamples;
+    if (isScrollable) return visibleSamples;
+
+    const target = Math.min(
+      FIT_LOD_MAX_POINTS,
+      Math.max(120, Math.ceil(innerWidth * FIT_LOD_POINTS_PER_PX)),
+    );
+    if (visibleSamples.length <= target) return visibleSamples;
+
+    const lodPoints = downsampleElevationM4(
+      visibleSamples.map((sample, idx) => ({
+        latitude: 0,
+        longitude: 0,
+        elevationMeters: sample.elevation,
+        distanceFromStartMeters: sample.distance,
+        idx,
+      })),
+      { maxPoints: target, forcedDistancesMeters: forcedDistances },
+    );
+    return routePointsToSamples(lodPoints);
+  }, [forcedDistances, innerWidth, isScrollable, visibleSamples]);
+
   const overviewInterval = useMemo(() => {
     if (!overviewShown || totalMeters === 0) return BASE_INTERVAL_M;
     return Math.max(BASE_INTERVAL_M, totalMeters / OVERVIEW_MAX_SAMPLES);
@@ -282,17 +395,17 @@ export default function ElevationProfile({
   );
 
   const { yMin, yMax, dataMin, dataMax } = useMemo(() => {
-    if (samples.length < 2) {
+    if (visibleSamples.length < 2) {
       return { yMin: 0, yMax: 100, dataMin: 0, dataMax: 100 };
     }
     let minE = Infinity;
     let maxE = -Infinity;
-    for (const s of samples) {
+    for (const s of visibleSamples) {
       if (s.elevation < minE) minE = s.elevation;
       if (s.elevation > maxE) maxE = s.elevation;
     }
     const rawRange = maxE - minE || 100;
-    const totalD = samples[samples.length - 1].distance;
+    const totalD = domainLength;
     const minRange = Math.min(200, Math.max(50, totalD * 0.05));
     const horizMPerPx = innerWidth > 0 ? totalD / innerWidth : 0;
     // Cap vertical exaggeration so long routes in tall charts don't look like cliffs.
@@ -308,11 +421,11 @@ export default function ElevationProfile({
       yn = 0;
     }
     return { yMin: yn, yMax: yx, dataMin: minE, dataMax: maxE };
-  }, [samples, innerWidth, chartPlotHeight]);
+  }, [visibleSamples, innerWidth, chartPlotHeight, domainLength]);
 
   const xScale = useCallback(
-    (d: number) => (totalMeters > 0 ? (d / totalMeters) * innerWidth : 0),
-    [totalMeters, innerWidth],
+    (d: number) => (domainLength > 0 ? ((d - domainStart) / domainLength) * innerWidth : 0),
+    [domainStart, domainLength, innerWidth],
   );
 
   const visibleProfileSegments = useMemo(() => {
@@ -322,9 +435,18 @@ export default function ElevationProfile({
 
     return profileSegments
       .map((segment) => {
-        const startLocal = Math.max(0, segment.startDistanceMeters - distanceOffsetMeters);
-        const endLocal = Math.min(totalMeters, segment.endDistanceMeters - distanceOffsetMeters);
-        if (endLocal <= 0 || startLocal >= totalMeters || endLocal <= startLocal) return null;
+        const startLocal = Math.max(
+          domainStart,
+          segment.startDistanceMeters - distanceOffsetMeters,
+        );
+        const endLocal = Math.min(domainEnd, segment.endDistanceMeters - distanceOffsetMeters);
+        if (endLocal <= domainStart || startLocal >= domainEnd || endLocal <= startLocal)
+          return null;
+
+        const originalStartLocal = segment.startDistanceMeters - distanceOffsetMeters;
+        const originalEndLocal = segment.endDistanceMeters - distanceOffsetMeters;
+        const fullSegmentVisible =
+          originalStartLocal >= domainStart - 1 && originalEndLocal <= domainEnd + 1;
 
         const x1 = xScale(startLocal);
         const x2 = xScale(endLocal);
@@ -333,9 +455,11 @@ export default function ElevationProfile({
         const nameWidth =
           segment.name.length * SEGMENT_LABEL_AVG_CHAR_PX + SEGMENT_LABEL_SIDE_PADDING_PX * 2;
         const showLabel =
+          showSegmentLabels &&
           widthPx >= nameWidth &&
           centerX - nameWidth / 2 >= lastLabelRight + SEGMENT_LABEL_MIN_GAP_PX;
-        const showLength = widthPx >= SEGMENT_LENGTH_LABEL_MIN_WIDTH_PX;
+        const showLength =
+          showSegmentLengths && fullSegmentVisible && widthPx >= SEGMENT_LENGTH_LABEL_MIN_WIDTH_PX;
 
         if (showLabel) lastLabelRight = centerX + nameWidth / 2;
 
@@ -347,21 +471,42 @@ export default function ElevationProfile({
           widthPx,
           showLabel,
           showLength,
+          fullSegmentVisible,
+          originalStartLocal,
+          originalEndLocal,
         };
       })
       .filter((segment): segment is NonNullable<typeof segment> => segment != null);
-  }, [profileSegments, totalMeters, distanceOffsetMeters, xScale]);
+  }, [
+    profileSegments,
+    totalMeters,
+    distanceOffsetMeters,
+    domainStart,
+    domainEnd,
+    xScale,
+    showSegmentLabels,
+    showSegmentLengths,
+  ]);
 
   const segmentBoundaryXLabels = useMemo(() => {
-    if (visibleProfileSegments.length === 0 || totalMeters <= 0) return [];
+    if (visibleProfileSegments.length === 0 || totalMeters <= 0 || !showBoundaryLabels) return [];
 
     const labels: { value: number; x: number }[] = [];
     const seen = new Set<string>();
     for (const segment of visibleProfileSegments) {
       for (const boundary of [
-        { value: segment.startDistanceMeters, x: segment.x1 },
-        { value: segment.endDistanceMeters, x: segment.x2 },
+        {
+          value: segment.startDistanceMeters,
+          x: segment.x1,
+          visible: segment.originalStartLocal >= domainStart - 1,
+        },
+        {
+          value: segment.endDistanceMeters,
+          x: segment.x2,
+          visible: segment.originalEndLocal <= domainEnd + 1,
+        },
       ]) {
+        if (!boundary.visible) continue;
         if (boundary.x < 0 || boundary.x > innerWidth) continue;
         const key = Math.round(boundary.value).toString();
         if (seen.has(key)) continue;
@@ -379,45 +524,58 @@ export default function ElevationProfile({
       lastX = label.x;
     }
     return visible;
-  }, [visibleProfileSegments, totalMeters, innerWidth]);
+  }, [visibleProfileSegments, totalMeters, innerWidth, showBoundaryLabels, domainStart, domainEnd]);
   const yScale = useCallback(
     (e: number) =>
       PADDING.top + chartPlotHeight - ((e - yMin) / Math.max(1e-6, yMax - yMin)) * chartPlotHeight,
     [chartPlotHeight, yMin, yMax],
   );
 
+  const gradientSamples = reducedDetail ? visibleSamples : pathSamples;
+
   const { linePath, fillPath, gradientStops } = useMemo(() => {
-    if (samples.length < 2) {
+    if (pathSamples.length < 2) {
       return {
         linePath: "",
         fillPath: "",
         gradientStops: [] as { offset: string; color: string }[],
       };
     }
-    const lineD = buildLinePath(samples, xScale, yScale);
-    const fillD = lineD + ` L${xScale(totalMeters)},${axisY} L${xScale(0)},${axisY} Z`;
+    const lineD = buildLinePath(pathSamples, xScale, yScale);
+    const fillD = lineD + ` L${xScale(domainEnd)},${axisY} L${xScale(domainStart)},${axisY} Z`;
 
     // Decimated gradient stops, smoothed by step interval.
-    const n = samples.length;
-    const step = Math.max(1, Math.floor(n / MAX_GRADIENT_STOPS));
+    const n = gradientSamples.length;
+    const gradientStopLimit = reducedDetail ? REDUCED_GRADIENT_STOPS : MAX_GRADIENT_STOPS;
+    const step = Math.max(1, Math.floor(n / gradientStopLimit));
     const stops: { offset: string; color: string }[] = [];
     for (let i = 0; i < n; i += step) {
-      const prev = samples[Math.max(0, i - step)];
-      const cur = samples[i];
+      const prev = gradientSamples[Math.max(0, i - step)];
+      const cur = gradientSamples[i];
       const dist = cur.distance - prev.distance;
       const grad = dist > 0 ? ((cur.elevation - prev.elevation) / dist) * 100 : 0;
-      const fraction = totalMeters > 0 ? cur.distance / totalMeters : 0;
+      const fraction = domainLength > 0 ? (cur.distance - domainStart) / domainLength : 0;
       stops.push({ offset: Math.min(1, fraction).toFixed(4), color: gradientColor(grad) });
     }
     if (stops.length === 0 || stops[stops.length - 1].offset !== "1.0000") {
-      const last = samples[n - 1];
-      const prev = samples[Math.max(0, n - 1 - step)];
+      const last = gradientSamples[n - 1];
+      const prev = gradientSamples[Math.max(0, n - 1 - step)];
       const dist = last.distance - prev.distance;
       const grad = dist > 0 ? ((last.elevation - prev.elevation) / dist) * 100 : 0;
       stops.push({ offset: "1.0000", color: gradientColor(grad) });
     }
     return { linePath: lineD, fillPath: fillD, gradientStops: stops };
-  }, [samples, xScale, yScale, axisY, totalMeters]);
+  }, [
+    pathSamples,
+    gradientSamples,
+    xScale,
+    yScale,
+    axisY,
+    domainStart,
+    domainEnd,
+    domainLength,
+    reducedDetail,
+  ]);
 
   const poiMarkers = useMemo<POIMarkerPos[]>(() => {
     if (!pois || pois.length === 0 || samples.length === 0 || totalMeters === 0) return [];
@@ -425,13 +583,13 @@ export default function ElevationProfile({
     const markers: POIMarkerPos[] = [];
     for (const poi of pois) {
       const localDist = poi.distanceAlongRouteMeters - distanceOffsetMeters;
-      if (localDist < 0 || localDist > totalMeters) continue;
+      if (localDist < domainStart || localDist > domainEnd) continue;
 
       const x = xScale(localDist);
       const elev = interpolateElevation(samples, localDist);
       const baseY = yScale(elev) + POI_MARKER_OFFSET_Y;
 
-      const ohTag = poi.tags?.opening_hours;
+      const ohTag = reducedDetail ? null : poi.tags?.opening_hours;
       const ohKey = ohTag ? ohStatusColorKey(getOpeningHoursStatus(ohTag)) : null;
       const ohRingColor = ohKey ? colors[ohKey] : null;
 
@@ -446,6 +604,11 @@ export default function ElevationProfile({
     }
 
     markers.sort((a, b) => a.x - b.x);
+    if (reducedDetail && markers.length > REDUCED_POI_MARKER_LIMIT) {
+      const step = Math.ceil(markers.length / REDUCED_POI_MARKER_LIMIT);
+      return markers.filter((_, index) => index % step === 0).slice(0, REDUCED_POI_MARKER_LIMIT);
+    }
+
     for (let i = 1; i < markers.length; i++) {
       if (markers[i].x - markers[i - 1].x < POI_COLLISION_MIN_PX) {
         markers[i].y = markers[i - 1].y - POI_COLLISION_STEP_PX;
@@ -455,54 +618,120 @@ export default function ElevationProfile({
       m.y = Math.max(PADDING.top + POI_MARKER_RADIUS + 2, m.y);
     }
     return markers;
-  }, [pois, samples, totalMeters, distanceOffsetMeters, xScale, yScale, colors]);
+  }, [
+    pois,
+    samples,
+    totalMeters,
+    distanceOffsetMeters,
+    domainStart,
+    domainEnd,
+    xScale,
+    yScale,
+    colors,
+    reducedDetail,
+  ]);
 
-  const climbRegions = useMemo(() => {
+  const climbRegions = useMemo<ClimbRegion[]>(() => {
     if (!climbs || climbs.length === 0 || samples.length === 0 || totalMeters === 0) return [];
 
-    const regions: { id: string; color: string; fillPath: string }[] = [];
+    const regions: ClimbRegion[] = [];
     for (const climb of climbs) {
       const localStart = climb.startDistanceMeters - distanceOffsetMeters;
       const localEnd = climb.endDistanceMeters - distanceOffsetMeters;
-      const visStart = Math.max(0, localStart);
-      const visEnd = Math.min(totalMeters, localEnd);
+      const visStart = Math.max(domainStart, localStart);
+      const visEnd = Math.min(domainEnd, localEnd);
       if (visStart >= visEnd) continue;
 
       const startX = xScale(visStart);
-      const startElev = interpolateElevation(samples, visStart);
+      const endX = xScale(visEnd);
+      const color = climbDifficultyColor(climb.difficultyScore);
+
+      if (climbRenderMode === "range") {
+        regions.push({
+          id: climb.id,
+          color,
+          x: startX,
+          width: Math.max(1, endX - startX),
+        });
+        continue;
+      }
+
+      const climbSamples = reducedDetail ? pathSamples : samples;
+      const startElev = interpolateElevation(climbSamples, visStart);
       let d = `M${startX},${yScale(startElev)}`;
 
-      const startIdx = findFirstSampleAtOrAfter(samples, visStart);
-      const endIdx = findFirstSampleAtOrAfter(samples, visEnd);
+      const startIdx = findFirstSampleAtOrAfter(climbSamples, visStart);
+      const endIdx = findFirstSampleAtOrAfter(climbSamples, visEnd);
       for (let i = startIdx; i < endIdx; i++) {
-        const s = samples[i];
+        const s = climbSamples[i];
         if (s.distance <= visStart) continue;
         d += ` L${xScale(s.distance)},${yScale(s.elevation)}`;
       }
 
-      const endX = xScale(visEnd);
-      const endElev = interpolateElevation(samples, visEnd);
+      const endElev = interpolateElevation(climbSamples, visEnd);
       d += ` L${endX},${yScale(endElev)}`;
       d += ` L${endX},${axisY} L${startX},${axisY} Z`;
 
       regions.push({
         id: climb.id,
-        color: climbDifficultyColor(climb.difficultyScore),
+        color,
         fillPath: d,
       });
     }
     return regions;
-  }, [climbs, samples, totalMeters, distanceOffsetMeters, xScale, yScale, axisY]);
+  }, [
+    climbs,
+    samples,
+    pathSamples,
+    totalMeters,
+    distanceOffsetMeters,
+    domainStart,
+    domainEnd,
+    xScale,
+    yScale,
+    axisY,
+    reducedDetail,
+    climbRenderMode,
+  ]);
+
+  const renderStatsKey = `${samples.length}:${visibleSamples.length}:${pathSamples.length}:${poiMarkers.length}:${climbRegions.length}:${reducedDetail}:${Math.round(domainLength / 1000)}`;
+  const lastRenderStatsKey = useRef<string | null>(null);
+  useEffect(() => {
+    if (!__DEV__) return;
+    if (
+      pathSamples.length < PROFILE_RENDER_LOG_MIN_SAMPLES &&
+      visibleSamples.length < PROFILE_RENDER_LOG_MIN_SAMPLES
+    ) {
+      return;
+    }
+    if (lastRenderStatsKey.current === renderStatsKey) return;
+    lastRenderStatsKey.current = renderStatsKey;
+    console.info(
+      `[profile-render] mode=${reducedDetail ? "overview" : "detail"} raw=${samples.length} visibleRaw=${visibleSamples.length} pathLod=${pathSamples.length} pois=${poiMarkers.length} climbs=${climbRegions.length} climbStyle=${climbRenderMode} domainKm=${Math.round(domainLength / 1000)}`,
+    );
+  }, [
+    climbRegions.length,
+    climbRenderMode,
+    domainLength,
+    pathSamples.length,
+    poiMarkers.length,
+    reducedDetail,
+    renderStatsKey,
+    samples.length,
+    visibleSamples.length,
+  ]);
 
   const currentPos = useMemo(() => {
     if (currentPointIndex == null || currentPointIndex < 0 || currentPointIndex >= points.length)
       return null;
     const p = points[currentPointIndex];
+    if (p.distanceFromStartMeters < domainStart || p.distanceFromStartMeters > domainEnd)
+      return null;
     return {
       x: xScale(p.distanceFromStartMeters),
       y: yScale(p.elevationMeters ?? 0),
     };
-  }, [currentPointIndex, points, xScale, yScale]);
+  }, [currentPointIndex, points, domainStart, domainEnd, xScale, yScale]);
 
   const scrollRef = useRef<ScrollView | null>(null);
   const [scrollX, setScrollX] = useState(0);
@@ -620,11 +849,14 @@ export default function ElevationProfile({
   const xLabels = useMemo(() => {
     if (totalMeters <= 0) return [];
     if (!isScrollable) {
-      return [0, totalMeters / 2, totalMeters].map((d) => ({ value: d, x: xScale(d) }));
+      return [domainStart, domainStart + domainLength / 2, domainEnd].map((d) => ({
+        value: d,
+        x: xScale(d),
+      }));
     }
     const target = Math.max(3, Math.round(innerWidth / X_TICK_TARGET_PX));
     return buildXTicks(totalMeters, target).map((d) => ({ value: d, x: xScale(d) }));
-  }, [totalMeters, isScrollable, innerWidth, xScale]);
+  }, [totalMeters, isScrollable, innerWidth, domainStart, domainEnd, domainLength, xScale]);
 
   // Memoized SVG tree — avoids re-rendering thousands of nodes on every scroll
   // frame. None of its deps change while the user pans the detail chart.
@@ -657,9 +889,39 @@ export default function ElevationProfile({
 
         <Path d={fillPath} fill="url(#elevFill)" />
 
-        {climbRegions.map((region) => (
-          <Path key={`climb-${region.id}`} d={region.fillPath} fill={region.color} opacity={0.2} />
-        ))}
+        {showStartAxisLine && (
+          <Line
+            x1={xScale(domainStart)}
+            y1={PADDING.top}
+            x2={xScale(domainStart)}
+            y2={axisY}
+            stroke={colors.border}
+            strokeWidth={1}
+            strokeDasharray="4,4"
+            opacity={0.85}
+          />
+        )}
+
+        {climbRegions.map((region) =>
+          region.fillPath ? (
+            <Path
+              key={`climb-${region.id}`}
+              d={region.fillPath}
+              fill={region.color}
+              opacity={0.2}
+            />
+          ) : (
+            <Rect
+              key={`climb-${region.id}`}
+              x={region.x ?? 0}
+              y={PADDING.top}
+              width={region.width ?? 0}
+              height={Math.max(0, axisY - PADDING.top)}
+              fill={region.color}
+              opacity={0.12}
+            />
+          ),
+        )}
 
         {visibleProfileSegments.map((segment) => (
           <Line
@@ -705,7 +967,7 @@ export default function ElevationProfile({
 
         {segmentBoundaries?.map((b) => {
           const localDist = b.distanceMeters - distanceOffsetMeters;
-          if (localDist <= 0 || localDist >= totalMeters) return null;
+          if (localDist <= domainStart || localDist >= domainEnd) return null;
           const bx = xScale(localDist);
           return (
             <Line
@@ -782,7 +1044,7 @@ export default function ElevationProfile({
 
         {poiMarkers.map((m) => (
           <G key={m.poi.id} onPress={onPOIPress ? () => onPOIPress(m.poi) : undefined}>
-            {m.ohRingColor && (
+            {!reducedDetail && m.ohRingColor && (
               <Circle
                 cx={m.x}
                 cy={m.y}
@@ -792,18 +1054,25 @@ export default function ElevationProfile({
                 strokeWidth={2}
               />
             )}
-            <Circle cx={m.x} cy={m.y} r={POI_MARKER_RADIUS} fill={m.color} />
-            <SvgText
-              x={m.x}
-              y={m.y + 3.5}
-              fontSize={9}
-              fontWeight="bold"
-              fill="white"
-              textAnchor="middle"
-            >
-              {m.letter}
-            </SvgText>
-            {onPOIPress && (
+            <Circle
+              cx={m.x}
+              cy={m.y}
+              r={reducedDetail ? POI_MARKER_RADIUS - 2 : POI_MARKER_RADIUS}
+              fill={m.color}
+            />
+            {!reducedDetail && (
+              <SvgText
+                x={m.x}
+                y={m.y + 3.5}
+                fontSize={9}
+                fontWeight="bold"
+                fill="white"
+                textAnchor="middle"
+              >
+                {m.letter}
+              </SvgText>
+            )}
+            {!reducedDetail && onPOIPress && (
               <Rect
                 x={m.x - POI_HIT_SIZE / 2}
                 y={m.y - POI_HIT_SIZE / 2}
@@ -830,11 +1099,14 @@ export default function ElevationProfile({
       segmentBoundaries,
       visibleProfileSegments,
       distanceOffsetMeters,
-      totalMeters,
+      domainStart,
+      domainEnd,
       xScale,
       poiMarkers,
       onPOIPress,
       units,
+      reducedDetail,
+      showStartAxisLine,
     ],
   );
 
@@ -943,8 +1215,13 @@ export default function ElevationProfile({
           {yLabels.map((l) => (
             <Text
               key={`yl-${l.value}`}
-              className="font-barlow-sc-medium text-[10px] text-muted-foreground"
-              style={{ position: "absolute", left: 2, top: l.y - Y_LABEL_OFFSET_Y }}
+              className="font-barlow-sc-medium text-[10px] text-muted-foreground text-right"
+              style={{
+                position: "absolute",
+                left: 2,
+                top: l.y - Y_LABEL_OFFSET_Y,
+                width: PADDING.left - 8,
+              }}
             >
               {formatElevation(l.value, units)}
             </Text>

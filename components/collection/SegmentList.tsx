@@ -6,16 +6,21 @@ import {
   RenderItemParams,
 } from "react-native-draggable-flatlist";
 import { Text } from "@/components/ui/text";
-import { GripVertical, X, ChevronRight } from "lucide-react-native";
+import { ArrowDown, ArrowUp, Clock3, Flag, GripVertical, Star, X } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/cn";
 import { useThemeColors } from "@/theme";
 import { useRouter } from "expo-router";
+import { useColorScheme } from "nativewind";
 import { useSettingsStore } from "@/store/settingsStore";
 import { useEtaStore } from "@/store/etaStore";
+import { usePoiStore } from "@/store/poiStore";
+import { useStarredStore } from "@/store/starredStore";
+import { useWaypointStore } from "@/store/waypointStore";
 import { computeRouteETA } from "@/services/etaCalculator";
 import { formatDistance, formatElevation, formatDuration } from "@/utils/formatters";
 import { getSegmentControlVisibility } from "@/utils/collectionEditMode";
+import { SEGMENT_COLORS_DARK, SEGMENT_COLORS_LIGHT } from "@/constants";
+import SegmentCard, { type SegmentCardMetadataItem } from "./SegmentCard";
 import type { CollectionSegmentWithRoute, RoutePoint } from "@/types";
 
 /** A position slot: one or more variants grouped together */
@@ -82,18 +87,83 @@ function SegmentRow({
   isEditing: boolean;
 }) {
   const colors = useThemeColors();
+  const { colorScheme } = useColorScheme();
   const units = useSettingsStore((s) => s.units);
+  const poisByRoute = usePoiStore((s) => s.pois);
+  const starredKeys = useStarredStore((s) => s.starredKeys);
+  const waypointsByRoute = useWaypointStore((s) => s.waypoints);
   const router = useRouter();
   const ridingTime = useSegmentTime(points);
   const { showLeftControls, showRemove, showChevron } = getSegmentControlVisibility(isEditing);
+  const segmentColor = (colorScheme === "dark" ? SEGMENT_COLORS_DARK : SEGMENT_COLORS_LIGHT)[
+    posIdx % SEGMENT_COLORS_LIGHT.length
+  ];
+  const metadataItems = useMemo<SegmentCardMetadataItem[]>(() => {
+    const routeWaypoints = waypointsByRoute[sw.route.id] ?? [];
+    const waypointCount = routeWaypoints.length;
+    const starredWaypointCount = routeWaypoints.filter((waypoint) =>
+      starredKeys.has(`routeWaypoint:${waypoint.id}`),
+    ).length;
+    const starredPoiCount = (poisByRoute[sw.route.id] ?? []).filter((poi) =>
+      starredKeys.has(`downloadedPoi:${poi.id}`),
+    ).length;
+    const starredCount = starredWaypointCount + starredPoiCount;
+    const items: SegmentCardMetadataItem[] = [
+      {
+        label: formatElevation(sw.route.totalAscentMeters, units),
+        icon: <ArrowUp size={11} color={colors.textTertiary} />,
+      },
+      {
+        label: formatElevation(sw.route.totalDescentMeters, units),
+        icon: <ArrowDown size={11} color={colors.textTertiary} />,
+      },
+    ];
+    if (ridingTime != null) {
+      items.push({
+        label: formatDuration(ridingTime),
+        icon: <Clock3 size={11} color={colors.textTertiary} />,
+      });
+    }
+    if (waypointCount > 0) {
+      items.push({
+        label: String(waypointCount),
+        icon: <Flag size={11} color={colors.textTertiary} />,
+      });
+    }
+    if (starredCount > 0) {
+      items.push({
+        label: String(starredCount),
+        icon: <Star size={11} color={colors.textTertiary} />,
+      });
+    }
+    return items;
+  }, [
+    colors.textTertiary,
+    poisByRoute,
+    ridingTime,
+    starredKeys,
+    sw.route.id,
+    sw.route.totalAscentMeters,
+    sw.route.totalDescentMeters,
+    units,
+    waypointsByRoute,
+  ]);
+  const action = showRemove ? (
+    <View className="flex-row items-center">
+      {(isSelected || hasVariants) && (
+        <TouchableOpacity
+          className="w-[48px] h-[48px] items-center justify-center"
+          onPress={onRemove}
+          hitSlop={4}
+        >
+          <X size={16} color={colors.destructive} />
+        </TouchableOpacity>
+      )}
+    </View>
+  ) : undefined;
 
   return (
-    <View
-      className={cn(
-        "flex-row items-center py-3 px-3 rounded-lg",
-        isSelected ? "bg-muted" : "bg-transparent",
-      )}
-    >
+    <View className="flex-row items-center">
       {/* Left: drag handle or radio button */}
       {showLeftControls &&
         (isSelected && drag ? (
@@ -124,52 +194,17 @@ function SegmentRow({
           </TouchableOpacity>
         ))}
 
-      {/* Center: segment info — tap to open route detail */}
-      <TouchableOpacity
-        className="flex-1 mr-2"
-        onPress={() => router.push(`/route/${sw.route.id}`)}
-        activeOpacity={0.7}
-      >
-        <Text
-          className={cn(
-            "text-[15px] font-barlow-medium",
-            isSelected ? "text-foreground" : "text-muted-foreground",
-          )}
-          numberOfLines={1}
-        >
-          {!hasVariants && `${posIdx + 1}. `}
-          {sw.route.name}
-        </Text>
-        <Text className="text-[12px] text-muted-foreground font-barlow-sc-medium mt-0.5">
-          {formatDistance(sw.route.totalDistanceMeters, units)}
-          {"  ·  "}↑ {formatElevation(sw.route.totalAscentMeters, units)}
-          {ridingTime != null && (
-            <>
-              {"  ·  "}
-              {formatDuration(ridingTime)}
-            </>
-          )}
-        </Text>
-      </TouchableOpacity>
-
-      {/* Right: chevron + remove */}
-      {showChevron && (
-        <TouchableOpacity
-          className="w-[36px] h-[48px] items-center justify-center"
+      <View className="flex-1">
+        <SegmentCard
+          title={sw.route.name}
+          subtitle={formatDistance(sw.route.totalDistanceMeters, units)}
+          metadataItems={metadataItems}
+          color={segmentColor}
+          index={hasVariants ? undefined : posIdx + 1}
           onPress={() => router.push(`/route/${sw.route.id}`)}
-        >
-          <ChevronRight size={18} color={colors.textTertiary} />
-        </TouchableOpacity>
-      )}
-      {showRemove && (isSelected || hasVariants) && (
-        <TouchableOpacity
-          className="w-[48px] h-[48px] items-center justify-center"
-          onPress={onRemove}
-          hitSlop={4}
-        >
-          <X size={16} color={colors.destructive} />
-        </TouchableOpacity>
-      )}
+          action={showChevron ? undefined : action}
+        />
+      </View>
     </View>
   );
 }

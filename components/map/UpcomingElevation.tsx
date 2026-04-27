@@ -25,6 +25,8 @@ interface UpcomingElevationProps {
   profileSegments?: ProfileSegment[];
   /** Force fit-to-width — disables horizontal scrolling and the overview minimap */
   fitToWidth?: boolean;
+  showLegend?: boolean;
+  showStartAxisLine?: boolean;
 }
 
 export default function UpcomingElevation({
@@ -39,6 +41,8 @@ export default function UpcomingElevation({
   climbs,
   profileSegments,
   fitToWidth,
+  showLegend = false,
+  showStartAxisLine = false,
 }: UpcomingElevationProps) {
   const { slicedPoints, currentIdxInSlice, offsetMeters, sliceEndDist } = useMemo(() => {
     if (points.length < 2)
@@ -126,13 +130,14 @@ export default function UpcomingElevation({
       width={width}
       height={height}
       currentPointIndex={currentIdxInSlice}
-      showLegend={false}
+      showLegend={showLegend}
       distanceOffsetMeters={offsetMeters}
       pois={visiblePOIs}
       onPOIPress={onPOIPress}
       climbs={visibleClimbs}
       profileSegments={visibleProfileSegments}
       fitToWidth={fitToWidth}
+      showStartAxisLine={showStartAxisLine}
     />
   );
 }

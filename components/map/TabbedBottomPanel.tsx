@@ -2,6 +2,7 @@ import React from "react";
 import { View, TouchableOpacity, useWindowDimensions } from "react-native";
 import { TabView } from "react-native-tab-view";
 import Animated, {
+  interpolate,
   useSharedValue,
   useAnimatedStyle,
   useAnimatedKeyboard,
@@ -79,6 +80,9 @@ export default function TabbedBottomPanel({ activeData }: TabbedBottomPanelProps
   const panelTab = usePanelStore((s) => s.panelTab);
   const setPanelTab = usePanelStore((s) => s.setPanelTab);
   const setIsExpanded = usePanelStore((s) => s.setIsExpanded);
+  const isExpanded = usePanelStore((s) => s.isExpanded);
+
+  const reportedIsExpanded = useSharedValue(isExpanded);
 
   const panGesture = Gesture.Pan()
     .activeOffsetY([-10, 10])
@@ -87,7 +91,8 @@ export default function TabbedBottomPanel({ activeData }: TabbedBottomPanelProps
     })
     .onUpdate((event) => {
       const newY = dragStartY.value + event.translationY;
-      sheetTranslateY.value = Math.max(0, Math.min(compactOffset, newY));
+      const clampedY = Math.max(0, Math.min(compactOffset, newY));
+      sheetTranslateY.value = clampedY;
     })
     .onEnd((event) => {
       const velocityY = event.velocityY;
@@ -104,8 +109,10 @@ export default function TabbedBottomPanel({ activeData }: TabbedBottomPanelProps
 
       const target = snapToExpanded ? 0 : compactOffset;
 
-      runOnJS(setIsExpanded)(snapToExpanded);
-
+      if (reportedIsExpanded.value !== snapToExpanded) {
+        reportedIsExpanded.value = snapToExpanded;
+        runOnJS(setIsExpanded)(snapToExpanded);
+      }
       sheetTranslateY.value = withSpring(target, SPRING_CONFIG);
     });
 
@@ -122,10 +129,18 @@ export default function TabbedBottomPanel({ activeData }: TabbedBottomPanelProps
     };
   });
 
-  const isExpanded = usePanelStore((s) => s.isExpanded);
   const compactContentHeight = compactHeight - HEADER_HEIGHT;
   const expandedContentHeight = expandedHeight - HEADER_HEIGHT;
-  const effectiveContentHeight = isExpanded ? expandedContentHeight : compactContentHeight;
+  const contentHeight = isExpanded ? expandedContentHeight : compactContentHeight;
+  const animatedContentStyle = useAnimatedStyle(() => {
+    const height = interpolate(
+      sheetTranslateY.value,
+      [compactOffset, 0],
+      [compactContentHeight, expandedContentHeight],
+      "clamp",
+    );
+    return { height };
+  });
   const tabIndex = Math.max(
     0,
     TAB_ROUTES.findIndex((route) => route.key === panelTab),
@@ -148,7 +163,10 @@ export default function TabbedBottomPanel({ activeData }: TabbedBottomPanelProps
             <ProfileTabContent
               activeData={activeData}
               width={screenWidth}
-              height={effectiveContentHeight}
+              height={contentHeight}
+              compactHeight={compactContentHeight}
+              sheetTranslateY={sheetTranslateY}
+              compactOffset={compactOffset}
             />
           );
         case "weather":
@@ -156,12 +174,18 @@ export default function TabbedBottomPanel({ activeData }: TabbedBottomPanelProps
         case "climbs":
           return <ClimbTabContent activeData={activeData} />;
         case "pois":
-          return <POITabContent activeData={activeData} />;
+          return (
+            <POITabContent
+              activeData={activeData}
+              sheetTranslateY={sheetTranslateY}
+              compactOffset={compactOffset}
+            />
+          );
         case "waypoints":
           return <WaypointsTabContent activeData={activeData} />;
       }
     },
-    [activeData, effectiveContentHeight, screenWidth],
+    [activeData, compactContentHeight, contentHeight, screenWidth, sheetTranslateY, compactOffset],
   );
 
   return (
@@ -227,20 +251,20 @@ export default function TabbedBottomPanel({ activeData }: TabbedBottomPanelProps
       </GestureDetector>
 
       {/* Content — clips to available height */}
-      <View style={{ height: effectiveContentHeight, overflow: "hidden" }}>
+      <Animated.View style={[animatedContentStyle, { overflow: "hidden" }]}>
         <TabView
           navigationState={{ index: tabIndex, routes: TAB_ROUTES }}
           renderScene={renderScene}
           onIndexChange={handleTabIndexChange}
-          initialLayout={{ width: screenWidth, height: effectiveContentHeight }}
+          initialLayout={{ width: screenWidth, height: contentHeight }}
           renderTabBar={() => null}
           lazy
           lazyPreloadDistance={1}
           swipeEnabled
           animationEnabled
-          style={{ height: effectiveContentHeight }}
+          style={{ flex: 1 }}
         />
-      </View>
+      </Animated.View>
     </Animated.View>
   );
 }
