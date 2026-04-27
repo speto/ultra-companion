@@ -6,6 +6,7 @@ import {
   buildStartFinishBadgeSvgs,
   START_ICON_NAME,
   FINISH_ICON_NAME,
+  MAP_BADGE_ICON_SIZE_EXPR,
   makeDistanceMarkerSvg,
 } from "./mapBadgeIcons";
 import type { RoutePoint } from "@/types";
@@ -27,19 +28,6 @@ const iconNameField = ["get", "iconName"] as const;
 const startFilter = ["==", kindField, "start"] as const;
 const finishFilter = ["==", kindField, "finish"] as const;
 const distanceFilter = ["==", kindField, "distance"] as const;
-// Zoom-aware icon size for start/finish soft-chip markers (32px base SVGs)
-const endpointIconSizeExpr: SymbolLayerStyle["iconSize"] = [
-  "interpolate",
-  ["linear"],
-  ["zoom"],
-  8,
-  0.55,
-  10,
-  0.75,
-  12,
-  0.95,
-];
-
 export default function RouteMarkerLayer({
   activeContextKey,
   points,
@@ -71,7 +59,7 @@ export default function RouteMarkerLayer({
   const startIconStyle = useMemo<SymbolLayerStyle>(
     () => ({
       iconImage: START_ICON_NAME,
-      iconSize: endpointIconSizeExpr,
+      iconSize: MAP_BADGE_ICON_SIZE_EXPR,
       iconAllowOverlap: true,
       iconIgnorePlacement: true,
       iconAnchor: "center",
@@ -83,7 +71,7 @@ export default function RouteMarkerLayer({
   const finishIconStyle = useMemo<SymbolLayerStyle>(
     () => ({
       iconImage: FINISH_ICON_NAME,
-      iconSize: endpointIconSizeExpr,
+      iconSize: MAP_BADGE_ICON_SIZE_EXPR,
       iconAllowOverlap: true,
       iconIgnorePlacement: true,
       iconAnchor: "center",

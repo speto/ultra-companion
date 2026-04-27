@@ -1,5 +1,6 @@
 import { POI_CATEGORIES } from "@/constants";
 import { WAYPOINT_CATEGORIES } from "@/constants/waypointCategories";
+import type { SymbolLayerStyle } from "@rnmapbox/maps";
 
 const toHex = (c: number) => c.toString(16).padStart(2, "0");
 
@@ -11,9 +12,52 @@ function tintColor(hex: string, alpha: number): string {
   const blend = (c: number) => Math.round(c * alpha + 255 * (1 - alpha));
   return `#${toHex(blend(r))}${toHex(blend(g))}${toHex(blend(b))}`;
 }
-type BadgeVariant = "clean" | "bordered";
 
 export type BadgeSvgMap = Record<string, string>;
+
+const BADGE_TINT_ALPHA = 0.22;
+const BADGE_CANVAS_SIZE = 32;
+const BADGE_CENTER = 16;
+const BADGE_RADIUS = 13;
+const BADGE_STROKE_WIDTH = 0.75;
+const BADGE_GLYPH_TRANSFORM = "translate(7, 7) scale(0.75)";
+
+export const MAP_BADGE_ICON_SIZE_EXPR: SymbolLayerStyle["iconSize"] = [
+  "interpolate",
+  ["linear"],
+  ["zoom"],
+  8,
+  0.55,
+  10,
+  0.75,
+  12,
+  0.95,
+];
+
+interface BadgeSvgConfig {
+  color: string;
+  backgroundTintAlpha: number;
+  borderTintAlpha: number;
+  borderOpacity?: number;
+  glyphSvg: string;
+}
+
+function makeBadgeSvg({
+  color,
+  backgroundTintAlpha,
+  borderTintAlpha,
+  borderOpacity = 1,
+  glyphSvg,
+}: BadgeSvgConfig): string {
+  const backgroundColor = tintColor(color, backgroundTintAlpha);
+  const borderColor = tintColor(color, borderTintAlpha);
+
+  return `<svg width="${BADGE_CANVAS_SIZE}" height="${BADGE_CANVAS_SIZE}" viewBox="0 0 ${BADGE_CANVAS_SIZE} ${BADGE_CANVAS_SIZE}" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="${BADGE_CENTER}" cy="${BADGE_CENTER}" r="${BADGE_RADIUS}" fill="${backgroundColor}"/>
+  <circle cx="${BADGE_CENTER}" cy="${BADGE_CENTER}" r="${BADGE_RADIUS}" fill="none" stroke="${borderColor}" stroke-opacity="${borderOpacity}" stroke-width="${BADGE_STROKE_WIDTH}"/>
+  ${glyphSvg}
+</svg>`;
+}
 
 // ---------------------------------------------------------------------------
 // Shared POI / waypoint badge style: list-chip parity
@@ -239,12 +283,10 @@ function lucideToSvgElements(
 }
 
 /**
- * Generates a list-style map badge SVG (32x32) with:
- * - Soft category tint background
- * - Optional border that does not alter icon geometry
- * - Lucide-derived stroke icon in category color
+ * Generates a map badge SVG (32x32) using the same inset-chip geometry as
+ * start/finish markers, with an opaque category tint background.
  */
-function makeLucideBadgeSvg(color: string, iconName: string, variant: BadgeVariant): string {
+function makeLucideBadgeSvg(color: string, iconName: string): string {
   const elements = LUCIDE_ICONS[iconName];
   const iconSvg = elements
     ? lucideToSvgElements(elements, color)
@@ -252,34 +294,31 @@ function makeLucideBadgeSvg(color: string, iconName: string, variant: BadgeVaria
       `<path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
     <circle cx="12" cy="10" r="3" fill="${color}" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`;
 
-  const border =
-    variant === "bordered"
-      ? `\n  <circle cx="16" cy="16" r="15.5" fill="none" stroke="${color}" stroke-opacity="0.35" stroke-width="1"/>`
-      : "";
-
-  return `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-  <circle cx="16" cy="16" r="16" fill="${color}" fill-opacity="0.1"/>${border}
-  <g transform="translate(7, 7) scale(0.75)">
+  return makeBadgeSvg({
+    color,
+    backgroundTintAlpha: BADGE_TINT_ALPHA,
+    borderTintAlpha: 0.45,
+    borderOpacity: 0.9,
+    glyphSvg: `<g transform="${BADGE_GLYPH_TRANSFORM}">
     ${iconSvg}
-  </g>
-</svg>`;
+  </g>`,
+  });
 }
 
-/** Generate badge SVGs for all POI categories, keyed by `poi-{categoryKey}` */
+/** Generate bordered badge SVGs for all POI categories. */
 export function buildPoiBadgeSvgs(): BadgeSvgMap {
   const svgs: BadgeSvgMap = {};
   for (const cat of POI_CATEGORIES) {
-    svgs[`poi-${cat.key}`] = makeLucideBadgeSvg(cat.color, cat.iconName, "clean");
+    svgs[`poi-${cat.key}`] = makeLucideBadgeSvg(cat.color, cat.iconName);
   }
   return svgs;
 }
 
-/** Generate clean and bordered badge SVGs for all waypoint categories. */
+/** Generate bordered badge SVGs for all waypoint categories. */
 export function buildWaypointBadgeSvgs(): BadgeSvgMap {
   const svgs: BadgeSvgMap = {};
   for (const cat of WAYPOINT_CATEGORIES) {
-    svgs[`wp-${cat.key}`] = makeLucideBadgeSvg(cat.color, cat.iconName, "clean");
-    svgs[`wp-${cat.key}-bordered`] = makeLucideBadgeSvg(cat.color, cat.iconName, "bordered");
+    svgs[`wp-${cat.key}`] = makeLucideBadgeSvg(cat.color, cat.iconName);
   }
   return svgs;
 }
@@ -289,24 +328,26 @@ export function buildWaypointBadgeSvgs(): BadgeSvgMap {
 // ---------------------------------------------------------------------------
 
 /** Soft green start chip: opaque pale green fill, play-triangle glyph. */
-const START_ICON_SVG = `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-  <circle cx="16" cy="16" r="13" fill="${tintColor("#22C55E", 0.2)}"/>
-  <circle cx="16" cy="16" r="13" fill="none" stroke="${tintColor("#22C55E", 0.4)}" stroke-width="0.75"/>
-  <path d="M13 10L22 16L13 22Z" fill="#22C55E"/>
-</svg>`;
+const START_ICON_SVG = makeBadgeSvg({
+  color: "#22C55E",
+  backgroundTintAlpha: 0.2,
+  borderTintAlpha: 0.4,
+  glyphSvg: `<path d="M13 10L22 16L13 22Z" fill="#22C55E"/>`,
+});
 
 /** Soft neutral finish chip: opaque pale neutral fill, checkered pattern. */
-const FINISH_ICON_SVG = `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-  <circle cx="16" cy="16" r="13" fill="${tintColor("#1C1A18", 0.12)}"/>
-  <circle cx="16" cy="16" r="13" fill="none" stroke="${tintColor("#1C1A18", 0.3)}" stroke-width="0.75"/>
-  <g>
+const FINISH_ICON_SVG = makeBadgeSvg({
+  color: "#1C1A18",
+  backgroundTintAlpha: 0.12,
+  borderTintAlpha: 0.3,
+  glyphSvg: `<g>
     <rect x="9" y="9" width="4.67" height="4.67" fill="#1C1A18"/>
     <rect x="18.33" y="9" width="4.67" height="4.67" fill="#1C1A18"/>
     <rect x="13.67" y="13.67" width="4.67" height="4.67" fill="#1C1A18"/>
     <rect x="9" y="18.33" width="4.67" height="4.67" fill="#1C1A18"/>
     <rect x="18.33" y="18.33" width="4.67" height="4.67" fill="#1C1A18"/>
-  </g>
-</svg>`;
+  </g>`,
+});
 
 export const START_ICON_NAME = "route-start-play" as const;
 export const FINISH_ICON_NAME = "route-finish-checkered" as const;

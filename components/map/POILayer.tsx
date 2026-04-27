@@ -5,14 +5,17 @@ import { usePoiStore } from "@/store/poiStore";
 import { usePanelStore } from "@/store/panelStore";
 import { usePlaceStore } from "@/store/placeStore";
 import { useStarredStore } from "@/store/starredStore";
-import { useSettingsStore } from "@/store/settingsStore";
 import { useThemeColors } from "@/theme";
 import { useEtaStore } from "@/store/etaStore";
 import { haversineDistance } from "@/utils/geo";
 import { isOpenAt } from "@/services/openingHoursParser";
 import { isFoodShopCategory } from "@/utils/placeAdapter";
 import { waypointCategoryForType } from "@/constants/waypointCategories";
-import { buildPoiBadgeSvgs, buildWaypointBadgeSvgs } from "./mapBadgeIcons";
+import {
+  buildPoiBadgeSvgs,
+  buildWaypointBadgeSvgs,
+  MAP_BADGE_ICON_SIZE_EXPR,
+} from "./mapBadgeIcons";
 import type { POI, PlaceViewModel } from "@/types";
 import type { SymbolLayerStyle, CircleLayerStyle } from "@rnmapbox/maps";
 
@@ -32,7 +35,6 @@ export default function POILayer({ routeIds }: POILayerProps) {
   const foodAvailabilityCustomTime = usePoiStore((s) => s.foodAvailabilityCustomTime);
   const getETAToPOI = useEtaStore((s) => s.getETAToPOI);
   const starredKeys = useStarredStore((s) => s.starredKeys);
-  const waypointMapIconStyle = useSettingsStore((s) => s.waypointMapIconStyle);
   const panelTab = usePanelStore((s) => s.panelTab);
   const allPlaces = usePlaceStore((s) => s.places);
   const getVisiblePlaces = usePlaceStore((s) => s.getVisiblePlaces);
@@ -81,10 +83,7 @@ export default function POILayer({ routeIds }: POILayerProps) {
       features: deferredVisiblePlaces.map((place) => {
         const waypointCategory =
           place.entityType === "routeWaypoint" ? waypointCategoryForType(place.waypointType) : null;
-        const waypointIconSuffix = waypointMapIconStyle === "bordered" ? "-bordered" : "";
-        const iconName = waypointCategory
-          ? `wp-${waypointCategory}${waypointIconSuffix}`
-          : `poi-${place.category}`;
+        const iconName = waypointCategory ? `wp-${waypointCategory}` : `poi-${place.category}`;
         const starred = starredKeys.has(`${place.entityType}:${place.entityId}`) ? 1 : 0;
         return {
           type: "Feature",
@@ -103,7 +102,7 @@ export default function POILayer({ routeIds }: POILayerProps) {
         };
       }),
     }),
-    [deferredVisiblePlaces, starredKeys, waypointMapIconStyle],
+    [deferredVisiblePlaces, starredKeys],
   );
 
   const handlePress = useCallback(
@@ -146,9 +145,12 @@ export default function POILayer({ routeIds }: POILayerProps) {
 
   const starredHaloStyle = useMemo<CircleLayerStyle>(
     () => ({
-      circleRadius: ["interpolate", ["linear"], ["zoom"], 5, 7, 8, 9, 10, 11, 12, 14],
+      circleRadius: ["interpolate", ["linear"], ["zoom"], 8, 10, 10, 13, 12, 16],
       circleColor: colors.warning,
-      circleOpacity: 0.85,
+      circleOpacity: 0.06,
+      circleStrokeColor: colors.warning,
+      circleStrokeOpacity: 0.65,
+      circleStrokeWidth: ["interpolate", ["linear"], ["zoom"], 8, 1, 10, 1.25, 12, 1.5],
     }),
     [colors.warning],
   );
@@ -156,7 +158,7 @@ export default function POILayer({ routeIds }: POILayerProps) {
   const normalBadgeStyle = useMemo<SymbolLayerStyle>(
     () => ({
       iconImage: ["get", "iconName"],
-      iconSize: ["interpolate", ["linear"], ["zoom"], 5, 0.73, 10, 1.0, 14, 1.27],
+      iconSize: MAP_BADGE_ICON_SIZE_EXPR,
       iconAllowOverlap: true,
       iconIgnorePlacement: true,
       iconAnchor: "center",
@@ -167,7 +169,7 @@ export default function POILayer({ routeIds }: POILayerProps) {
   const starredBadgeStyle = useMemo<SymbolLayerStyle>(
     () => ({
       iconImage: ["get", "iconName"],
-      iconSize: ["interpolate", ["linear"], ["zoom"], 5, 0.8, 10, 1.1, 14, 1.4],
+      iconSize: ["interpolate", ["linear"], ["zoom"], 8, 0.58, 10, 0.78, 12, 0.98],
       iconAllowOverlap: true,
       iconIgnorePlacement: true,
       iconAnchor: "center",
