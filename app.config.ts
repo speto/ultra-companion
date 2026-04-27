@@ -133,7 +133,7 @@ export default (_: ConfigContext): ExpoConfig => ({
       "expo-splash-screen",
       {
         image: splashImage,
-        imageWidth: 200,
+        resizeMode: "contain",
         backgroundColor: splashBackgroundColor,
       },
     ],
