@@ -5,6 +5,7 @@ import { usePoiStore } from "@/store/poiStore";
 import { usePanelStore } from "@/store/panelStore";
 import { usePlaceStore } from "@/store/placeStore";
 import { useStarredStore } from "@/store/starredStore";
+import { useSettingsStore } from "@/store/settingsStore";
 import { useThemeColors } from "@/theme";
 import { useEtaStore } from "@/store/etaStore";
 import { haversineDistance } from "@/utils/geo";
@@ -31,6 +32,7 @@ export default function POILayer({ routeIds }: POILayerProps) {
   const foodAvailabilityCustomTime = usePoiStore((s) => s.foodAvailabilityCustomTime);
   const getETAToPOI = useEtaStore((s) => s.getETAToPOI);
   const starredKeys = useStarredStore((s) => s.starredKeys);
+  const waypointMapIconStyle = useSettingsStore((s) => s.waypointMapIconStyle);
   const panelTab = usePanelStore((s) => s.panelTab);
   const allPlaces = usePlaceStore((s) => s.places);
   const getVisiblePlaces = usePlaceStore((s) => s.getVisiblePlaces);
@@ -77,10 +79,12 @@ export default function POILayer({ routeIds }: POILayerProps) {
     (): GeoJSON.FeatureCollection => ({
       type: "FeatureCollection",
       features: deferredVisiblePlaces.map((place) => {
-        const iconName =
-          place.entityType === "routeWaypoint"
-            ? `wp-${waypointCategoryForType(place.waypointType)}`
-            : `poi-${place.category}`;
+        const waypointCategory =
+          place.entityType === "routeWaypoint" ? waypointCategoryForType(place.waypointType) : null;
+        const waypointIconSuffix = waypointMapIconStyle === "bordered" ? "-bordered" : "";
+        const iconName = waypointCategory
+          ? `wp-${waypointCategory}${waypointIconSuffix}`
+          : `poi-${place.category}`;
         const starred = starredKeys.has(`${place.entityType}:${place.entityId}`) ? 1 : 0;
         return {
           type: "Feature",
@@ -99,7 +103,7 @@ export default function POILayer({ routeIds }: POILayerProps) {
         };
       }),
     }),
-    [deferredVisiblePlaces, starredKeys],
+    [deferredVisiblePlaces, starredKeys, waypointMapIconStyle],
   );
 
   const handlePress = useCallback(
@@ -178,7 +182,7 @@ export default function POILayer({ routeIds }: POILayerProps) {
       <Images>
         {badgeEntries.map(([name, svg]) => (
           <Image key={name} name={name}>
-            <SvgXml xml={svg} width={24} height={24} />
+            <SvgXml xml={svg} width={32} height={32} />
           </Image>
         ))}
       </Images>

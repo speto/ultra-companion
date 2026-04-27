@@ -4,7 +4,7 @@ import { Text } from "@/components/ui/text";
 import { ChevronDown, ChevronUp } from "lucide-react-native";
 import { cn } from "@/lib/cn";
 import { useThemeColors } from "@/theme";
-import { useSettingsStore } from "@/store/settingsStore";
+import { useSettingsStore, type WaypointMapIconStyle } from "@/store/settingsStore";
 import { useMapStore } from "@/store/mapStore";
 import { useEtaStore } from "@/store/etaStore";
 import { usePoiStore } from "@/store/poiStore";
@@ -22,6 +22,11 @@ const CORRIDOR_OPTIONS: { value: string; label: string }[] = [
   { value: "1000", label: "1 km" },
   { value: "2000", label: "2 km" },
   { value: "5000", label: "5 km" },
+];
+
+const WAYPOINT_MAP_ICON_OPTIONS: { value: WaypointMapIconStyle; label: string }[] = [
+  { value: "clean", label: "Clean" },
+  { value: "bordered", label: "Bordered" },
 ];
 
 function OptionGroup<T extends string>({
@@ -146,7 +151,7 @@ function ToggleRow({
 }
 
 export default function SettingsScreen() {
-  const { units, setUnits } = useSettingsStore();
+  const { units, setUnits, waypointMapIconStyle, setWaypointMapIconStyle } = useSettingsStore();
   const colors = useThemeColors();
   const showDistanceMarkers = useMapStore((s) => s.showDistanceMarkers);
   const toggleDistanceMarkers = useMapStore((s) => s.toggleDistanceMarkers);
@@ -177,6 +182,14 @@ export default function SettingsScreen() {
           onToggle={toggleDistanceMarkers}
         />
       </View>
+      <Text className="text-[14px] font-barlow-medium text-muted-foreground mt-4 mb-2">
+        Waypoint icons
+      </Text>
+      <OptionGroup
+        options={WAYPOINT_MAP_ICON_OPTIONS}
+        value={waypointMapIconStyle}
+        onChange={setWaypointMapIconStyle}
+      />
 
       <Text className="text-[22px] font-barlow-semibold text-foreground mt-6 mb-3">
         POI Search Radius
