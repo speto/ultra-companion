@@ -2,6 +2,7 @@ import type { OpeningHoursStatus } from "@/types";
 import { formatETA } from "@/utils/formatters";
 
 const CLOSING_SOON_THRESHOLD_MS = 60 * 60 * 1000;
+const PARSE_CACHE = new Map<string, GooglePeriod[] | null>();
 
 /**
  * A single opening period from Google Places API.
@@ -99,17 +100,29 @@ function isEffectively247(normalized: NormalizedPeriod[]): boolean {
 }
 
 function parsePeriods(tag: string): GooglePeriod[] | null {
+  if (PARSE_CACHE.has(tag)) return PARSE_CACHE.get(tag) ?? null;
+
+  let result: GooglePeriod[] | null = null;
   if (!tag || !tag.startsWith("[")) return null; // Skip OSM-format strings
   try {
     const parsed = JSON.parse(tag);
-    if (!Array.isArray(parsed) || parsed.length === 0) return null;
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      PARSE_CACHE.set(tag, null);
+      return null;
+    }
     // Validate structure: each period must have open.day, open.hour, open.minute
     const first = parsed[0];
-    if (!first?.open || typeof first.open.day !== "number") return null;
-    return parsed as GooglePeriod[];
+    if (!first?.open || typeof first.open.day !== "number") {
+      PARSE_CACHE.set(tag, null);
+      return null;
+    }
+    result = parsed as GooglePeriod[];
   } catch {
-    return null;
+    result = null;
   }
+
+  PARSE_CACHE.set(tag, result);
+  return result;
 }
 
 export function getOpeningHoursStatus(

@@ -58,8 +58,9 @@ const makeSegment = (routeId: string, offset: number, distance = 1000): Stitched
 
 const alwaysOpenHours = JSON.stringify([{ open: { day: 0, hour: 0, minute: 0 } }]);
 
-const mondayClosedHours = JSON.stringify([
-  { open: { day: 1, hour: 0, minute: 0 }, close: { day: 1, hour: 1, minute: 0 } },
+const tomorrow = (new Date().getDay() + 1) % 7;
+const closedNowHours = JSON.stringify([
+  { open: { day: tomorrow, hour: 0, minute: 0 }, close: { day: tomorrow, hour: 1, minute: 0 } },
 ]);
 
 describe("placeAdapter", () => {
@@ -126,7 +127,7 @@ describe("placeAdapter", () => {
   });
 
   describe("filterPlacesByOpenNow", () => {
-    it("keeps non-food POIs and only food/shop POIs known open", () => {
+    it("keeps non-food POIs and food/shop POIs unless confirmed closed", () => {
       const places = [
         downloadedPoiToPlace({
           ...makePoi("known-open", "r1", 100, "water"),
@@ -134,7 +135,7 @@ describe("placeAdapter", () => {
         }),
         downloadedPoiToPlace({
           ...makePoi("known-closed", "r1", 200, "water"),
-          tags: { opening_hours: mondayClosedHours },
+          tags: { opening_hours: closedNowHours },
         }),
         downloadedPoiToPlace({
           ...makePoi("missing-hours", "r1", 300, "water"),
@@ -150,7 +151,7 @@ describe("placeAdapter", () => {
         }),
         downloadedPoiToPlace({
           ...makePoi("closed-bakery", "r1", 460, "bakery"),
-          tags: { opening_hours: mondayClosedHours },
+          tags: { opening_hours: closedNowHours },
         }),
         downloadedPoiToPlace({
           ...makePoi("unknown-bakery", "r1", 470, "bakery"),
@@ -164,6 +165,7 @@ describe("placeAdapter", () => {
         "missing-hours",
         "malformed-hours",
         "open-bakery",
+        "unknown-bakery",
         "waypoint",
       ]);
     });

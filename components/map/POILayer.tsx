@@ -1,4 +1,4 @@
-import React, { useMemo, useCallback } from "react";
+import React, { useMemo, useCallback, useDeferredValue } from "react";
 import { ShapeSource, SymbolLayer, CircleLayer, Images, Image } from "@rnmapbox/maps";
 import { SvgXml } from "react-native-svg";
 import { usePoiStore } from "@/store/poiStore";
@@ -6,10 +6,13 @@ import { usePanelStore } from "@/store/panelStore";
 import { usePlaceStore } from "@/store/placeStore";
 import { useStarredStore } from "@/store/starredStore";
 import { useThemeColors } from "@/theme";
+import { useEtaStore } from "@/store/etaStore";
 import { haversineDistance } from "@/utils/geo";
+import { isOpenAt } from "@/services/openingHoursParser";
+import { isFoodShopCategory } from "@/utils/placeAdapter";
 import { waypointCategoryForType } from "@/constants/waypointCategories";
 import { buildPoiBadgeSvgs, buildWaypointBadgeSvgs } from "./mapBadgeIcons";
-import type { PlaceViewModel } from "@/types";
+import type { POI, PlaceViewModel } from "@/types";
 import type { SymbolLayerStyle, CircleLayerStyle } from "@rnmapbox/maps";
 
 const POI_BADGE_SVGS = buildPoiBadgeSvgs();
@@ -24,6 +27,9 @@ interface POILayerProps {
 export default function POILayer({ routeIds }: POILayerProps) {
   const enabledCategories = usePoiStore((s) => s.enabledCategories);
   const showOpenOnly = usePoiStore((s) => s.showOpenOnly);
+  const foodAvailabilityMode = usePoiStore((s) => s.foodAvailabilityMode);
+  const foodAvailabilityCustomTime = usePoiStore((s) => s.foodAvailabilityCustomTime);
+  const getETAToPOI = useEtaStore((s) => s.getETAToPOI);
   const starredKeys = useStarredStore((s) => s.starredKeys);
   const panelTab = usePanelStore((s) => s.panelTab);
   const allPlaces = usePlaceStore((s) => s.places);
@@ -45,22 +51,32 @@ export default function POILayer({ routeIds }: POILayerProps) {
         );
       }
     }
-    return places;
+    return filterByFoodAvailability(
+      places,
+      foodAvailabilityMode,
+      foodAvailabilityCustomTime,
+      getETAToPOI,
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     routeIds,
     allPlaces,
     enabledCategories,
     showOpenOnly,
+    foodAvailabilityMode,
+    foodAvailabilityCustomTime,
+    getETAToPOI,
     starredKeys,
     panelTab,
     getVisiblePlaces,
   ]);
 
+  const deferredVisiblePlaces = useDeferredValue(visiblePlaces);
+
   const geoJSON = useMemo(
     (): GeoJSON.FeatureCollection => ({
       type: "FeatureCollection",
-      features: visiblePlaces.map((place) => {
+      features: deferredVisiblePlaces.map((place) => {
         const iconName =
           place.entityType === "routeWaypoint"
             ? `wp-${waypointCategoryForType(place.waypointType)}`
@@ -83,7 +99,7 @@ export default function POILayer({ routeIds }: POILayerProps) {
         };
       }),
     }),
-    [visiblePlaces, starredKeys],
+    [deferredVisiblePlaces, starredKeys],
   );
 
   const handlePress = useCallback(
@@ -99,7 +115,7 @@ export default function POILayer({ routeIds }: POILayerProps) {
         for (const feature of features) {
           const placeId = feature?.properties?.placeId;
           if (!placeId) continue;
-          const place = visiblePlaces.find((p) => p.placeId === placeId);
+          const place = deferredVisiblePlaces.find((p) => p.placeId === placeId);
           if (!place) continue;
           const dist = haversineDistance(
             tapCoord.latitude,
@@ -114,14 +130,14 @@ export default function POILayer({ routeIds }: POILayerProps) {
         }
       } else {
         const placeId = features[0]?.properties?.placeId;
-        if (placeId) bestPlace = visiblePlaces.find((p) => p.placeId === placeId);
+        if (placeId) bestPlace = deferredVisiblePlaces.find((p) => p.placeId === placeId);
       }
 
       if (bestPlace) {
         setSelectedPlace(bestPlace);
       }
     },
-    [visiblePlaces, setSelectedPlace],
+    [deferredVisiblePlaces, setSelectedPlace],
   );
 
   const starredHaloStyle = useMemo<CircleLayerStyle>(
@@ -190,4 +206,27 @@ export default function POILayer({ routeIds }: POILayerProps) {
       </ShapeSource>
     </>
   );
+}
+
+function filterByFoodAvailability(
+  places: PlaceViewModel[],
+  mode: string,
+  customTime: string | null,
+  getETAToPOI: (poi: POI) => { eta: Date } | null,
+) {
+  if (mode === "off" || mode === "now") return places;
+
+  const customDate = mode === "custom" && customTime ? new Date(customTime) : null;
+  if (mode === "custom" && (!customDate || Number.isNaN(customDate.getTime()))) return places;
+
+  return places.filter((place) => {
+    if (place.entityType !== "downloadedPoi") return true;
+    if (!isFoodShopCategory(place.category)) return true;
+    if (!place.openingHours) return true;
+
+    const targetTime = mode === "eta" ? getETAToPOI(place.raw as POI)?.eta : customDate;
+    if (!targetTime) return true;
+
+    return isOpenAt(place.openingHours, targetTime) !== false;
+  });
 }

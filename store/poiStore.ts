@@ -4,9 +4,11 @@ import type { FetchablePOISource, POI, POICategory, POIFetchStatus, RoutePoint }
 import { DEFAULT_CORRIDOR_WIDTH_M, POI_CATEGORIES } from "@/constants";
 import { getPOIsForRoute, deletePOIsBySource, deleteDownloadedPOIsForRoute } from "@/db/database";
 import { fetchOsmPOIs, fetchGooglePOIs } from "@/services/poiFetcher";
-import { isFoodShopCategory, isKnownOpenNow } from "@/utils/placeAdapter";
+import { isConfirmedClosedNow, isFoodShopCategory } from "@/utils/placeAdapter";
 import { usePanelStore } from "./panelStore";
 import { useStarredStore } from "./starredStore";
+
+export type FoodAvailabilityMode = "off" | "now" | "eta" | "custom";
 
 let storage: MMKV | null = null;
 
@@ -180,7 +182,9 @@ interface POIState {
   enabledCategories: POICategory[];
   corridorWidthM: number;
   showOpenOnly: boolean;
-
+  showSavedOnly: boolean;
+  foodAvailabilityMode: FoodAvailabilityMode;
+  foodAvailabilityCustomTime: string | null;
   // Fetch state per source per route
   sourceInfo: Record<string, Record<FetchablePOISource, SourceInfo>>; // routeId -> source -> info
 
@@ -200,6 +204,10 @@ interface POIState {
   setAllCategories: (enabled: boolean) => void;
   toggleShowOpenOnly: () => void;
   setShowOpenOnly: (show: boolean) => void;
+  toggleShowSavedOnly: () => void;
+  setShowSavedOnly: (show: boolean) => void;
+  setFoodAvailabilityMode: (mode: FoodAvailabilityMode) => void;
+  setFoodAvailabilityCustomTime: (isoTime: string | null) => void;
   setEnabledCategories: (categories: POICategory[]) => void;
   getStarredPOIs: (routeId: string) => POI[];
   clearPOIs: (routeId: string) => Promise<void>;
@@ -219,6 +227,9 @@ export const usePoiStore = create<POIState>((set, get) => ({
   enabledCategories: parseCategories(readString("enabledCategories")),
   corridorWidthM: Number(readString("corridorWidthM")) || DEFAULT_CORRIDOR_WIDTH_M,
   showOpenOnly: readString("showOpenOnly") === "true",
+  showSavedOnly: false,
+  foodAvailabilityMode: readString("showOpenOnly") === "true" ? "now" : "off",
+  foodAvailabilityCustomTime: null,
   sourceInfo: {},
   selectedPOI: null,
 
@@ -362,15 +373,27 @@ export const usePoiStore = create<POIState>((set, get) => ({
     try {
       getStorage().set("showOpenOnly", String(next));
     } catch {}
-    set({ showOpenOnly: next });
+    set({ showOpenOnly: next, foodAvailabilityMode: next ? "now" : "off" });
   },
 
   setShowOpenOnly: (show) => {
     try {
       getStorage().set("showOpenOnly", String(show));
     } catch {}
-    set({ showOpenOnly: show });
+    set({ showOpenOnly: show, foodAvailabilityMode: show ? "now" : "off" });
   },
+
+  toggleShowSavedOnly: () => set((s) => ({ showSavedOnly: !s.showSavedOnly })),
+  setShowSavedOnly: (show) => set({ showSavedOnly: show }),
+
+  setFoodAvailabilityMode: (mode) => {
+    const showOpenOnly = mode === "now";
+    try {
+      getStorage().set("showOpenOnly", String(showOpenOnly));
+    } catch {}
+    set({ foodAvailabilityMode: mode, showOpenOnly });
+  },
+  setFoodAvailabilityCustomTime: (isoTime) => set({ foodAvailabilityCustomTime: isoTime }),
 
   getStarredPOIs: (routeId) => {
     const state = get();
@@ -410,7 +433,7 @@ export const usePoiStore = create<POIState>((set, get) => ({
       const isStarred = useStarredStore.getState().isStarred("downloadedPoi", p.id);
       if (!enabled.has(p.category) && !isStarred) return false;
       if (state.showOpenOnly && isFoodShopCategory(p.category)) {
-        return isKnownOpenNow(p.tags.opening_hours);
+        return !isConfirmedClosedNow(p.tags.opening_hours);
       }
       return true;
     });

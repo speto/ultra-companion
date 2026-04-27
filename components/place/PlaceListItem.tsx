@@ -1,7 +1,7 @@
 import React, { useMemo } from "react";
 import { View, TouchableOpacity } from "react-native";
 import { Text } from "@/components/ui/text";
-import { Star } from "lucide-react-native";
+import { Clock, Star } from "lucide-react-native";
 import { useThemeColors } from "@/theme";
 import { useSettingsStore } from "@/store/settingsStore";
 import { useStarredStore } from "@/store/starredStore";
@@ -10,8 +10,9 @@ import { POI_ICON_MAP } from "@/constants/poiIcons";
 import { getWaypointCategoryMeta, WAYPOINT_ICON_MAP } from "@/constants/waypointCategories";
 import { ohStatusColorKey } from "@/constants/poiHelpers";
 import { formatDistance, formatDuration, formatETA, formatElevation } from "@/utils/formatters";
-import { getOpeningHoursStatus } from "@/services/openingHoursParser";
+import { getOpeningHoursStatus, isOpenAt } from "@/services/openingHoursParser";
 import { useEtaStore } from "@/store/etaStore";
+import { isFoodShopCategory } from "@/utils/placeAdapter";
 import type { PlaceViewModel } from "@/types";
 
 interface PlaceListItemProps {
@@ -109,6 +110,37 @@ export default function PlaceListItem({
     return parts.filter(Boolean).join(" · ") || null;
   }, [absoluteDistance, directionText, distAhead, etaResult, shouldShowAbsoluteDistance]);
 
+  const etaAvailability = useMemo(() => {
+    if (isWaypoint || !isFoodShopCategory(place.category) || !etaResult) return null;
+
+    const tag = place.openingHours;
+    if (!tag) {
+      return { label: "Hours unknown", color: colors.textTertiary };
+    }
+
+    const openAtEta = isOpenAt(tag, etaResult.eta);
+    if (openAtEta == null) {
+      return { label: "Hours unknown", color: colors.textTertiary };
+    }
+
+    const statusAtEta = getOpeningHoursStatus(tag, etaResult.eta);
+    if (openAtEta) {
+      const label = statusAtEta?.closingSoon ? "Tight" : "Open on arrival";
+      const detail = statusAtEta?.detail ? ` · ${statusAtEta.detail}` : "";
+      return {
+        label: `${label}${detail}`,
+        color: statusAtEta?.closingSoon ? colors.warning : colors.positive,
+      };
+    }
+
+    return {
+      label: statusAtEta?.detail
+        ? `Closed on arrival · ${statusAtEta.detail}`
+        : "Closed on arrival",
+      color: colors.textTertiary,
+    };
+  }, [colors, etaResult, isWaypoint, place.category, place.openingHours]);
+
   return (
     <TouchableOpacity
       className="flex-row items-center px-4 py-3 border-b border-border"
@@ -154,6 +186,17 @@ export default function PlaceListItem({
             <Text className="text-[11px] text-muted-foreground/60 font-barlow">{metadataText}</Text>
           )}
         </View>
+        {etaAvailability && (
+          <View className="flex-row items-center mt-1">
+            <Clock size={11} color={etaAvailability.color} />
+            <Text
+              className="ml-1 text-[11px] font-barlow-semibold"
+              style={{ color: etaAvailability.color }}
+            >
+              {etaAvailability.label}
+            </Text>
+          </View>
+        )}
       </View>
 
       <View className="items-end ml-2">

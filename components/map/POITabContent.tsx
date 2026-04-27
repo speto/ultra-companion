@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback } from "react";
+import React, { useMemo, useState, useCallback, useDeferredValue } from "react";
 import {
   View,
   FlatList,
@@ -7,6 +7,8 @@ import {
   TextInput as RNTextInput,
   Linking,
 } from "react-native";
+import Animated, { useAnimatedStyle, interpolate, Extrapolation } from "react-native-reanimated";
+import type { SharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
@@ -37,92 +39,48 @@ import type { ActiveRouteData, POI, PlaceViewModel } from "@/types";
 import { usePlaceStore } from "@/store/placeStore";
 import { useStarredStore } from "@/store/starredStore";
 import PlaceListItem from "@/components/place/PlaceListItem";
+import { isFoodShopCategory } from "@/utils/placeAdapter";
 
 interface POITabContentProps {
   activeData: ActiveRouteData | null;
+  sheetTranslateY?: SharedValue<number>;
+  compactOffset?: number;
 }
 
-export default function POITabContent({ activeData }: POITabContentProps) {
+export default function POITabContent({
+  activeData,
+  sheetTranslateY,
+  compactOffset,
+}: POITabContentProps) {
   const colors = useThemeColors();
   const { bottom: safeBottom } = useSafeAreaInsets();
   const snappedPosition = useRouteStore((s) => s.snappedPosition);
-  const getStarredPOIs = usePoiStore((s) => s.getStarredPOIs);
   const starredKeys = useStarredStore((s) => s.starredKeys);
   const selectedPOI = usePoiStore((s) => s.selectedPOI);
   const setSelectedPOI = usePoiStore((s) => s.setSelectedPOI);
   const allPois = usePoiStore((s) => s.pois);
   const enabledCategories = usePoiStore((s) => s.enabledCategories);
   const showOpenOnly = usePoiStore((s) => s.showOpenOnly);
-  const cumulativeTime = useEtaStore((s) => s.cumulativeTime);
+  const showSavedOnly = usePoiStore((s) => s.showSavedOnly);
+  const foodAvailabilityMode = usePoiStore((s) => s.foodAvailabilityMode);
+  const foodAvailabilityCustomTime = usePoiStore((s) => s.foodAvailabilityCustomTime);
+  const getETAToPOI = useEtaStore((s) => s.getETAToPOI);
   const isExpanded = usePanelStore((s) => s.isExpanded);
   const horizon = usePanelStore((s) => s.horizon);
 
   const [searchQuery, setSearchQuery] = useState("");
 
   const routeIds = useMemo(() => activeData?.routeIds ?? [], [activeData?.routeIds]);
-  const routePoints = activeData?.points ?? null;
   const segments = activeData?.segments ?? null;
   const segmentNameByRouteId = useMemo(
     () => new Map((segments ?? []).map((segment) => [segment.routeId, segment.routeName])),
     [segments],
   );
   const currentDist = snappedPosition?.distanceAlongRouteMeters ?? null;
-  const currentIdx = snappedPosition?.pointIndex ?? null;
   const horizonEndDist = useMemo(() => {
     if (currentDist == null || !activeData) return null;
     return horizonWindow(currentDist, horizon, activeData.totalDistanceMeters).endDist;
   }, [currentDist, horizon, activeData]);
-
-  const starredUpcoming = useMemo(() => {
-    if (routeIds.length === 0) return [];
-    const allStarred: (POI & { effectiveDist: number; ridingTimeSeconds: number | null })[] = [];
-    for (const routeId of routeIds) {
-      const pois = getStarredPOIs(routeId);
-      const offset = segments?.find((s) => s.routeId === routeId)?.distanceOffsetMeters ?? 0;
-      for (const poi of pois) {
-        const effDist = poi.distanceAlongRouteMeters + offset;
-        let ridingTime: number | null = null;
-        if (
-          currentIdx != null &&
-          cumulativeTime &&
-          routePoints &&
-          currentDist != null &&
-          effDist > currentDist
-        ) {
-          let poiIdx = currentIdx;
-          for (let i = currentIdx; i < routePoints.length; i++) {
-            if (routePoints[i].distanceFromStartMeters >= effDist) {
-              poiIdx = i;
-              break;
-            }
-            poiIdx = i;
-          }
-          const seconds = cumulativeTime[poiIdx] - cumulativeTime[currentIdx];
-          if (seconds > 0) ridingTime = seconds;
-        }
-        allStarred.push({ ...poi, effectiveDist: effDist, ridingTimeSeconds: ridingTime });
-      }
-    }
-    allStarred.sort((a, b) => a.effectiveDist - b.effectiveDist);
-    if (currentDist == null) return allStarred;
-    return allStarred.filter(
-      (p) =>
-        p.effectiveDist >= currentDist - POI_BEHIND_THRESHOLD_M &&
-        (horizonEndDist == null || p.effectiveDist <= horizonEndDist),
-    );
-    // starredKeys is a reactivity trigger: getStarredPOIs reads from starredStore via get().
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    routeIds,
-    segments,
-    getStarredPOIs,
-    starredKeys,
-    currentDist,
-    currentIdx,
-    horizonEndDist,
-    cumulativeTime,
-    routePoints,
-  ]);
 
   const allPlaces = usePlaceStore((s) => s.places);
   const selectedPlace = usePlaceStore((s) => s.selectedPlace);
@@ -138,17 +96,23 @@ export default function POITabContent({ activeData }: POITabContentProps) {
 
   // --- Expanded: full place list with search + filters ---
   const visiblePlaces = useMemo(() => {
-    if (!isExpanded) return [];
+    const startedAt = __DEV__ ? Date.now() : 0;
     const getStitchedVisible = usePlaceStore.getState().getStitchedVisiblePlaces;
+    let result: PlaceViewModel[];
     if (segments) {
-      return getStitchedVisible(segments, routeIds);
+      result = getStitchedVisible(segments, routeIds);
+    } else if (routeIds.length > 0) {
+      result = usePlaceStore.getState().getVisiblePlaces(routeIds[0]);
+    } else {
+      result = [];
     }
-    // Single route
-    if (routeIds.length > 0) {
-      const result = usePlaceStore.getState().getVisiblePlaces(routeIds[0]);
-      return result;
+
+    if (__DEV__) {
+      console.info(
+        `[poi-filter] visiblePlaces=${result.length} derived in ${Date.now() - startedAt}ms`,
+      );
     }
-    return [];
+    return result;
     // allPois/enabledCategories/showOpenOnly/starredKeys/allPlaces are reactivity triggers
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -158,10 +122,11 @@ export default function POITabContent({ activeData }: POITabContentProps) {
     allPois,
     enabledCategories,
     showOpenOnly,
+    showSavedOnly,
+    foodAvailabilityMode,
     starredKeys,
     allPlaces,
   ]);
-
   const sortedPlaces = useMemo(() => {
     if (currentDist == null) {
       return [...visiblePlaces].sort(
@@ -177,11 +142,25 @@ export default function POITabContent({ activeData }: POITabContentProps) {
       .sort((a, b) => a.effectiveDistanceAlongRouteMeters - b.effectiveDistanceAlongRouteMeters);
   }, [visiblePlaces, currentDist, horizonEndDist]);
 
-  const filteredPlaces = useMemo(() => {
-    if (!searchQuery.trim()) return sortedPlaces;
+  const availabilityFilteredPlaces = useMemo(
+    () =>
+      filterByFoodAvailability(
+        sortedPlaces,
+        foodAvailabilityMode,
+        foodAvailabilityCustomTime,
+        getETAToPOI,
+      ),
+    [foodAvailabilityCustomTime, foodAvailabilityMode, getETAToPOI, sortedPlaces],
+  );
+
+  const searchFilteredPlaces = useMemo(() => {
+    if (!searchQuery.trim()) return availabilityFilteredPlaces;
     const q = searchQuery.trim().toLowerCase();
-    return sortedPlaces.filter((p) => p.name?.toLowerCase().includes(q));
-  }, [sortedPlaces, searchQuery]);
+    return availabilityFilteredPlaces.filter((p) => p.name?.toLowerCase().includes(q));
+  }, [availabilityFilteredPlaces, searchQuery]);
+
+  const deferredSearchFilteredPlaces = useDeferredValue(searchFilteredPlaces);
+  const deferredAvailabilityFilteredPlaces = useDeferredValue(availabilityFilteredPlaces);
 
   const handlePlacePress = useCallback(
     (place: PlaceViewModel) => {
@@ -189,6 +168,44 @@ export default function POITabContent({ activeData }: POITabContentProps) {
     },
     [setSelectedPlace],
   );
+
+  const renderItem = useCallback(
+    ({ item }: { item: PlaceViewModel }) => (
+      <PlaceListItem
+        place={item}
+        currentDistAlongRoute={currentDist}
+        segmentName={segmentNameByRouteId.get(item.routeId) ?? null}
+        showAbsoluteDistance={segments != null}
+        onPress={handlePlacePress}
+      />
+    ),
+    [currentDist, segmentNameByRouteId, segments, handlePlacePress],
+  );
+
+  const searchAnimatedStyle = useAnimatedStyle(() => {
+    if (!sheetTranslateY || !compactOffset) {
+      return {
+        height: isExpanded ? 48 : 0,
+        opacity: isExpanded ? 1 : 0,
+        overflow: "hidden",
+      };
+    }
+
+    const height = interpolate(
+      sheetTranslateY.value,
+      [0, compactOffset],
+      [48, 0],
+      Extrapolation.CLAMP,
+    );
+    const opacity = interpolate(
+      sheetTranslateY.value,
+      [0, compactOffset * 0.5],
+      [1, 0],
+      Extrapolation.CLAMP,
+    );
+
+    return { height, opacity, overflow: "hidden" };
+  });
 
   // Show inline detail when a place is selected
   if (selectedPlace?.entityType === "downloadedPoi") {
@@ -221,14 +238,14 @@ export default function POITabContent({ activeData }: POITabContentProps) {
     );
   }
 
-  // --- Expanded mode: full POI list with search + filters ---
-  if (isExpanded) {
-    return (
-      <View className="flex-1">
-        {/* Search */}
+  const listData = isExpanded ? deferredSearchFilteredPlaces : deferredAvailabilityFilteredPlaces;
+
+  return (
+    <View className="flex-1">
+      <Animated.View style={searchAnimatedStyle}>
         <View
           className="flex-row items-center px-4 py-2"
-          style={{ borderBottomWidth: 1, borderBottomColor: colors.borderSubtle }}
+          style={{ borderBottomWidth: 1, borderBottomColor: colors.borderSubtle, height: 48 }}
         >
           <Search size={16} color={colors.textTertiary} />
           <RNTextInput
@@ -243,68 +260,29 @@ export default function POITabContent({ activeData }: POITabContentProps) {
             accessibilityLabel="Search POIs"
           />
         </View>
+      </Animated.View>
 
-        {/* Category filters */}
-        <View style={{ borderBottomWidth: 1, borderBottomColor: colors.borderSubtle }}>
-          <POIFilterBar routeIds={routeIds} />
-        </View>
-
-        {/* Full place list */}
-        <FlatList
-          data={filteredPlaces}
-          keyExtractor={(item) => item.placeId}
-          renderItem={({ item }) => (
-            <PlaceListItem
-              place={item}
-              currentDistAlongRoute={currentDist}
-              segmentName={segmentNameByRouteId.get(item.routeId) ?? null}
-              showAbsoluteDistance={segments != null}
-              onPress={handlePlacePress}
-            />
-          )}
-          contentContainerStyle={{ paddingBottom: 8 }}
-          showsVerticalScrollIndicator={false}
-        />
+      <View style={{ borderBottomWidth: 1, borderBottomColor: colors.borderSubtle }}>
+        <POIFilterBar routeIds={routeIds} />
       </View>
-    );
-  }
 
-  // --- Compact mode: starred POIs only ---
-  return (
-    <View className="flex-1">
-      {starredUpcoming.length > 0 ? (
-        <>
-          <View className="flex-row items-center justify-between px-3 py-1.5">
-            <Text className="text-[11px] font-barlow-semibold text-muted-foreground">
-              {starredUpcoming.length} starred ahead
-            </Text>
-          </View>
-          <FlatList
-            data={starredUpcoming}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item }) => (
-              <CompactPOIRow
-                poi={item}
-                effectiveDist={item.effectiveDist}
-                currentDist={currentDist}
-                ridingTimeSeconds={item.ridingTimeSeconds}
-                onPress={() => {
-                  const raw = usePoiStore
-                    .getState()
-                    .pois[item.routeId]?.find((p) => p.id === item.id);
-                  setSelectedPOI(raw ?? item);
-                }}
-              />
-            )}
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingBottom: safeBottom }}
-          />
-        </>
+      {listData.length > 0 ? (
+        <FlatList
+          data={listData}
+          keyExtractor={(item) => item.placeId}
+          renderItem={renderItem}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: isExpanded ? 8 : safeBottom }}
+          initialNumToRender={8}
+          maxToRenderPerBatch={8}
+          windowSize={3}
+          removeClippedSubviews={true}
+        />
       ) : (
         <View className="flex-1 items-center justify-center">
-          <Star size={20} color={colors.textTertiary} />
+          <MapPin size={20} color={colors.textTertiary} />
           <Text className="text-[12px] text-muted-foreground font-barlow-medium mt-2">
-            No starred POIs ahead
+            No POIs match filters
           </Text>
         </View>
       )}
@@ -312,80 +290,27 @@ export default function POITabContent({ activeData }: POITabContentProps) {
   );
 }
 
-function CompactPOIRow({
-  poi,
-  effectiveDist,
-  currentDist,
-  ridingTimeSeconds,
-  onPress,
-}: {
-  poi: POI;
-  effectiveDist: number;
-  currentDist: number | null;
-  ridingTimeSeconds: number | null;
-  onPress: () => void;
-}) {
-  const colors = useThemeColors();
-  const units = useSettingsStore((s) => s.units);
+function filterByFoodAvailability(
+  places: PlaceViewModel[],
+  mode: string,
+  customTime: string | null,
+  getETAToPOI: (poi: POI) => { eta: Date } | null,
+) {
+  if (mode === "off" || mode === "now") return places;
 
-  const catMeta = POI_CATEGORIES.find((c) => c.key === poi.category);
-  const IconComp = catMeta ? POI_ICON_MAP[catMeta.iconName] : null;
-  const distAhead = currentDist != null ? effectiveDist - currentDist : null;
+  const customDate = mode === "custom" && customTime ? new Date(customTime) : null;
+  if (mode === "custom" && (!customDate || Number.isNaN(customDate.getTime()))) return places;
 
-  const ohStatus = useMemo(() => {
-    const tag = poi.tags?.opening_hours;
-    return tag ? getOpeningHoursStatus(tag) : null;
-  }, [poi.tags?.opening_hours]);
+  return places.filter((place) => {
+    if (place.entityType !== "downloadedPoi") return true;
+    if (!isFoodShopCategory(place.category)) return true;
+    if (!place.openingHours) return true;
 
-  const ohColor = useMemo(() => {
-    const key = ohStatusColorKey(ohStatus);
-    return key ? colors[key] : undefined;
-  }, [ohStatus, colors]);
+    const targetTime = mode === "eta" ? getETAToPOI(place.raw as POI)?.eta : customDate;
+    if (!targetTime) return true;
 
-  return (
-    <TouchableOpacity
-      className="flex-row items-center px-3 py-2"
-      onPress={onPress}
-      accessibilityLabel={poi.name ?? catMeta?.label ?? "POI"}
-    >
-      <View
-        className="w-[28px] h-[28px] rounded-full items-center justify-center"
-        style={{ backgroundColor: (catMeta?.color ?? colors.textTertiary) + "1A" }}
-      >
-        {IconComp && <IconComp size={15} color={catMeta?.color ?? colors.textPrimary} />}
-      </View>
-
-      <View className="flex-1 ml-2.5">
-        <Text className="text-[14px] font-barlow-medium text-foreground" numberOfLines={1}>
-          {poi.name ?? catMeta?.label ?? "Unnamed"}
-        </Text>
-        {ohStatus && (
-          <View className="flex-row items-center mt-1">
-            <View className="w-[5px] h-[5px] rounded-full" style={{ backgroundColor: ohColor }} />
-            <Text className="ml-1 text-[11px] font-barlow-medium" style={{ color: ohColor }}>
-              {ohStatus.label}
-              {ohStatus.detail ? ` · ${ohStatus.detail}` : ""}
-            </Text>
-          </View>
-        )}
-      </View>
-
-      <View className="items-end ml-2">
-        {distAhead != null && (
-          <Text className="text-[14px] font-barlow-sc-semibold text-foreground">
-            {distAhead >= 0
-              ? formatDistance(distAhead, units)
-              : `-${formatDistance(Math.abs(distAhead), units)}`}
-          </Text>
-        )}
-        {ridingTimeSeconds != null && (
-          <Text className="text-[10px] text-muted-foreground font-barlow-sc-medium">
-            ~{formatDuration(ridingTimeSeconds)}
-          </Text>
-        )}
-      </View>
-    </TouchableOpacity>
-  );
+    return isOpenAt(place.openingHours, targetTime) !== false;
+  });
 }
 
 function InlinePOIDetail({ poi, onBack }: { poi: POI; onBack: () => void }) {

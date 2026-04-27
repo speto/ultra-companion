@@ -72,11 +72,19 @@ export const usePlaceStore = create<PlaceState>((set, get) => ({
     const filteredByCategory = filterPlacesByCategory(downloadedPOIs, enabledCategories);
     const byPlaceId = new Map(filteredByCategory.map((place) => [place.placeId, place]));
 
-    for (const place of downloadedPOIs) {
-      if (starredIds.has(place.entityId)) byPlaceId.set(place.placeId, place);
+    if (!poiState.showSavedOnly) {
+      for (const place of downloadedPOIs) {
+        if (starredIds.has(place.entityId)) byPlaceId.set(place.placeId, place);
+      }
     }
 
     let filtered = Array.from(byPlaceId.values());
+
+    if (poiState.showSavedOnly) {
+      filtered = filtered.filter(
+        (p) => p.entityType !== "downloadedPoi" || starredIds.has(p.entityId),
+      );
+    }
 
     // Apply showOpenOnly to downloaded POIs only
     if (poiState.showOpenOnly) {
@@ -85,7 +93,6 @@ export const usePlaceStore = create<PlaceState>((set, get) => ({
 
     return filtered;
   },
-
   getPlacesForRoutes: (routeIds) => {
     const state = get();
     const combined: PlaceViewModel[] = [];
@@ -111,11 +118,18 @@ export const usePlaceStore = create<PlaceState>((set, get) => ({
       const filteredByCategory = filterPlacesByCategory(downloadedPOIs, enabledCategories);
       const byPlaceId = new Map(filteredByCategory.map((place) => [place.placeId, place]));
 
-      for (const place of downloadedPOIs) {
-        if (starredIds.has(place.entityId)) byPlaceId.set(place.placeId, place);
+      if (!poiState.showSavedOnly) {
+        for (const place of downloadedPOIs) {
+          if (starredIds.has(place.entityId)) byPlaceId.set(place.placeId, place);
+        }
       }
 
       let filtered = Array.from(byPlaceId.values());
+      if (poiState.showSavedOnly) {
+        filtered = filtered.filter(
+          (p) => p.entityType !== "downloadedPoi" || starredIds.has(p.entityId),
+        );
+      }
       if (poiState.showOpenOnly) filtered = filterPlacesByOpenNow(filtered);
       for (const place of filtered) {
         const stitchedPlace = {
@@ -136,11 +150,18 @@ export const usePlaceStore = create<PlaceState>((set, get) => ({
         const filteredByCategory = filterPlacesByCategory(downloadedPOIs, enabledCategories);
         const byPlaceId = new Map(filteredByCategory.map((place) => [place.placeId, place]));
 
-        for (const place of downloadedPOIs) {
-          if (starredIds.has(place.entityId)) byPlaceId.set(place.placeId, place);
+        if (!poiState.showSavedOnly) {
+          for (const place of downloadedPOIs) {
+            if (starredIds.has(place.entityId)) byPlaceId.set(place.placeId, place);
+          }
         }
 
         let filtered = Array.from(byPlaceId.values());
+        if (poiState.showSavedOnly) {
+          filtered = filtered.filter(
+            (p) => p.entityType !== "downloadedPoi" || starredIds.has(p.entityId),
+          );
+        }
         if (poiState.showOpenOnly) filtered = filterPlacesByOpenNow(filtered);
         for (const place of filtered) combinedByPlaceId.set(place.placeId, place);
       }

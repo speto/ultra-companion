@@ -63,11 +63,16 @@ export function isKnownOpenNow(openingHours: string | null | undefined): boolean
   return getOpeningHoursStatus(openingHours)?.isOpen === true;
 }
 
+export function isConfirmedClosedNow(openingHours: string | null | undefined): boolean {
+  if (!openingHours) return false;
+  return getOpeningHoursStatus(openingHours)?.isOpen === false;
+}
+
 export function filterPlacesByOpenNow(places: PlaceViewModel[]): PlaceViewModel[] {
   return places.filter((p) => {
     if (p.entityType === "routeWaypoint") return true;
     if (!FOOD_SHOP_CATEGORIES.has(p.category as POICategory)) return true;
-    return isKnownOpenNow(p.openingHours);
+    return !isConfirmedClosedNow(p.openingHours);
   });
 }
 

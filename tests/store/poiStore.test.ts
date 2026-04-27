@@ -111,7 +111,7 @@ describe("POI store visible POI filtering", () => {
     expect(openThenCategory).toEqual(categoryThenOpen);
   });
 
-  it("shows only known-open food/shop POIs when Open now is enabled", async () => {
+  it("hides only confirmed-closed food/shop POIs when Open now is enabled", async () => {
     const usePoiStore = await loadPoiStore();
     const pois = [
       buildPoi("known-open", routeId, 100, {
@@ -139,6 +139,9 @@ describe("POI store visible POI filtering", () => {
 
     expect(visibleIds(usePoiStore.getState().getVisiblePOIs(routeId))).toEqual([
       "known-open",
+      "missing-hours",
+      "malformed-hours",
+      "unsupported-hours",
       "water",
     ]);
   });
