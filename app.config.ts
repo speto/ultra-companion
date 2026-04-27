@@ -67,6 +67,7 @@ export default (_: ConfigContext): ExpoConfig => ({
   splash: {
     image: splashImage,
     resizeMode: "contain",
+    enableFullScreenImage_legacy: true,
     backgroundColor: splashBackgroundColor,
   },
   android: {
@@ -134,6 +135,7 @@ export default (_: ConfigContext): ExpoConfig => ({
       {
         image: splashImage,
         resizeMode: "contain",
+        enableFullScreenImage_legacy: true,
         backgroundColor: splashBackgroundColor,
       },
     ],
