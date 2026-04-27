@@ -5,8 +5,12 @@
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
+    "start:dev": "APP_VARIANT=development expo start --dev-client",
     "android": "expo run:android",
     "ios": "expo run:ios",
+    "ios:dev": "APP_VARIANT=development expo run:ios --device",
+    "ios:preview": "APP_VARIANT=preview expo run:ios --device --configuration Release",
+    "ios:production": "APP_VARIANT=production expo run:ios --device --configuration Release",
     "web": "expo start --web",
     "db:generate": "drizzle-kit generate",
     "db:bundle": "node scripts/bundle-migrations.mjs",

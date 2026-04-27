@@ -22,12 +22,30 @@ if [ -f "$DIR/.env" ]; then
   . "$DIR/.env"
   set +a
 fi
-BUNDLE_ID="${BUNDLE_ID:-${EXPO_IOS_BUNDLE_IDENTIFIER:-com.conqeror.ultracompanion}}"
+APP_VARIANT="${APP_VARIANT:-production}"
+case "$APP_VARIANT" in
+  development)
+    BUNDLE_SUFFIX=".dev"
+    ;;
+  preview)
+    BUNDLE_SUFFIX=".preview"
+    ;;
+  production)
+    BUNDLE_SUFFIX=""
+    ;;
+  *)
+    echo "Invalid APP_VARIANT '$APP_VARIANT'. Expected development, preview, or production." >&2
+    exit 1
+    ;;
+esac
+BASE_BUNDLE_ID="${EXPO_IOS_BUNDLE_IDENTIFIER:-com.conqeror.ultracompanion}"
+BUNDLE_ID="${BUNDLE_ID:-${BASE_BUNDLE_ID}${BUNDLE_SUFFIX}}"
 N=1
 
 mkdir -p "$OUTDIR"
 
 echo "Using simulator: $UDID"
+echo "Using app variant: $APP_VARIANT ($BUNDLE_ID)"
 
 snap() {
   local file

@@ -276,7 +276,11 @@ console.log("Generating app assets...\n");
 
 const assets = [
   { svg: ICON_SVG, width: 1024, height: 1024, file: "icon.png" },
+  { svg: ICON_SVG, width: 1024, height: 1024, file: "icon-dev.png" },
+  { svg: ICON_SVG, width: 1024, height: 1024, file: "icon-preview.png" },
   { svg: SPLASH_SVG, width: 512, height: 512, file: "splash-icon.png" },
+  { svg: SPLASH_SVG, width: 512, height: 512, file: "splash-icon-dev.png" },
+  { svg: SPLASH_SVG, width: 512, height: 512, file: "splash-icon-preview.png" },
   { svg: ANDROID_FG_SVG, width: 432, height: 432, file: "android-icon-foreground.png" },
   { svg: ANDROID_BG_SVG, width: 432, height: 432, file: "android-icon-background.png" },
   { svg: ANDROID_MONO_SVG, width: 432, height: 432, file: "android-icon-monochrome.png" },

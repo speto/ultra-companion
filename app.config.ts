@@ -1,24 +1,73 @@
-import { ExpoConfig, ConfigContext } from "expo/config";
+import type { ExpoConfig, ConfigContext } from "expo/config";
 
-const appName = process.env.EXPO_APP_NAME ?? "Ultra Companion";
+type AppVariant = "development" | "preview" | "production";
+
+type VariantSettings = {
+  assetSuffix: string;
+  identifierSuffix: string;
+  nameSuffix: string;
+};
+
+const variantSettings: Record<AppVariant, VariantSettings> = {
+  development: {
+    assetSuffix: "-dev",
+    identifierSuffix: ".dev",
+    nameSuffix: " Dev",
+  },
+  preview: {
+    assetSuffix: "-preview",
+    identifierSuffix: ".preview",
+    nameSuffix: " Preview",
+  },
+  production: {
+    assetSuffix: "",
+    identifierSuffix: "",
+    nameSuffix: "",
+  },
+};
+
+const appVariant = getAppVariant();
+const variantConfig = variantSettings[appVariant];
+
+const baseAppName = process.env.EXPO_APP_NAME ?? "Ultra Companion";
+const appName = `${baseAppName}${variantConfig.nameSuffix}`;
 const appSlug = process.env.EXPO_APP_SLUG ?? "ultra-companion";
-const appScheme = process.env.EXPO_APP_SCHEME ?? "ultra";
+const baseAppScheme = process.env.EXPO_APP_SCHEME ?? "ultra";
+const appScheme = `${baseAppScheme}${variantConfig.assetSuffix}`;
 const androidPackage = process.env.EXPO_ANDROID_PACKAGE ?? "com.ultra.companion";
-const iosBundleIdentifier = process.env.EXPO_IOS_BUNDLE_IDENTIFIER ?? "com.conqeror.ultracompanion";
+const baseIosBundleIdentifier =
+  process.env.EXPO_IOS_BUNDLE_IDENTIFIER ?? "com.conqeror.ultracompanion";
+const iosBundleIdentifier = `${baseIosBundleIdentifier}${variantConfig.identifierSuffix}`;
+const appIcon = process.env.EXPO_APP_ICON ?? `./assets/images/icon${variantConfig.assetSuffix}.png`;
+const splashImage =
+  process.env.EXPO_SPLASH_IMAGE ?? `./assets/images/splash-icon${variantConfig.assetSuffix}.png`;
+const splashBackgroundColor = process.env.EXPO_SPLASH_BACKGROUND_COLOR ?? "#0E0E0C";
 const easProjectId = process.env.EXPO_EAS_PROJECT_ID;
+
+function getAppVariant(): AppVariant {
+  const variant = process.env.APP_VARIANT ?? "production";
+
+  if (variant === "development" || variant === "preview" || variant === "production") {
+    return variant;
+  }
+
+  throw new Error(
+    `Invalid APP_VARIANT "${variant}". Expected "development", "preview", or "production".`,
+  );
+}
 
 export default (_: ConfigContext): ExpoConfig => ({
   name: appName,
   slug: appSlug,
   version: "1.0.0",
   orientation: "portrait",
-  icon: "./assets/images/icon.png",
+  icon: appIcon,
   scheme: appScheme,
   userInterfaceStyle: "automatic",
   splash: {
-    image: "./assets/images/splash-icon.png",
+    image: splashImage,
     resizeMode: "contain",
-    backgroundColor: "#0E0E0C",
+    backgroundColor: splashBackgroundColor,
   },
   android: {
     package: androidPackage,
@@ -30,6 +79,7 @@ export default (_: ConfigContext): ExpoConfig => ({
   },
   ios: {
     supportsTablet: false,
+    icon: appIcon,
     bundleIdentifier: iosBundleIdentifier,
     infoPlist: {
       NSLocationWhenInUseUsageDescription:
@@ -79,6 +129,14 @@ export default (_: ConfigContext): ExpoConfig => ({
   },
   plugins: [
     "expo-router",
+    [
+      "expo-splash-screen",
+      {
+        image: splashImage,
+        imageWidth: 200,
+        backgroundColor: splashBackgroundColor,
+      },
+    ],
     "@rnmapbox/maps",
     [
       "expo-location",
@@ -96,6 +154,7 @@ export default (_: ConfigContext): ExpoConfig => ({
     typedRoutes: true,
   },
   extra: {
+    appVariant,
     mapboxAccessToken: process.env.MAPBOX_ACCESS_TOKEN,
     googlePlacesApiKey: process.env.GOOGLE_PLACES_API_KEY,
     ...(easProjectId ? { eas: { projectId: easProjectId } } : {}),
