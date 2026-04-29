@@ -59,13 +59,20 @@ const persisted = readPersistedCamera();
 export const useMapStore = create<MapState>((set, get) => ({
   center: persisted.center,
   zoom: persisted.zoom,
-  followUser: true,
+  followUser: readPersistedBoolean("followUser", false),
   showDistanceMarkers: readPersistedBoolean("showDistanceMarkers", false),
   userPosition: null,
   isRefreshing: false,
 
   setCenter: (center) => set({ center }),
-  setFollowUser: (followUser) => set({ followUser }),
+  setFollowUser: (followUser) => {
+    try {
+      getStorage().set("followUser", String(followUser));
+    } catch (error) {
+      console.warn("Failed to persist follow GPS preference:", error);
+    }
+    set({ followUser });
+  },
   toggleDistanceMarkers: () => {
     const next = !get().showDistanceMarkers;
     try {

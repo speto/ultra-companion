@@ -18,6 +18,12 @@ const SCOPE_LABELS: Record<ClimbZoomScope, string> = {
   all: "All",
 };
 
+const HORIZON_OVERLAY_STACK_INDEX = 20;
+const horizonOverlayLayerStyle = {
+  zIndex: HORIZON_OVERLAY_STACK_INDEX,
+  elevation: HORIZON_OVERLAY_STACK_INDEX,
+};
+
 interface HorizonOverlayProps {
   activeData?: ActiveRouteData | null;
 }
@@ -58,7 +64,7 @@ export default function HorizonOverlay({ activeData }: HorizonOverlayProps) {
     setPopoverOpen(false);
   };
 
-  const positionStyle = { top: -60 };
+  const positionStyle = { top: -60, ...horizonOverlayLayerStyle };
 
   const formatHorizonChoice = (km: HorizonKm) =>
     km === null ? "All" : formatDistance(km * 1000, units).replace(".0", "");
@@ -137,7 +143,7 @@ export default function HorizonOverlay({ activeData }: HorizonOverlayProps) {
     return (
       <Pressable
         onPress={dismiss}
-        style={StyleSheet.absoluteFillObject}
+        style={[StyleSheet.absoluteFillObject, horizonOverlayLayerStyle]}
         className="pointer-events-auto"
       >
         <View
@@ -197,7 +203,7 @@ export default function HorizonOverlay({ activeData }: HorizonOverlayProps) {
   return (
     <Pressable
       onPress={dismiss}
-      style={StyleSheet.absoluteFillObject}
+      style={[StyleSheet.absoluteFillObject, horizonOverlayLayerStyle]}
       className="pointer-events-auto"
     >
       <View

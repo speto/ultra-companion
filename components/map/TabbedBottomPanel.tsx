@@ -60,9 +60,13 @@ type PanelSceneProps = SceneRendererProps & { route: PanelRoute };
 
 interface TabbedBottomPanelProps {
   activeData: ActiveRouteData | null;
+  floatingControls?: React.ReactNode;
 }
 
-export default function TabbedBottomPanel({ activeData }: TabbedBottomPanelProps) {
+export default function TabbedBottomPanel({
+  activeData,
+  floatingControls,
+}: TabbedBottomPanelProps) {
   const colors = useThemeColors();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const { top: safeTop, bottom: safeBottom } = useSafeAreaInsets();
@@ -81,8 +85,13 @@ export default function TabbedBottomPanel({ activeData }: TabbedBottomPanelProps
   const setPanelTab = usePanelStore((s) => s.setPanelTab);
   const setIsExpanded = usePanelStore((s) => s.setIsExpanded);
   const isExpanded = usePanelStore((s) => s.isExpanded);
-
   const reportedIsExpanded = useSharedValue(isExpanded);
+
+  React.useEffect(() => {
+    const nextOffset = isExpanded ? 0 : compactOffset;
+    sheetTranslateY.value = withSpring(nextOffset, SPRING_CONFIG);
+    reportedIsExpanded.value = isExpanded;
+  }, [compactOffset, isExpanded, reportedIsExpanded, sheetTranslateY]);
 
   const panGesture = Gesture.Pan()
     .activeOffsetY([-10, 10])
@@ -191,9 +200,21 @@ export default function TabbedBottomPanel({ activeData }: TabbedBottomPanelProps
   return (
     <Animated.View
       className="absolute bottom-0 left-0 right-0 rounded-t-2xl shadow-lg border-t border-border"
-      style={[{ height: expandedHeight, backgroundColor: colors.surface }, animatedSheetStyle]}
+      style={[
+        { height: expandedHeight, backgroundColor: colors.surface, zIndex: 30, elevation: 30 },
+        animatedSheetStyle,
+      ]}
     >
       <HorizonOverlay activeData={activeData} />
+      {floatingControls && (
+        <View
+          pointerEvents="box-none"
+          className="absolute items-center gap-3"
+          style={{ top: -128, right: 16, zIndex: 10, elevation: 10 }}
+        >
+          {floatingControls}
+        </View>
+      )}
 
       {/* Handle + tabs — single compact gesture target */}
       <GestureDetector gesture={panGesture}>

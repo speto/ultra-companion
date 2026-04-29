@@ -1,6 +1,8 @@
 import React, { useRef, useCallback, useEffect, useState, useMemo } from "react";
 import { View, AppState, useWindowDimensions } from "react-native";
+import { useIsFocused } from "@react-navigation/native";
 import { Camera, MapView as MapboxMapView, LocationPuck } from "@rnmapbox/maps";
+import { Easing, useSharedValue, withTiming } from "react-native-reanimated";
 import { useMapStore } from "@/store/mapStore";
 import { useRouteStore } from "@/store/routeStore";
 import { useCollectionStore } from "@/store/collectionStore";
@@ -18,6 +20,7 @@ import { useColorScheme } from "nativewind";
 import { useMapStyle } from "@/hooks/useMapStyle";
 import { GPS_STALE_THRESHOLD_MS } from "@/constants";
 import MapControls from "./MapControls";
+import MapSheetControls from "./MapSheetControls";
 import RouteLayer, { RouteArrowLayer } from "./RouteLayer";
 import RouteMarkerLayer from "./RouteMarkerLayer";
 import POILayer from "./POILayer";
@@ -35,7 +38,8 @@ import { useEtaStore } from "@/store/etaStore";
 import { useWeatherStore } from "@/store/weatherStore";
 import { useOfflineStore } from "@/store/offlineStore";
 import { horizonWindow, zoomToHorizon } from "@/utils/horizon";
-import { nextDisplayHeading } from "@/utils/mapHeading";
+import { isNorthUp, nextDisplayHeading, normalizeHeading } from "@/utils/mapHeading";
+import { watchForegroundHeading, watchForegroundPosition } from "@/services/gps";
 import {
   getNextFocusTarget,
   getTargetCenter,
@@ -45,6 +49,28 @@ import {
 } from "@/utils/mapFocus";
 import type { MapState } from "@rnmapbox/maps";
 import type { RoutePoint } from "@/types";
+
+const COMPASS_FOLLOW_FILTER_TAU_MS = 160;
+const COMPASS_FOLLOW_MIN_DELTA_DEGREES = 0.75;
+const COMPASS_FOLLOW_MIN_UPDATE_MS = 60;
+const COMPASS_FOLLOW_ACTIVATION_ANIMATION_MS = 200;
+const RESET_NORTH_ANIMATION_MS = 200;
+const RESET_NORTH_VISUAL_HOLD_MS = 260;
+
+function signedHeadingDelta(fromHeading: number, toHeading: number): number {
+  const from = normalizeHeading(fromHeading);
+  const to = normalizeHeading(toHeading);
+  return ((to - from + 540) % 360) - 180;
+}
+
+function nearestHeading(fromHeading: number, toHeading: number): number {
+  return fromHeading + signedHeadingDelta(fromHeading, toHeading);
+}
+
+function nearestRotation(current: number, target: number): number {
+  const delta = ((target - current + 540) % 360) - 180;
+  return current + delta;
+}
 
 function getRouteWindowBounds(input: {
   points: RoutePoint[];
@@ -81,24 +107,38 @@ export default function MapScreen() {
   const themeColors = useThemeColors();
   const { colorScheme } = useColorScheme();
   const mapStyle = useMapStyle();
+  const isFocused = useIsFocused();
   const cameraRef = useRef<Camera>(null);
   const mapRef = useRef<MapboxMapView>(null);
   const [hasGpsFix, setHasGpsFix] = useState(false);
   const [routeMarkerZoom, setRouteMarkerZoom] = useState(() => useMapStore.getState().zoom);
   const [heading, setHeading] = useState(0);
+  const [advancedFocusMode, setAdvancedFocusMode] = useState<"follow" | null>(() =>
+    useMapStore.getState().followUser ? "follow" : null,
+  );
+  const [isCompassMode, setIsCompassMode] = useState(false);
+  const [isResettingNorth, setIsResettingNorth] = useState(false);
   const { height: screenHeight } = useWindowDimensions();
   const { bottom: safeBottom } = useSafeAreaInsets();
 
   const { followUser, setFollowUser } = useMapStore();
   const showDistanceMarkers = useMapStore((s) => s.showDistanceMarkers);
   const userPosition = useMapStore((s) => s.userPosition);
+  const setUserPosition = useMapStore((s) => s.setUserPosition);
   const refreshPosition = useMapStore((s) => s.refreshPosition);
   const persistCamera = useMapStore((s) => s.persistCamera);
   const initialCamera = useRef({
     center: useMapStore.getState().center,
     zoom: useMapStore.getState().zoom,
+    heading: 0,
   });
+  const compassRotation = useSharedValue(-initialCamera.current.heading);
   const lastCamera = useRef(initialCamera.current);
+  const lastCompassCommand = useRef({ heading: initialCamera.current.heading, timestamp: 0 });
+  const lastCompassDialRotation = useRef(-initialCamera.current.heading);
+  const resetNorthTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const manualCameraInteraction = useRef(false);
+  const manualCameraInteractionTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const panelTab = usePanelStore((s) => s.panelTab);
   const horizonFitRequestId = usePanelStore((s) => s.horizonFitRequestId);
   const lastHorizonFitId = useRef(horizonFitRequestId);
@@ -107,7 +147,7 @@ export default function MapScreen() {
   const setHorizonFromZoom = usePanelStore((s) => s.setHorizonFromZoom);
   const setHorizonFromCamera = usePanelStore((s) => s.setHorizonFromCamera);
   const setHorizonPopoverOpen = usePanelStore((s) => s.setHorizonPopoverOpen);
-  const panelHeight = Math.round(screenHeight * SHEET_COMPACT_RATIO) + safeBottom;
+  const compactPanelHeight = Math.round(screenHeight * SHEET_COMPACT_RATIO) + safeBottom;
 
   const routes = useRouteStore((s) => s.routes);
   const visibleRoutePoints = useRouteStore((s) => s.visibleRoutePoints);
@@ -146,6 +186,59 @@ export default function MapScreen() {
     loadCollections();
     loadStarredItems();
   }, [loadRoutesAndPoints, loadCollections, loadStarredItems]);
+
+  const clearResetNorthTimeout = useCallback(() => {
+    if (resetNorthTimeout.current) {
+      clearTimeout(resetNorthTimeout.current);
+      resetNorthTimeout.current = null;
+    }
+  }, []);
+
+  useEffect(() => () => clearResetNorthTimeout(), [clearResetNorthTimeout]);
+
+  const clearManualCameraInteractionTimeout = useCallback(() => {
+    if (manualCameraInteractionTimeout.current) {
+      clearTimeout(manualCameraInteractionTimeout.current);
+      manualCameraInteractionTimeout.current = null;
+    }
+  }, []);
+
+  const scheduleManualCameraInteractionClear = useCallback(() => {
+    clearManualCameraInteractionTimeout();
+    manualCameraInteractionTimeout.current = setTimeout(() => {
+      manualCameraInteraction.current = false;
+      manualCameraInteractionTimeout.current = null;
+    }, 220);
+  }, [clearManualCameraInteractionTimeout]);
+
+  useEffect(
+    () => () => clearManualCameraInteractionTimeout(),
+    [clearManualCameraInteractionTimeout],
+  );
+
+  const updateCompassDial = useCallback(
+    (targetMapHeading: number, durationMs: number) => {
+      const targetRotation = nearestRotation(lastCompassDialRotation.current, -targetMapHeading);
+      lastCompassDialRotation.current = targetRotation;
+
+      if (durationMs > 0) {
+        compassRotation.value = withTiming(targetRotation, {
+          duration: durationMs,
+          easing: Easing.out(Easing.cubic),
+        });
+        return;
+      }
+
+      compassRotation.value = targetRotation;
+    },
+    [compassRotation],
+  );
+
+  useEffect(() => {
+    if (!isResettingNorth || !isNorthUp(heading)) return;
+    clearResetNorthTimeout();
+    setIsResettingNorth(false);
+  }, [clearResetNorthTimeout, heading, isResettingNorth]);
 
   const loadClimbs = useClimbStore((s) => s.loadClimbs);
   const updateCurrentClimb = useClimbStore((s) => s.updateCurrentClimb);
@@ -290,53 +383,214 @@ export default function MapScreen() {
     lastCamera.current = {
       center: [point.longitude, point.latitude],
       zoom,
+      heading: lastCamera.current.heading,
     };
   }, []);
 
-  const focusGps = useCallback(async () => {
-    setFollowUser(true);
-    const zoomLevel = lastCamera.current.zoom;
-    const animationDuration = 500;
-    const currentPos = useMapStore.getState().userPosition;
-    const cachedAnimationStartedAt = currentPos ? Date.now() : null;
-    if (currentPos) {
-      setLastCameraCenter(currentPos, zoomLevel);
-      cameraRef.current?.setCamera({
-        centerCoordinate: [currentPos.longitude, currentPos.latitude],
-        zoomLevel,
-        animationMode: "easeTo",
-        animationDuration,
-      });
-    }
-    const position = await refreshPosition();
-    if (position) {
-      if (!hasGpsFix) setHasGpsFix(true);
-      snapAfterRefresh(position);
-      if (
-        currentPos &&
-        isCenteredOn([currentPos.longitude, currentPos.latitude], position, zoomLevel)
-      ) {
-        return true;
+  const focusGps = useCallback(
+    async (options: { enableFollow?: boolean } = {}) => {
+      if (options.enableFollow) setFollowUser(true);
+      const zoomLevel = lastCamera.current.zoom;
+      const animationDuration = 500;
+      const currentPos = useMapStore.getState().userPosition;
+      const cachedAnimationStartedAt = currentPos ? Date.now() : null;
+      if (currentPos) {
+        setLastCameraCenter(currentPos, zoomLevel);
+        cameraRef.current?.setCamera({
+          centerCoordinate: [currentPos.longitude, currentPos.latitude],
+          zoomLevel,
+          heading: lastCamera.current.heading,
+          animationMode: "easeTo",
+          animationDuration,
+        });
       }
-      if (cachedAnimationStartedAt != null) {
-        const elapsedMs = Date.now() - cachedAnimationStartedAt;
-        const remainingMs = Math.max(0, animationDuration - elapsedMs);
-        if (remainingMs > 0) {
-          await new Promise((resolve) => {
-            setTimeout(resolve, remainingMs);
-          });
+      const position = await refreshPosition();
+      if (position) {
+        if (!hasGpsFix) setHasGpsFix(true);
+        snapAfterRefresh(position);
+        if (
+          currentPos &&
+          isCenteredOn([currentPos.longitude, currentPos.latitude], position, zoomLevel)
+        ) {
+          return true;
         }
+        if (cachedAnimationStartedAt != null) {
+          const elapsedMs = Date.now() - cachedAnimationStartedAt;
+          const remainingMs = Math.max(0, animationDuration - elapsedMs);
+          if (remainingMs > 0) {
+            await new Promise((resolve) => {
+              setTimeout(resolve, remainingMs);
+            });
+          }
+        }
+        setLastCameraCenter(position, zoomLevel);
+        cameraRef.current?.setCamera({
+          centerCoordinate: [position.longitude, position.latitude],
+          zoomLevel,
+          heading: lastCamera.current.heading,
+          animationMode: "easeTo",
+          animationDuration,
+        });
       }
+      return currentPos != null || position != null;
+    },
+    [setFollowUser, refreshPosition, snapAfterRefresh, hasGpsFix, setLastCameraCenter],
+  );
+
+  useEffect(() => {
+    if (!isFocused) {
+      setAdvancedFocusMode(null);
+      return;
+    }
+    if (!followUser) return;
+
+    setAdvancedFocusMode("follow");
+    void focusGps({ enableFollow: true });
+  }, [focusGps, followUser, isFocused]);
+
+  useEffect(() => {
+    if (advancedFocusMode === "follow" && !followUser) setAdvancedFocusMode(null);
+  }, [advancedFocusMode, followUser]);
+
+  useEffect(() => {
+    if (advancedFocusMode !== "follow" || !isFocused) return;
+
+    let cancelled = false;
+    let subscription: { remove: () => void } | null = null;
+
+    void watchForegroundPosition((position) => {
+      if (cancelled) return;
+      const zoomLevel = lastCamera.current.zoom;
+      setUserPosition(position);
+      setHasGpsFix(true);
+      snapAfterRefresh(position);
       setLastCameraCenter(position, zoomLevel);
       cameraRef.current?.setCamera({
         centerCoordinate: [position.longitude, position.latitude],
         zoomLevel,
+        heading: lastCamera.current.heading,
         animationMode: "easeTo",
-        animationDuration,
+        animationDuration: 500,
       });
+    }).then((nextSubscription) => {
+      if (cancelled) {
+        nextSubscription?.remove();
+        return;
+      }
+      if (!nextSubscription) {
+        setAdvancedFocusMode((current) => (current === "follow" ? null : current));
+        setFollowUser(false);
+        return;
+      }
+      subscription = nextSubscription;
+    });
+
+    return () => {
+      cancelled = true;
+      subscription?.remove();
+    };
+  }, [
+    advancedFocusMode,
+    isFocused,
+    setFollowUser,
+    setLastCameraCenter,
+    setUserPosition,
+    snapAfterRefresh,
+  ]);
+
+  useEffect(() => {
+    if (!isCompassMode) return;
+
+    manualCameraInteraction.current = false;
+    clearManualCameraInteractionTimeout();
+
+    let cancelled = false;
+    let subscription: { remove: () => void } | null = null;
+    let smoothedHeading = normalizeHeading(lastCamera.current.heading);
+    let lastSampleTimestamp = 0;
+    let hasAnimatedInitialHeading = false;
+    let initialAnimationUntil = 0;
+
+    const applyCompassHeading = (phoneHeading: number) => {
+      if (cancelled) return;
+
+      const now = Date.now();
+      const dtMs = Math.max(16, now - lastSampleTimestamp);
+      const alpha = 1 - Math.exp(-dtMs / COMPASS_FOLLOW_FILTER_TAU_MS);
+      const rawPhoneHeading = normalizeHeading(phoneHeading);
+      const smoothingDelta = signedHeadingDelta(smoothedHeading, rawPhoneHeading);
+      smoothedHeading = normalizeHeading(smoothedHeading + smoothingDelta * alpha);
+      lastSampleTimestamp = now;
+
+      const previousHeading = lastCompassCommand.current.heading;
+      const targetHeading = nearestHeading(previousHeading, smoothedHeading);
+      const commandDelta = Math.abs(targetHeading - previousHeading);
+
+      if (commandDelta < COMPASS_FOLLOW_MIN_DELTA_DEGREES) return;
+
+      const elapsedMs = now - lastCompassCommand.current.timestamp;
+      if (elapsedMs < COMPASS_FOLLOW_MIN_UPDATE_MS) return;
+
+      if (hasAnimatedInitialHeading && now < initialAnimationUntil) return;
+
+      lastCompassCommand.current = { heading: targetHeading, timestamp: now };
+      lastCamera.current = { ...lastCamera.current, heading: targetHeading };
+
+      if (!hasAnimatedInitialHeading) {
+        hasAnimatedInitialHeading = true;
+        initialAnimationUntil = now + COMPASS_FOLLOW_ACTIVATION_ANIMATION_MS;
+        updateCompassDial(targetHeading, COMPASS_FOLLOW_ACTIVATION_ANIMATION_MS);
+        cameraRef.current?.setCamera({
+          heading: targetHeading,
+          animationMode: "easeTo",
+          animationDuration: COMPASS_FOLLOW_ACTIVATION_ANIMATION_MS,
+        });
+        return;
+      }
+
+      updateCompassDial(targetHeading, 0);
+      cameraRef.current?.setCamera({
+        heading: targetHeading,
+        animationMode: "none",
+        animationDuration: 0,
+      });
+    };
+
+    lastCompassCommand.current = {
+      heading: lastCamera.current.heading,
+      timestamp: 0,
+    };
+
+    void watchForegroundHeading((phoneHeading) => {
+      applyCompassHeading(phoneHeading);
+    }).then((nextSubscription) => {
+      if (cancelled) {
+        nextSubscription?.remove();
+        return;
+      }
+      if (!nextSubscription) {
+        setIsCompassMode(false);
+        return;
+      }
+      subscription = nextSubscription;
+    });
+
+    return () => {
+      cancelled = true;
+      subscription?.remove();
+    };
+  }, [clearManualCameraInteractionTimeout, isCompassMode, updateCompassDial]);
+
+  const handleFollowToggle = useCallback(() => {
+    if (advancedFocusMode === "follow") {
+      setAdvancedFocusMode(null);
+      setFollowUser(false);
+      return;
     }
-    return currentPos != null || position != null;
-  }, [setFollowUser, refreshPosition, snapAfterRefresh, hasGpsFix, setLastCameraCenter]);
+
+    setAdvancedFocusMode("follow");
+    setFollowUser(true);
+  }, [advancedFocusMode, setFollowUser]);
 
   const focusRouteTarget = useCallback(
     (target: Exclude<MapFocusTargetKind, "gps">) => {
@@ -369,6 +623,9 @@ export default function MapScreen() {
   );
 
   const handleLocate = useCallback(async () => {
+    setAdvancedFocusMode(null);
+    setFollowUser(false);
+
     const nextTarget = getNextFocusTarget({
       cameraCenter: lastCamera.current.center,
       zoom: lastCamera.current.zoom,
@@ -394,24 +651,32 @@ export default function MapScreen() {
     }
 
     if (nextTarget) focusRouteTarget(nextTarget);
-  }, [focusGps, focusRouteTarget, focusStart, focusFinish]);
+  }, [focusGps, focusRouteTarget, focusStart, focusFinish, setFollowUser]);
 
   const handleCameraChanged = useCallback(
     (state: MapState) => {
       const c = state.properties.center;
       const nextZoom = state.properties.zoom;
       const nextHeading = state.properties.heading;
-      lastCamera.current = { center: [c[0], c[1]], zoom: nextZoom };
+      lastCamera.current = { center: [c[0], c[1]], zoom: nextZoom, heading: nextHeading };
       setRouteMarkerZoom((current) => (current === nextZoom ? current : nextZoom));
       setHeading((prev) => nextDisplayHeading(prev, nextHeading));
+
+      if (manualCameraInteraction.current) {
+        if (!isCompassMode && !isResettingNorth) updateCompassDial(nextHeading, 0);
+        scheduleManualCameraInteractionClear();
+      }
 
       // Programmatic camera moves also emit camera events; only real map gestures update the chip.
       if (state.gestures.isGestureActive) {
         const newHorizon = zoomToHorizon(nextZoom);
         setHorizonFromZoom(newHorizon);
+        setAdvancedFocusMode((current) => (current == null ? current : null));
+        setIsCompassMode(false);
+        setIsResettingNorth(false);
       }
     },
-    [setHorizonFromZoom],
+    [isCompassMode, isResettingNorth, scheduleManualCameraInteractionClear, setHorizonFromZoom, updateCompassDial],
   );
 
   // Persist camera to MMKV when app goes to background
@@ -424,20 +689,64 @@ export default function MapScreen() {
     return () => sub.remove();
   }, [persistCamera]);
 
+  // Also persist when leaving the map screen so reopening restores the last focused view
+  // unless Follow GPS is enabled, in which case the focus effect will recenter on GPS.
+  useEffect(() => {
+    if (isFocused) return;
+    persistCamera(lastCamera.current.center, lastCamera.current.zoom);
+  }, [isFocused, persistCamera]);
+
   const handleTouchStart = useCallback(() => {
+    manualCameraInteraction.current = true;
+    scheduleManualCameraInteractionClear();
     setHorizonPopoverOpen(false);
+    if (isCompassMode) {
+      setIsCompassMode(false);
+    }
     if (followUser) {
       setFollowUser(false);
     }
-  }, [followUser, setFollowUser, setHorizonPopoverOpen]);
+  }, [followUser, isCompassMode, scheduleManualCameraInteractionClear, setFollowUser, setHorizonPopoverOpen]);
 
   const handleResetNorth = useCallback(() => {
+    clearResetNorthTimeout();
+    manualCameraInteraction.current = false;
+    clearManualCameraInteractionTimeout();
+    setIsResettingNorth(true);
+    updateCompassDial(0, RESET_NORTH_ANIMATION_MS);
     cameraRef.current?.setCamera({
       heading: 0,
-      animationDuration: 300,
+      animationDuration: RESET_NORTH_ANIMATION_MS,
       animationMode: "easeTo",
     });
-  }, []);
+    resetNorthTimeout.current = setTimeout(() => {
+      resetNorthTimeout.current = null;
+      setIsResettingNorth(false);
+    }, RESET_NORTH_VISUAL_HOLD_MS);
+  }, [clearManualCameraInteractionTimeout, clearResetNorthTimeout, updateCompassDial]);
+
+  const handleCompassPress = useCallback(() => {
+    if (isCompassMode) {
+      handleResetNorth();
+      setIsCompassMode(false);
+      return;
+    }
+
+    if (!isNorthUp(heading)) {
+      handleResetNorth();
+      return;
+    }
+  }, [handleResetNorth, heading, isCompassMode]);
+
+  const handleCompassLongPress = useCallback(() => {
+    if (isCompassMode) {
+      handleResetNorth();
+      setIsCompassMode(false);
+      return;
+    }
+
+    setIsCompassMode(true);
+  }, [handleResetNorth, isCompassMode]);
 
   useEffect(() => {
     if (!activeDataId || !activeRoutePoints?.length) return;
@@ -689,9 +998,9 @@ export default function MapScreen() {
       paddingTop: 0,
       paddingLeft: 0,
       paddingRight: 0,
-      paddingBottom: panelHeight,
+      paddingBottom: compactPanelHeight,
     }),
-    [panelHeight],
+    [compactPanelHeight],
   );
 
   const pulsingConfig = useMemo(
@@ -878,14 +1187,24 @@ export default function MapScreen() {
         />
       </MapboxMapView>
 
-      <MapControls
-        onLocate={handleLocate}
-        locateAccessibilityLabel={focusAccessibilityLabel}
-        panelHeight={panelHeight}
-        heading={heading}
-        onResetNorth={handleResetNorth}
+      <MapControls />
+      <TabbedBottomPanel
+        activeData={activeData}
+        floatingControls={
+          <MapSheetControls
+            onLocate={handleLocate}
+            isFollowActive={advancedFocusMode === "follow"}
+            onFollowToggle={handleFollowToggle}
+            isCompassActive={isCompassMode}
+            onCompassPress={handleCompassPress}
+            onCompassLongPress={handleCompassLongPress}
+            isResettingNorth={isResettingNorth}
+            locateAccessibilityLabel={focusAccessibilityLabel}
+            heading={heading}
+            compassRotation={compassRotation}
+          />
+        }
       />
-      <TabbedBottomPanel activeData={activeData} />
     </View>
   );
 }

@@ -46,4 +46,29 @@ describe("map store preferences", () => {
     expect(useMapStore.getState().showDistanceMarkers).toBe(true);
     expect(reactNativeMmkvMocks.set).toHaveBeenCalledWith("showDistanceMarkers", "true");
   });
+
+  it("defaults Follow GPS mode to off", async () => {
+    const useMapStore = await loadMapStore();
+
+    expect(useMapStore.getState().followUser).toBe(false);
+  });
+
+  it("hydrates persisted Follow GPS mode", async () => {
+    reactNativeMmkvMocks.getString.mockImplementation((key) =>
+      key === "followUser" ? "true" : null,
+    );
+
+    const useMapStore = await loadMapStore();
+
+    expect(useMapStore.getState().followUser).toBe(true);
+  });
+
+  it("persists Follow GPS mode changes", async () => {
+    const useMapStore = await loadMapStore();
+
+    useMapStore.getState().setFollowUser(true);
+
+    expect(useMapStore.getState().followUser).toBe(true);
+    expect(reactNativeMmkvMocks.set).toHaveBeenCalledWith("followUser", "true");
+  });
 });
