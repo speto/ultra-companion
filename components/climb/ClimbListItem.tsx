@@ -26,6 +26,8 @@ export default function ClimbListItem({
   const getETAToDistance = useEtaStore((s) => s.getETAToDistance);
 
   const diffColor = climbDifficultyColor(climb.difficultyScore);
+  const climbName = climb.name ?? "Unnamed climb";
+  const title = ordinal ? `${ordinal.current}/${ordinal.total} ${climbName}` : climbName;
 
   const distAhead =
     currentDistAlongRoute != null ? climb.startDistanceMeters - currentDistAlongRoute : null;
@@ -42,48 +44,28 @@ export default function ClimbListItem({
       onPress={() => onPress(climb)}
       accessibilityLabel={
         ordinal
-          ? `Climb ${ordinal.current} of ${ordinal.total}${climb.name ? `, ${climb.name}` : ""}`
-          : (climb.name ?? `Climb ${formatElevation(climb.totalAscentMeters, units)}`)
+          ? `Climb ${ordinal.current} of ${ordinal.total}, ${climbName}`
+          : climbName
       }
     >
-      <View
-        className="w-[4px] self-stretch rounded-full mr-3"
-        style={{ backgroundColor: diffColor }}
-      />
-
       <View className="flex-1">
-        <View className="flex-row items-center mb-0.5">
-          {climb.name && (
-            <Text
-              className="text-[15px] font-barlow-medium text-foreground flex-shrink"
-              numberOfLines={1}
-            >
-              {climb.name}
-            </Text>
-          )}
-          {ordinal && (
-            <Text
-              className={`text-[13px] font-barlow-medium text-muted-foreground ${climb.name ? "ml-2" : ""}`}
-            >
-              {ordinal.current}/{ordinal.total}
-            </Text>
-          )}
-        </View>
-        <Text className="text-[14px] font-barlow-sc-semibold text-foreground">
+        <Text
+          className="text-[15px] font-barlow-medium text-foreground mb-0.5"
+          numberOfLines={1}
+        >
+          {title}
+        </Text>
+        <Text className="text-[14px] font-barlow-sc-semibold text-foreground" numberOfLines={1}>
           {formatElevation(climb.totalAscentMeters, units)} ↑{"  ·  "}
           {formatDistance(climb.lengthMeters, units)}
           {"  ·  "}
           {climb.averageGradientPercent}% avg
         </Text>
-        <Text className="text-[12px] text-muted-foreground font-barlow mt-0.5">
-          max {climb.maxGradientPercent}%{"  ·  "}
-          difficulty: {Math.round(climb.difficultyScore)}
-        </Text>
       </View>
 
-      <View className="items-end ml-2">
+      <View className="items-end ml-3">
         {distAhead != null && (
-          <Text className="text-[15px] font-barlow-sc-semibold text-foreground">
+          <Text className="text-[15px] font-barlow-sc-semibold text-foreground" numberOfLines={1}>
             {distAhead >= 0
               ? formatDistance(distAhead, units)
               : `-${formatDistance(Math.abs(distAhead), units)}`}
@@ -98,7 +80,15 @@ export default function ClimbListItem({
             {distAhead >= 0 ? "ahead" : "behind"}
           </Text>
         ) : null}
+        <Text className="text-[12px] text-muted-foreground font-barlow mt-0.5" numberOfLines={1}>
+          max {climb.maxGradientPercent}% · diff {Math.round(climb.difficultyScore)}
+        </Text>
       </View>
+
+      <View
+        className="w-[4px] self-stretch rounded-full ml-3"
+        style={{ backgroundColor: diffColor }}
+      />
     </TouchableOpacity>
   );
 }
