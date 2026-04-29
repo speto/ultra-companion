@@ -34,7 +34,6 @@ import { useClimbStore } from "@/store/climbStore";
 import { useEtaStore } from "@/store/etaStore";
 import { useWeatherStore } from "@/store/weatherStore";
 import { useOfflineStore } from "@/store/offlineStore";
-import { selectDistanceMarkerZoomBucket } from "@/utils/routeMarkers";
 import { horizonWindow, zoomToHorizon } from "@/utils/horizon";
 import { nextDisplayHeading } from "@/utils/mapHeading";
 import type { MapState } from "@rnmapbox/maps";
@@ -306,11 +305,7 @@ export default function MapScreen() {
       const nextZoom = state.properties.zoom;
       const nextHeading = state.properties.heading;
       lastCamera.current = { center: [c[0], c[1]], zoom: nextZoom };
-      setRouteMarkerZoom((currentZoom) =>
-        selectDistanceMarkerZoomBucket(currentZoom) === selectDistanceMarkerZoomBucket(nextZoom)
-          ? currentZoom
-          : nextZoom,
-      );
+      setRouteMarkerZoom((current) => (current === nextZoom ? current : nextZoom));
       setHeading((prev) => nextDisplayHeading(prev, nextHeading));
 
       // Programmatic camera moves also emit camera events; only real map gestures update the chip.
@@ -751,7 +746,6 @@ export default function MapScreen() {
           activeContextKey={activeContextKey}
           points={activeRoutePoints ?? []}
           showDistanceMarkers={showDistanceMarkers}
-          zoom={routeMarkerZoom}
         />
         {activeRouteIds.length > 0 && (
           <POILayer key={`pois-${overlayStackKey}`} routeIds={activeRouteIds} />

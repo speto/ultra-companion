@@ -2,24 +2,33 @@ import { haversineDistance } from "./geo";
 import type { RoutePoint } from "@/types";
 
 export type RouteMarkerKind = "start" | "finish" | "distance";
-export type DistanceMarkerZoomBucket = "overview" | "mid" | "detail";
 
-export interface DistanceMarkerBucketInterval {
-  bucket: DistanceMarkerZoomBucket;
-  intervalMeters: number;
+export const DISTANCE_MARKER_INTERVALS = [100, 50, 25, 10, 5, 2, 1] as const;
+export type DistanceMarkerInterval = (typeof DISTANCE_MARKER_INTERVALS)[number];
+
+export interface DistanceMarkerBucket {
+  intervalKm: DistanceMarkerInterval;
+  minZoom: number;
+  maxZoom?: number;
 }
+
+export const DISTANCE_MARKER_BUCKETS: readonly DistanceMarkerBucket[] = [
+  { intervalKm: 100, minZoom: 0, maxZoom: 6.9 },
+  { intervalKm: 50, minZoom: 6.9, maxZoom: 7.9 },
+  { intervalKm: 25, minZoom: 7.9, maxZoom: 9 },
+  { intervalKm: 10, minZoom: 9, maxZoom: 10.5 },
+  { intervalKm: 5, minZoom: 10.5, maxZoom: 11.5 },
+  { intervalKm: 2, minZoom: 11.5, maxZoom: 12.5 },
+  { intervalKm: 1, minZoom: 12.5 },
+];
 
 export interface RouteMarkerSourceInput {
   activeContextKey: string | null;
   points: RoutePoint[];
   showDistanceMarkers: boolean;
-  zoom: number;
 }
 
 export interface RouteMarkerSourceResult {
-  sourceKey: string;
-  zoomBucket: DistanceMarkerZoomBucket;
-  intervalMeters: number | null;
   shape: GeoJSON.FeatureCollection<GeoJSON.Point, RouteMarkerProperties>;
 }
 
@@ -27,21 +36,14 @@ export interface RouteMarkerProperties {
   kind: RouteMarkerKind;
   label: string;
   markerLabel: string;
-  iconName?: string;
+  distanceKm?: number;
+  isOverviewMarker?: boolean;
   distanceMeters: number;
   sortKey: number;
 }
 export type RouteMarkerFeature = GeoJSON.Feature<GeoJSON.Point, RouteMarkerProperties>;
 
 const NEAR_OVERLAP_THRESHOLD_M = 100;
-
-const DISTANCE_INTERVAL_CANDIDATES_M = [5_000, 10_000, 25_000, 50_000, 100_000, 200_000, 500_000];
-
-const OVERVIEW_TARGET_DISTANCE_MARKERS = 12;
-const DETAIL_TARGET_DISTANCE_MARKERS = 40;
-const MID_TARGET_DISTANCE_MARKERS = Math.round(
-  (OVERVIEW_TARGET_DISTANCE_MARKERS + DETAIL_TARGET_DISTANCE_MARKERS) / 2,
-);
 
 function markerFeature(
   id: string,
@@ -92,86 +94,11 @@ export function buildStartFinishMarkerFeatures(points: RoutePoint[]): RouteMarke
   ];
 }
 
-function selectNiceDistanceMarkerIntervalMeters(
-  totalDistanceMeters: number,
-  targetMarkerCount: number,
-): number {
-  let selected = DISTANCE_INTERVAL_CANDIDATES_M[0];
-  let bestDelta = Infinity;
-
-  for (const candidate of DISTANCE_INTERVAL_CANDIDATES_M) {
-    const markerCount = totalDistanceMeters / candidate;
-    const delta = Math.abs(markerCount - targetMarkerCount);
-    if (delta < bestDelta) {
-      selected = candidate;
-      bestDelta = delta;
-    }
+function strongestIntervalForDistance(km: number): DistanceMarkerInterval {
+  for (const bucket of DISTANCE_MARKER_BUCKETS) {
+    if (km % bucket.intervalKm === 0) return bucket.intervalKm;
   }
-
-  return selected;
-}
-
-export function selectDistanceMarkerIntervalMeters(totalDistanceMeters: number): number {
-  return selectNiceDistanceMarkerIntervalMeters(
-    totalDistanceMeters,
-    OVERVIEW_TARGET_DISTANCE_MARKERS,
-  );
-}
-
-export function selectDistanceMarkerIntervalsForZoomBuckets(
-  totalDistanceMeters: number,
-): DistanceMarkerBucketInterval[] {
-  const overview = selectNiceDistanceMarkerIntervalMeters(
-    totalDistanceMeters,
-    OVERVIEW_TARGET_DISTANCE_MARKERS,
-  );
-  const mid = selectNiceDistanceMarkerIntervalMeters(
-    totalDistanceMeters,
-    MID_TARGET_DISTANCE_MARKERS,
-  );
-  const detail = selectNiceDistanceMarkerIntervalMeters(
-    totalDistanceMeters,
-    DETAIL_TARGET_DISTANCE_MARKERS,
-  );
-
-  return [
-    { bucket: "overview", intervalMeters: overview },
-    { bucket: "mid", intervalMeters: mid },
-    { bucket: "detail", intervalMeters: detail },
-  ];
-}
-
-export function selectDistanceMarkerZoomBucket(zoom: number): DistanceMarkerZoomBucket {
-  if (zoom >= 12) return "detail";
-  if (zoom >= 10) return "mid";
-  return "overview";
-}
-
-export function selectDistanceMarkerIntervalForZoomBucket(
-  totalDistanceMeters: number,
-  zoom: number,
-): number {
-  const zoomBucket = selectDistanceMarkerZoomBucket(zoom);
-  const intervals = selectDistanceMarkerIntervalsForZoomBuckets(totalDistanceMeters);
-  return (
-    intervals.find((interval) => interval.bucket === zoomBucket)?.intervalMeters ??
-    intervals[0].intervalMeters
-  );
-}
-
-function formatDistanceLabel(distanceMeters: number): string {
-  const kilometers = distanceMeters / 1000;
-  const label = Number.isInteger(kilometers)
-    ? String(kilometers)
-    : kilometers.toFixed(1).replace(/\.0$/, "");
-  return `${label} km`;
-}
-
-function formatDistanceMarkerLabel(distanceMeters: number): string {
-  const kilometers = distanceMeters / 1000;
-  return Number.isInteger(kilometers)
-    ? String(kilometers)
-    : kilometers.toFixed(1).replace(/\.0$/, "");
+  return 1;
 }
 
 function interpolateAtDistance(points: RoutePoint[], distanceMeters: number): RoutePoint | null {
@@ -206,34 +133,51 @@ function interpolateAtDistance(points: RoutePoint[], distanceMeters: number): Ro
   return null;
 }
 
-export function buildDistanceMarkerFeatures(
-  points: RoutePoint[],
-  intervalMeters = selectDistanceMarkerIntervalMeters(
-    points[points.length - 1]?.distanceFromStartMeters ?? 0,
-  ),
-): RouteMarkerFeature[] {
-  if (points.length < 2 || intervalMeters <= 0) return [];
+export function buildAllDistanceMarkerFeatures(points: RoutePoint[]): RouteMarkerFeature[] {
+  if (points.length < 2) return [];
 
   const totalDistanceMeters = points[points.length - 1].distanceFromStartMeters;
+  const totalKm = totalDistanceMeters / 1000;
+  if (totalKm < 1) return [];
+
   const features: RouteMarkerFeature[] = [];
 
-  for (
-    let distanceMeters = intervalMeters;
-    distanceMeters < totalDistanceMeters;
-    distanceMeters += intervalMeters
-  ) {
+  for (let km = 1; km < totalKm; km += 1) {
+    const distanceMeters = km * 1000;
     const point = interpolateAtDistance(points, distanceMeters);
     if (!point) continue;
 
+    const markerLabel = String(km);
+
     features.push(
-      markerFeature(`route-distance-${distanceMeters}`, point, {
+      markerFeature(`route-distance-${km}`, point, {
         kind: "distance",
-        label: formatDistanceLabel(distanceMeters),
-        markerLabel: formatDistanceMarkerLabel(distanceMeters),
-        iconName: `distance-${formatDistanceMarkerLabel(distanceMeters)}`,
-        sortKey: 10 + distanceMeters / intervalMeters,
+        label: `${markerLabel} km`,
+        markerLabel,
+        distanceKm: km,
+        sortKey: 10 + km,
       }),
     );
+  }
+
+  const hasOverviewIntervalMarker = features.some(
+    (feature) => (feature.properties.distanceKm ?? 0) % 100 === 0,
+  );
+
+  if (features.length > 0 && !hasOverviewIntervalMarker) {
+    let bestIdx = 0;
+    let bestInterval = strongestIntervalForDistance(features[0].properties.distanceKm ?? 1);
+    for (let i = 1; i < features.length; i++) {
+      const interval = strongestIntervalForDistance(features[i].properties.distanceKm ?? 1);
+      if (interval > bestInterval) {
+        bestInterval = interval;
+        bestIdx = i;
+      }
+    }
+    features[bestIdx] = {
+      ...features[bestIdx],
+      properties: { ...features[bestIdx].properties, isOverviewMarker: true },
+    };
   }
 
   return features;
@@ -251,39 +195,16 @@ export function buildRouteMarkerFeatureCollection(
 export function buildRouteMarkerSourceShape(input: {
   points: RoutePoint[];
   showDistanceMarkers: boolean;
-  zoom: number;
 }): GeoJSON.FeatureCollection<GeoJSON.Point, RouteMarkerProperties> {
   const startFinish = buildStartFinishMarkerFeatures(input.points);
-  const intervalMeters = input.showDistanceMarkers
-    ? selectDistanceMarkerIntervalForZoomBucket(
-        input.points[input.points.length - 1]?.distanceFromStartMeters ?? 0,
-        input.zoom,
-      )
-    : null;
-  const distance = intervalMeters ? buildDistanceMarkerFeatures(input.points, intervalMeters) : [];
+  const distance = input.showDistanceMarkers ? buildAllDistanceMarkerFeatures(input.points) : [];
   return buildRouteMarkerFeatureCollection([...startFinish, ...distance]);
 }
 
 export function deriveRouteMarkerSourceInput(
   input: RouteMarkerSourceInput,
 ): RouteMarkerSourceResult {
-  const zoomBucket = selectDistanceMarkerZoomBucket(input.zoom);
-  const intervalMeters = input.showDistanceMarkers
-    ? selectDistanceMarkerIntervalForZoomBucket(
-        input.points[input.points.length - 1]?.distanceFromStartMeters ?? 0,
-        input.zoom,
-      )
-    : null;
-  const sourceKey = [
-    input.activeContextKey ?? "none",
-    zoomBucket,
-    intervalMeters ?? "markers-off",
-  ].join(":");
-
   return {
-    sourceKey,
-    zoomBucket,
-    intervalMeters,
     shape: buildRouteMarkerSourceShape(input),
   };
 }

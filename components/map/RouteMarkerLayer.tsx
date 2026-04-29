@@ -1,13 +1,16 @@
 import React, { useMemo } from "react";
 import { ShapeSource, SymbolLayer, Images, Image } from "@rnmapbox/maps";
 import { SvgXml } from "react-native-svg";
-import { deriveRouteMarkerSourceInput } from "@/utils/routeMarkers";
+import { deriveRouteMarkerSourceInput, DISTANCE_MARKER_BUCKETS } from "@/utils/routeMarkers";
 import {
   buildStartFinishBadgeSvgs,
   START_ICON_NAME,
   FINISH_ICON_NAME,
   MAP_BADGE_ICON_SIZE_EXPR,
-  makeDistanceMarkerSvg,
+  DISTANCE_CHIP_ICON_SIZE,
+  DISTANCE_CHIP_IMAGE_SIZES,
+  buildDistanceChipBackgrounds,
+  CHIP_SIZE_EXPR,
 } from "./mapBadgeIcons";
 import type { RoutePoint } from "@/types";
 import type { SymbolLayerStyle } from "@rnmapbox/maps";
@@ -16,23 +19,39 @@ interface RouteMarkerLayerProps {
   activeContextKey: string | null;
   points: RoutePoint[];
   showDistanceMarkers: boolean;
-  zoom: number;
+  // zoom removed - density now controlled by LEVEL_ZOOM + minZoomLevel
 }
 
 const START_FINISH_SVGS = buildStartFinishBadgeSvgs();
+const CHIP_BACKGROUNDS = buildDistanceChipBackgrounds();
 
 const sortKeyField = ["get", "sortKey"] as const;
 const kindField = ["get", "kind"] as const;
-const iconNameField = ["get", "iconName"] as const;
+const distanceKmField = ["get", "distanceKm"] as const;
+const isOverviewMarkerField = ["get", "isOverviewMarker"] as const;
 
 const startFilter = ["==", kindField, "start"] as const;
 const finishFilter = ["==", kindField, "finish"] as const;
 const distanceFilter = ["==", kindField, "distance"] as const;
+
+function distanceBucketFilter(intervalKm: number) {
+  const intervalFilter = ["==", ["%", distanceKmField, intervalKm], 0] as const;
+
+  if (intervalKm === 100) {
+    return [
+      "all",
+      distanceFilter,
+      ["any", intervalFilter, ["==", isOverviewMarkerField, true]],
+    ] as const;
+  }
+
+  return ["all", distanceFilter, intervalFilter] as const;
+}
+
 export default function RouteMarkerLayer({
   activeContextKey,
   points,
   showDistanceMarkers,
-  zoom,
 }: RouteMarkerLayerProps) {
   const sourceInput = useMemo(
     () =>
@@ -40,21 +59,9 @@ export default function RouteMarkerLayer({
         activeContextKey,
         points,
         showDistanceMarkers,
-        zoom,
       }),
-    [activeContextKey, points, showDistanceMarkers, zoom],
+    [activeContextKey, points, showDistanceMarkers],
   );
-
-  const distanceLabels = useMemo(() => {
-    if (!showDistanceMarkers) return [];
-    const labels = new Set<string>();
-    for (const feature of sourceInput.shape.features) {
-      if (feature.properties.kind === "distance") {
-        labels.add(feature.properties.markerLabel);
-      }
-    }
-    return Array.from(labels);
-  }, [sourceInput.shape.features, showDistanceMarkers]);
 
   const startIconStyle = useMemo<SymbolLayerStyle>(
     () => ({
@@ -80,25 +87,42 @@ export default function RouteMarkerLayer({
     [],
   );
 
-  const distanceIconStyle = useMemo<SymbolLayerStyle>(
+  const distanceStyle = useMemo<SymbolLayerStyle>(
     () => ({
-      iconImage: iconNameField,
+      iconImage: CHIP_SIZE_EXPR,
+      iconSize: DISTANCE_CHIP_ICON_SIZE,
       iconAllowOverlap: true,
       iconIgnorePlacement: true,
       iconAnchor: "bottom",
+      textField: ["get", "markerLabel"],
+      textAllowOverlap: true,
+      textIgnorePlacement: true,
+      textFont: ["DIN Pro Medium", "Arial Unicode MS Regular"],
+      textSize: 12,
+      textColor: "#FFFFFF",
+      textAnchor: "center",
+      textOffset: [0, -1.333],
+      textTranslate: [-1, -1],
+      textTranslateAnchor: "viewport",
       symbolSortKey: sortKeyField,
       visibility: showDistanceMarkers ? "visible" : "none",
     }),
     [showDistanceMarkers],
   );
 
-  const layers = [
+  const distanceLayers = DISTANCE_MARKER_BUCKETS.map((bucket) => (
     <SymbolLayer
-      key="distance-icon"
-      id="route-distance-marker-icons"
-      filter={distanceFilter}
-      style={distanceIconStyle}
-    />,
+      key={`distance-interval-${bucket.intervalKm}`}
+      id={`route-distance-interval-${bucket.intervalKm}`}
+      filter={distanceBucketFilter(bucket.intervalKm)}
+      minZoomLevel={bucket.minZoom}
+      maxZoomLevel={bucket.maxZoom}
+      style={distanceStyle}
+    />
+  ));
+
+  const layers = [
+    ...distanceLayers,
     <SymbolLayer
       key="start-icon"
       id="route-start-marker-icon"
@@ -122,11 +146,27 @@ export default function RouteMarkerLayer({
         <Image name={FINISH_ICON_NAME}>
           <SvgXml xml={START_FINISH_SVGS[FINISH_ICON_NAME]} width={32} height={32} />
         </Image>
-        {distanceLabels.map((label) => (
-          <Image key={`distance-${label}`} name={`distance-${label}`}>
-            <SvgXml xml={makeDistanceMarkerSvg(label)} />
-          </Image>
-        ))}
+        <Image name="chip-s">
+          <SvgXml
+            xml={CHIP_BACKGROUNDS["chip-s"]}
+            width={DISTANCE_CHIP_IMAGE_SIZES["chip-s"].width}
+            height={DISTANCE_CHIP_IMAGE_SIZES["chip-s"].height}
+          />
+        </Image>
+        <Image name="chip-m">
+          <SvgXml
+            xml={CHIP_BACKGROUNDS["chip-m"]}
+            width={DISTANCE_CHIP_IMAGE_SIZES["chip-m"].width}
+            height={DISTANCE_CHIP_IMAGE_SIZES["chip-m"].height}
+          />
+        </Image>
+        <Image name="chip-l">
+          <SvgXml
+            xml={CHIP_BACKGROUNDS["chip-l"]}
+            width={DISTANCE_CHIP_IMAGE_SIZES["chip-l"].width}
+            height={DISTANCE_CHIP_IMAGE_SIZES["chip-l"].height}
+          />
+        </Image>
       </Images>
       <ShapeSource id="route-marker-source" shape={sourceInput.shape}>
         {layers}

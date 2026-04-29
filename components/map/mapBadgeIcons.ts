@@ -34,6 +34,8 @@ export const MAP_BADGE_ICON_SIZE_EXPR: SymbolLayerStyle["iconSize"] = [
   0.95,
 ];
 
+export const DISTANCE_CHIP_ICON_SIZE: SymbolLayerStyle["iconSize"] = 1;
+
 interface BadgeSvgConfig {
   color: string;
   backgroundTintAlpha: number;
@@ -360,7 +362,7 @@ export function buildStartFinishBadgeSvgs(): BadgeSvgMap {
 }
 
 // ---------------------------------------------------------------------------
-// Distance markers (Strava-like chip)
+// Distance marker chips
 // ---------------------------------------------------------------------------
 
 /**
@@ -405,3 +407,83 @@ export function makeDistanceMarkerSvg(label: string): string {
   <text x="${centerX}" y="14.5" font-family="Barlow, sans-serif" font-weight="700" font-size="12" fill="#FFFFFF" text-anchor="middle">${label}</text>
 </svg>`;
 }
+
+// ---------------------------------------------------------------------------
+// Distance marker chip backgrounds (for textField overlay rendering)
+// ---------------------------------------------------------------------------
+
+const CHIP_PADDING_X = 10;
+const CHIP_HEIGHT = 20;
+const CHIP_RADIUS = 5;
+const CHIP_POINTER_WIDTH = 7;
+const CHIP_POINTER_HEIGHT = 5;
+const CHAR_WIDTH = 8;
+
+/** Chip size tiers based on label digit count. */
+export type DistanceChipSize = "chip-s" | "chip-m" | "chip-l";
+
+/** Calculate chip width for a given number of characters. */
+function chipWidthForChars(charCount: number): number {
+  return Math.max(26, charCount * CHAR_WIDTH + CHIP_PADDING_X);
+}
+
+export const DISTANCE_CHIP_IMAGE_SIZES: Record<
+  DistanceChipSize,
+  { width: number; height: number }
+> = {
+  "chip-s": { width: chipWidthForChars(2), height: CHIP_HEIGHT + CHIP_POINTER_HEIGHT },
+  "chip-m": { width: chipWidthForChars(3), height: CHIP_HEIGHT + CHIP_POINTER_HEIGHT },
+  "chip-l": { width: chipWidthForChars(4), height: CHIP_HEIGHT + CHIP_POINTER_HEIGHT },
+};
+
+/** Build the SVG path for a rounded chip with bottom pointer. */
+function chipPath(width: number): string {
+  const centerX = width / 2;
+  return `
+    M ${CHIP_RADIUS} 0
+    H ${width - CHIP_RADIUS}
+    A ${CHIP_RADIUS} ${CHIP_RADIUS} 0 0 1 ${width} ${CHIP_RADIUS}
+    V ${CHIP_HEIGHT - CHIP_RADIUS}
+    A ${CHIP_RADIUS} ${CHIP_RADIUS} 0 0 1 ${width - CHIP_RADIUS} ${CHIP_HEIGHT}
+    H ${centerX + CHIP_POINTER_WIDTH / 2}
+    L ${centerX} ${CHIP_HEIGHT + CHIP_POINTER_HEIGHT}
+    L ${centerX - CHIP_POINTER_WIDTH / 2} ${CHIP_HEIGHT}
+    H ${CHIP_RADIUS}
+    A ${CHIP_RADIUS} ${CHIP_RADIUS} 0 0 1 0 ${CHIP_HEIGHT - CHIP_RADIUS}
+    V ${CHIP_RADIUS}
+    A ${CHIP_RADIUS} ${CHIP_RADIUS} 0 0 1 ${CHIP_RADIUS} 0
+    Z
+  `
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+/** Generate a distance marker chip background SVG (no text — text rendered via Mapbox textField). */
+function makeChipBackgroundSvg(width: number): string {
+  const totalHeight = CHIP_HEIGHT + CHIP_POINTER_HEIGHT;
+  return `<svg width="${width}" height="${totalHeight}" viewBox="0 0 ${width} ${totalHeight}" xmlns="http://www.w3.org/2000/svg">
+  <path d="${chipPath(width)}" fill="#1C1A18" />
+</svg>`;
+}
+
+/** Build all chip background SVGs keyed by size tier. */
+export function buildDistanceChipBackgrounds(): Record<DistanceChipSize, string> {
+  return {
+    "chip-s": makeChipBackgroundSvg(DISTANCE_CHIP_IMAGE_SIZES["chip-s"].width),
+    "chip-m": makeChipBackgroundSvg(DISTANCE_CHIP_IMAGE_SIZES["chip-m"].width),
+    "chip-l": makeChipBackgroundSvg(DISTANCE_CHIP_IMAGE_SIZES["chip-l"].width),
+  };
+}
+
+/** Mapbox expression to select the right chip size based on markerLabel length. */
+export const CHIP_SIZE_EXPR: SymbolLayerStyle["iconImage"] = [
+  "match",
+  ["length", ["to-string", ["get", "markerLabel"]]],
+  1,
+  "chip-s",
+  2,
+  "chip-s",
+  3,
+  "chip-m",
+  "chip-l",
+] as const;

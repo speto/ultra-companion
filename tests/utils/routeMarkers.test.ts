@@ -2,13 +2,12 @@ import { describe, expect, it } from "vitest";
 import { buildRoutePoint } from "../fixtures/route";
 import {
   buildRouteMarkerSourceShape,
-  buildDistanceMarkerFeatures,
+  buildAllDistanceMarkerFeatures,
   buildStartFinishMarkerFeatures,
   deriveRouteMarkerSourceInput,
-  selectDistanceMarkerIntervalForZoomBucket,
-  selectDistanceMarkerIntervalMeters,
-  selectDistanceMarkerIntervalsForZoomBuckets,
+  DISTANCE_MARKER_BUCKETS,
 } from "@/utils/routeMarkers";
+
 import type { RoutePoint } from "@/types";
 
 function routePoint(
@@ -22,6 +21,16 @@ function routePoint(
     latitude,
     longitude,
   };
+}
+
+function distanceLabelsForInterval(
+  features: ReturnType<typeof buildAllDistanceMarkerFeatures>,
+  intervalKm: number,
+) {
+  return features
+    .filter((feature) => feature.properties.distanceKm !== undefined)
+    .filter((feature) => feature.properties.distanceKm! % intervalKm === 0)
+    .map((feature) => Number(feature.properties.markerLabel));
 }
 
 describe("route marker generation", () => {
@@ -70,110 +79,109 @@ describe("route marker generation", () => {
     });
   });
 
-  it.each([
-    [50_000, 5_000],
-    [500_000, 50_000],
-    [1_000_000, 100_000],
-    [2_500_000, 200_000],
-  ])("selects a readable nice interval for a %i m route", (routeDistance, expectedInterval) => {
-    expect(selectDistanceMarkerIntervalMeters(routeDistance)).toBe(expectedInterval);
-  });
-
-  it("selects spec-defined distance marker intervals for each zoom bucket", () => {
-    expect(selectDistanceMarkerIntervalsForZoomBuckets(1_000_000)).toEqual([
-      { bucket: "overview", intervalMeters: 100_000 },
-      { bucket: "mid", intervalMeters: 50_000 },
-      { bucket: "detail", intervalMeters: 25_000 },
-    ]);
-    expect(selectDistanceMarkerIntervalsForZoomBuckets(2_500_000)).toEqual([
-      { bucket: "overview", intervalMeters: 200_000 },
-      { bucket: "mid", intervalMeters: 100_000 },
-      { bucket: "detail", intervalMeters: 50_000 },
-    ]);
-  });
-
-  it("uses only the active zoom bucket interval", () => {
-    expect(selectDistanceMarkerIntervalForZoomBucket(1_000_000, 8)).toBe(100_000);
-    expect(selectDistanceMarkerIntervalForZoomBucket(1_000_000, 10)).toBe(50_000);
-    expect(selectDistanceMarkerIntervalForZoomBucket(1_000_000, 12)).toBe(25_000);
-  });
-
   it("builds a marker source with start and finish only when distance markers are off", () => {
     const points = [routePoint(0, 0, 0, 0), routePoint(100_000, 1, 0, 1)];
 
-    const shape = buildRouteMarkerSourceShape({ points, showDistanceMarkers: false, zoom: 12 });
+    const shape = buildRouteMarkerSourceShape({ points, showDistanceMarkers: false });
 
     expect(shape.features.map((feature) => feature.properties.kind)).toEqual(["start", "finish"]);
   });
 
-  it("changes marker source input only when active context or zoom bucket changes", () => {
-    const points = [routePoint(0, 0, 0, 0), routePoint(1_000_000, 1, 0, 10)];
-    const base = {
+  it("derives marker source without camera zoom", () => {
+    const points = [routePoint(0, 0, 0, 0), routePoint(100_000, 1, 0, 1)];
+    const input = {
       activeContextKey: "route-1",
       points,
       showDistanceMarkers: true,
     };
 
-    const sameBucketA = deriveRouteMarkerSourceInput({ ...base, zoom: 8.1 });
-    const sameBucketB = deriveRouteMarkerSourceInput({ ...base, zoom: 8.4 });
-    const nextBucket = deriveRouteMarkerSourceInput({ ...base, zoom: 10.1 });
-    const nextContext = deriveRouteMarkerSourceInput({
-      ...base,
-      activeContextKey: "collection-1:r1,r2",
-      zoom: 8.1,
-    });
-
-    expect(sameBucketB.sourceKey).toBe(sameBucketA.sourceKey);
-    expect(nextBucket.sourceKey).not.toBe(sameBucketA.sourceKey);
-    expect(nextContext.sourceKey).not.toBe(sameBucketA.sourceKey);
-    expect(sameBucketA.intervalMeters).toBe(100_000);
-    expect(nextBucket.intervalMeters).toBe(50_000);
+    const result = deriveRouteMarkerSourceInput(input);
+    expect(result.shape.features).toHaveLength(101);
   });
 
-  it("returns all distance markers regardless of visible bounds", () => {
+  it("generates markers at every 1km with numeric distance", () => {
     const points = [routePoint(0, 0, 0, 0), routePoint(100_000, 1, 0, 1)];
+    const features = buildAllDistanceMarkerFeatures(points);
 
-    const features = buildDistanceMarkerFeatures(points, 25_000);
+    expect(features).toHaveLength(99);
+    // km 100 is NOT included
+    expect(features.find((f) => f.properties.markerLabel === "100")).toBeUndefined();
 
-    expect(features.map((feature) => feature.properties.label)).toEqual([
-      "25 km",
-      "50 km",
-      "75 km",
-    ]);
-    expect(features.map((feature) => feature.geometry.coordinates)).toEqual([
-      [0.25, 0],
-      [0.5, 0],
-      [0.75, 0],
-    ]);
+    expect(features.find((f) => f.properties.markerLabel === "1")?.properties.distanceKm).toBe(1);
+    expect(features.find((f) => f.properties.markerLabel === "2")?.properties.distanceKm).toBe(2);
+    expect(features.find((f) => f.properties.markerLabel === "5")?.properties.distanceKm).toBe(5);
+    expect(features.find((f) => f.properties.markerLabel === "10")?.properties.distanceKm).toBe(10);
+    expect(features.find((f) => f.properties.markerLabel === "25")?.properties.distanceKm).toBe(25);
+    expect(features.find((f) => f.properties.markerLabel === "50")?.properties.distanceKm).toBe(50);
+    expect(features.find((f) => f.properties.markerLabel === "99")?.properties.distanceKm).toBe(99);
   });
 
-  it("generates stitched route kilometer labels without resetting at segment seams", () => {
-    const points = [
-      routePoint(0, 0, 0, 0),
-      routePoint(80_000, 1, 0, 0.8),
-      routePoint(160_000, 2, 0, 1.6),
-      routePoint(240_000, 3, 0, 2.4),
-    ];
+  it("marks the strongest available distance marker as an overview marker for short routes", () => {
+    const points = [routePoint(0, 0, 0, 0), routePoint(15_000, 1, 0, 0.15)];
+    const features = buildAllDistanceMarkerFeatures(points);
 
-    const features = buildDistanceMarkerFeatures(points, 80_000);
-
-    expect(features.map((feature) => feature.properties.label)).toEqual(["80 km", "160 km"]);
-    expect(features.map((feature) => feature.properties.distanceMeters)).toEqual([80_000, 160_000]);
-    expect(features.map((feature) => feature.geometry.coordinates)).toEqual([
-      [0.8, 0],
-      [1.6, 0],
-    ]);
+    const km10 = features.find((f) => f.properties.markerLabel === "10");
+    expect(km10?.properties.distanceKm).toBe(10);
+    expect(km10?.properties.isOverviewMarker).toBe(true);
+    expect(features.filter((feature) => feature.properties.isOverviewMarker)).toHaveLength(1);
   });
 
-  it("interpolates marker coordinates between neighboring route points", () => {
+  it("returns empty array for routes under 1km", () => {
+    const points = [routePoint(0, 0, 0, 0), routePoint(500, 1, 0, 0.005)];
+    const features = buildAllDistanceMarkerFeatures(points);
+    expect(features).toEqual([]);
+  });
+
+  it("filters distance markers by active interval instead of assigned level", () => {
+    const points = [routePoint(0, 0, 0, 0), routePoint(120_000, 1, 0, 1.2)];
+    const features = buildAllDistanceMarkerFeatures(points);
+
+    expect(distanceLabelsForInterval(features, 25)).toEqual([25, 50, 75, 100]);
+    expect(distanceLabelsForInterval(features, 10)).toEqual([
+      10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110,
+    ]);
+    expect(distanceLabelsForInterval(features, 10)).not.toContain(25);
+    expect(distanceLabelsForInterval(features, 10)).not.toContain(75);
+  });
+
+  it("interpolates marker coordinates between route points", () => {
     const points = [routePoint(0, 0, 0, 0), routePoint(100_000, 1, 0, 1)];
+    const features = buildAllDistanceMarkerFeatures(points);
 
-    const features = buildDistanceMarkerFeatures(points, 50_000);
+    const km50 = features.find((f) => f.properties.markerLabel === "50");
+    expect(km50?.geometry.coordinates).toEqual([0.5, 0]);
+  });
 
-    expect(features).toHaveLength(1);
-    expect(features[0]).toMatchObject({
-      geometry: { coordinates: [0.5, 0] },
-      properties: { kind: "distance", label: "50 km", markerLabel: "50", distanceMeters: 50_000 },
+  it("builds full source shape with interval-ready distance markers", () => {
+    const points = [routePoint(0, 0, 0, 0), routePoint(100_000, 1, 0, 1)];
+    const shape = buildRouteMarkerSourceShape({ points, showDistanceMarkers: true });
+
+    expect(shape.features).toHaveLength(101); // 99 distance + 2 start/finish
+    const firstDistance = shape.features.find((f) => f.properties.kind === "distance");
+    expect(firstDistance?.properties).toMatchObject({
+      kind: "distance",
+      markerLabel: "1",
+      distanceKm: 1,
     });
+  });
+
+  it("keeps distance marker bucket zoom ranges contiguous and ordered", () => {
+    for (let i = 1; i < DISTANCE_MARKER_BUCKETS.length; i++) {
+      const previousBucket = DISTANCE_MARKER_BUCKETS[i - 1];
+      const bucket = DISTANCE_MARKER_BUCKETS[i];
+
+      expect(bucket.minZoom).toBeGreaterThanOrEqual(previousBucket.minZoom);
+      expect(previousBucket.maxZoom).toBe(bucket.minZoom);
+    }
+
+    expect(DISTANCE_MARKER_BUCKETS).toEqual([
+      { intervalKm: 100, minZoom: 0, maxZoom: 6.9 },
+      { intervalKm: 50, minZoom: 6.9, maxZoom: 7.9 },
+      { intervalKm: 25, minZoom: 7.9, maxZoom: 9 },
+      { intervalKm: 10, minZoom: 9, maxZoom: 10.5 },
+      { intervalKm: 5, minZoom: 10.5, maxZoom: 11.5 },
+      { intervalKm: 2, minZoom: 11.5, maxZoom: 12.5 },
+      { intervalKm: 1, minZoom: 12.5 },
+    ]);
   });
 });
