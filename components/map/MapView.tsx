@@ -36,6 +36,13 @@ import { useWeatherStore } from "@/store/weatherStore";
 import { useOfflineStore } from "@/store/offlineStore";
 import { horizonWindow, zoomToHorizon } from "@/utils/horizon";
 import { nextDisplayHeading } from "@/utils/mapHeading";
+import {
+  getNextFocusTarget,
+  getTargetCenter,
+  isCenteredOn,
+  type MapFocusTargetKind,
+  type MapFocusPoint,
+} from "@/utils/mapFocus";
 import type { MapState } from "@rnmapbox/maps";
 import type { RoutePoint } from "@/types";
 
@@ -84,6 +91,7 @@ export default function MapScreen() {
 
   const { followUser, setFollowUser } = useMapStore();
   const showDistanceMarkers = useMapStore((s) => s.showDistanceMarkers);
+  const userPosition = useMapStore((s) => s.userPosition);
   const refreshPosition = useMapStore((s) => s.refreshPosition);
   const persistCamera = useMapStore((s) => s.persistCamera);
   const initialCamera = useRef({
@@ -120,6 +128,8 @@ export default function MapScreen() {
   // Unified active context — works for both standalone routes and collections
   const activeData = useActiveRouteData();
   const activeRoutePoints = activeData?.points ?? null;
+  const focusStart = activeRoutePoints?.[0] ?? null;
+  const focusFinish = activeRoutePoints?.[activeRoutePoints.length - 1] ?? null;
   const activeDataId = activeData?.id ?? null;
   const activeTotalDistance = activeData?.totalDistanceMeters ?? 0;
   const activeRouteIds = useMemo(() => activeData?.routeIds ?? [], [activeData?.routeIds]);
@@ -276,28 +286,115 @@ export default function MapScreen() {
     }
   }, [selectedPOI, selectedPlace, setFollowUser, setHorizonFromCamera]);
 
-  const handleLocate = useCallback(async () => {
+  const setLastCameraCenter = useCallback((point: MapFocusPoint, zoom: number) => {
+    lastCamera.current = {
+      center: [point.longitude, point.latitude],
+      zoom,
+    };
+  }, []);
+
+  const focusGps = useCallback(async () => {
     setFollowUser(true);
-    // Snap to cached position instantly, then ease to fresh fix (no zoom change)
+    const zoomLevel = lastCamera.current.zoom;
+    const animationDuration = 500;
     const currentPos = useMapStore.getState().userPosition;
+    const cachedAnimationStartedAt = currentPos ? Date.now() : null;
     if (currentPos) {
+      setLastCameraCenter(currentPos, zoomLevel);
       cameraRef.current?.setCamera({
         centerCoordinate: [currentPos.longitude, currentPos.latitude],
-        animationMode: "moveTo",
-        animationDuration: 0,
+        zoomLevel,
+        animationMode: "easeTo",
+        animationDuration,
       });
     }
     const position = await refreshPosition();
     if (position) {
       if (!hasGpsFix) setHasGpsFix(true);
       snapAfterRefresh(position);
+      if (
+        currentPos &&
+        isCenteredOn([currentPos.longitude, currentPos.latitude], position, zoomLevel)
+      ) {
+        return true;
+      }
+      if (cachedAnimationStartedAt != null) {
+        const elapsedMs = Date.now() - cachedAnimationStartedAt;
+        const remainingMs = Math.max(0, animationDuration - elapsedMs);
+        if (remainingMs > 0) {
+          await new Promise((resolve) => {
+            setTimeout(resolve, remainingMs);
+          });
+        }
+      }
+      setLastCameraCenter(position, zoomLevel);
       cameraRef.current?.setCamera({
         centerCoordinate: [position.longitude, position.latitude],
+        zoomLevel,
+        animationMode: "easeTo",
+        animationDuration,
+      });
+    }
+    return currentPos != null || position != null;
+  }, [setFollowUser, refreshPosition, snapAfterRefresh, hasGpsFix, setLastCameraCenter]);
+
+  const focusRouteTarget = useCallback(
+    (target: Exclude<MapFocusTargetKind, "gps">) => {
+      if (!focusStart || !focusFinish) return;
+      setFollowUser(false);
+      const zoomLevel = lastCamera.current.zoom;
+
+      if (target === "start" || target === "finish") {
+        const point = target === "start" ? focusStart : focusFinish;
+        setLastCameraCenter(point, zoomLevel);
+        cameraRef.current?.setCamera({
+          centerCoordinate: [point.longitude, point.latitude],
+          zoomLevel,
+          animationMode: "easeTo",
+          animationDuration: 500,
+        });
+        return;
+      }
+
+      const center = getTargetCenter([focusStart, focusFinish]);
+      setLastCameraCenter(center, zoomLevel);
+      cameraRef.current?.setCamera({
+        centerCoordinate: [center.longitude, center.latitude],
+        zoomLevel,
         animationMode: "easeTo",
         animationDuration: 500,
       });
+    },
+    [focusStart, focusFinish, setFollowUser, setLastCameraCenter],
+  );
+
+  const handleLocate = useCallback(async () => {
+    const nextTarget = getNextFocusTarget({
+      cameraCenter: lastCamera.current.center,
+      zoom: lastCamera.current.zoom,
+      gpsPosition: useMapStore.getState().userPosition,
+      start: focusStart,
+      finish: focusFinish,
+    });
+
+    if (nextTarget === "gps") {
+      const focusedGps = await focusGps();
+      if (focusedGps) return;
+
+      const fallbackTarget = getNextFocusTarget({
+        cameraCenter: lastCamera.current.center,
+        zoom: lastCamera.current.zoom,
+        gpsPosition: null,
+        start: focusStart,
+        finish: focusFinish,
+        canAttemptGps: false,
+      });
+      if (fallbackTarget && fallbackTarget !== "gps") focusRouteTarget(fallbackTarget);
+      return;
     }
-  }, [setFollowUser, refreshPosition, snapAfterRefresh, hasGpsFix]);
+
+    if (nextTarget) focusRouteTarget(nextTarget);
+  }, [focusGps, focusRouteTarget, focusStart, focusFinish]);
 
   const handleCameraChanged = useCallback(
     (state: MapState) => {
@@ -602,6 +699,29 @@ export default function MapScreen() {
     [themeColors.accent],
   );
 
+  const focusAccessibilityLabel = useMemo(() => {
+    const target = getNextFocusTarget({
+      cameraCenter: lastCamera.current.center,
+      zoom: routeMarkerZoom,
+      gpsPosition: userPosition,
+      start: focusStart,
+      finish: focusFinish,
+    });
+    const contextLabel = activeData?.type === "collection" ? "collection" : "route";
+
+    switch (target) {
+      case "start":
+        return `Focus ${contextLabel} start`;
+      case "finish":
+        return `Focus ${contextLabel} finish`;
+      case "combined":
+        return `Show ${contextLabel} start and finish`;
+      case "gps":
+      default:
+        return "Center on my location";
+    }
+  }, [activeData?.type, focusStart, focusFinish, routeMarkerZoom, userPosition]);
+
   // Routes that should be rendered on the map (active or part of active collection, with loaded points)
   const renderedRoutes = useMemo(
     () =>
@@ -758,7 +878,13 @@ export default function MapScreen() {
         />
       </MapboxMapView>
 
-      <MapControls onLocate={handleLocate} heading={heading} onResetNorth={handleResetNorth} />
+      <MapControls
+        onLocate={handleLocate}
+        locateAccessibilityLabel={focusAccessibilityLabel}
+        panelHeight={panelHeight}
+        heading={heading}
+        onResetNorth={handleResetNorth}
+      />
       <TabbedBottomPanel activeData={activeData} />
     </View>
   );

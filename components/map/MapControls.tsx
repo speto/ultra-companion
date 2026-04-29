@@ -3,7 +3,7 @@ import { View, TouchableOpacity } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Text } from "@/components/ui/text";
-import { Locate, LocateFixed, Menu, Compass } from "lucide-react-native";
+import { Locate, Menu, Compass } from "lucide-react-native";
 import Animated, {
   useAnimatedStyle,
   withRepeat,
@@ -11,7 +11,6 @@ import Animated, {
   Easing,
   useSharedValue,
 } from "react-native-reanimated";
-import { cn } from "@/lib/cn";
 import { useThemeColors } from "@/theme";
 import { useMapStore } from "@/store/mapStore";
 import { isNorthUp } from "@/utils/mapHeading";
@@ -20,6 +19,8 @@ import { POSITION_AGE_VISIBLE_THRESHOLD_MS, GPS_STALE_THRESHOLD_MS } from "@/con
 
 interface MapControlsProps {
   onLocate: () => void;
+  locateAccessibilityLabel: string;
+  panelHeight: number;
   heading?: number;
   onResetNorth?: () => void;
 }
@@ -43,17 +44,21 @@ function usePositionAge() {
   return { label: formatTimeDelta(ageMs), isStale };
 }
 
-export default function MapControls({ onLocate, heading, onResetNorth }: MapControlsProps) {
+export default function MapControls({
+  onLocate,
+  locateAccessibilityLabel,
+  panelHeight,
+  heading,
+  onResetNorth,
+}: MapControlsProps) {
   const colors = useThemeColors();
   const { top: safeTop } = useSafeAreaInsets();
   const router = useRouter();
   const positionAge = usePositionAge();
 
-  const followUser = useMapStore((s) => s.followUser);
   const isRefreshing = useMapStore((s) => s.isRefreshing);
 
-  const locateColor = followUser ? colors.accentForeground : colors.textPrimary;
-  const iconSize = positionAge ? 20 : 24;
+  const iconSize = 24;
 
   const pulse = useSharedValue(0);
 
@@ -77,16 +82,13 @@ export default function MapControls({ onLocate, heading, onResetNorth }: MapCont
 
   const locateIcon = (
     <Animated.View style={pulseStyle}>
-      {followUser ? (
-        <LocateFixed size={iconSize} color={locateColor} />
-      ) : (
-        <Locate size={iconSize} color={locateColor} />
-      )}
+      <Locate size={iconSize} color={colors.textPrimary} />
     </Animated.View>
   );
 
   const topControlOffset = safeTop + 12;
   const secondaryControlOffset = topControlOffset + 64;
+  const focusControlOffset = panelHeight + 12;
 
   return (
     <>
@@ -115,31 +117,28 @@ export default function MapControls({ onLocate, heading, onResetNorth }: MapCont
             </View>
           </TouchableOpacity>
         )}
+      </View>
+
+      <View className="absolute right-4 items-center" style={{ bottom: focusControlOffset }}>
         <TouchableOpacity
-          className={cn(
-            "w-[52px] min-h-[52px] rounded-xl items-center justify-center shadow-md",
-            followUser ? "bg-primary" : "bg-surface/95 border border-border-subtle",
-            positionAge ? "py-2" : "",
-          )}
+          className="w-[52px] h-[52px] rounded-full items-center justify-center shadow-md bg-surface/95 border border-border-subtle"
           onPress={onLocate}
-          accessibilityLabel="Center on my location"
+          accessibilityLabel={locateAccessibilityLabel}
+          accessibilityHint="Cycles map focus between your location and route endpoints"
+          accessibilityRole="button"
         >
           {locateIcon}
-          {positionAge && !isRefreshing && (
+        </TouchableOpacity>
+        {positionAge && !isRefreshing && (
+          <View className="absolute -top-5 rounded-full bg-surface/95 border border-border-subtle px-1.5 py-0.5">
             <Text
-              className="text-[10px] font-barlow-semibold mt-1"
-              style={{
-                color: positionAge.isStale
-                  ? colors.warning
-                  : followUser
-                    ? colors.accentForeground
-                    : colors.textTertiary,
-              }}
+              className="text-[10px] font-barlow-semibold"
+              style={{ color: positionAge.isStale ? colors.warning : colors.textTertiary }}
             >
               {positionAge.label}
             </Text>
-          )}
-        </TouchableOpacity>
+          </View>
+        )}
       </View>
     </>
   );
