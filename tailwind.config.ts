@@ -47,6 +47,7 @@ export default {
         tertiary: "hsl(var(--tertiary))",
         "border-subtle": "hsl(var(--border-subtle))",
         positive: "hsl(var(--positive))",
+        starred: "hsl(var(--starred))",
         warning: "hsl(var(--warning))",
         info: "hsl(var(--info))",
       },

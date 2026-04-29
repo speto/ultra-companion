@@ -68,8 +68,8 @@ export default function InlineWaypointDetail({ place, onBack }: InlineWaypointDe
         >
           <Star
             size={18}
-            color={isStarred ? colors.warning : colors.textTertiary}
-            fill={isStarred ? colors.warning : "none"}
+            color={isStarred ? colors.starred : colors.textTertiary}
+            fill={isStarred ? colors.starred : "none"}
           />
         </TouchableOpacity>
       </View>

@@ -66,7 +66,7 @@ export default function RouteMarkerLayer({
   const startIconStyle = useMemo<SymbolLayerStyle>(
     () => ({
       iconImage: START_ICON_NAME,
-      iconSize: MAP_BADGE_ICON_SIZE_EXPR,
+      iconSize: MAP_BADGE_ICON_SIZE_EXPR as SymbolLayerStyle["iconSize"],
       iconAllowOverlap: true,
       iconIgnorePlacement: true,
       iconAnchor: "center",
@@ -78,7 +78,7 @@ export default function RouteMarkerLayer({
   const finishIconStyle = useMemo<SymbolLayerStyle>(
     () => ({
       iconImage: FINISH_ICON_NAME,
-      iconSize: MAP_BADGE_ICON_SIZE_EXPR,
+      iconSize: MAP_BADGE_ICON_SIZE_EXPR as SymbolLayerStyle["iconSize"],
       iconAllowOverlap: true,
       iconIgnorePlacement: true,
       iconAnchor: "center",
@@ -90,7 +90,7 @@ export default function RouteMarkerLayer({
   const distanceStyle = useMemo<SymbolLayerStyle>(
     () => ({
       iconImage: CHIP_SIZE_EXPR,
-      iconSize: DISTANCE_CHIP_ICON_SIZE,
+      iconSize: DISTANCE_CHIP_ICON_SIZE as SymbolLayerStyle["iconSize"],
       iconAllowOverlap: true,
       iconIgnorePlacement: true,
       iconAnchor: "bottom",

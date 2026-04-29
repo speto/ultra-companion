@@ -1,11 +1,10 @@
 import React, { useMemo, useCallback, useDeferredValue } from "react";
-import { ShapeSource, SymbolLayer, CircleLayer, Images, Image } from "@rnmapbox/maps";
+import { ShapeSource, SymbolLayer, Images, Image } from "@rnmapbox/maps";
 import { SvgXml } from "react-native-svg";
 import { usePoiStore } from "@/store/poiStore";
 import { usePanelStore } from "@/store/panelStore";
 import { usePlaceStore } from "@/store/placeStore";
 import { useStarredStore } from "@/store/starredStore";
-import { useThemeColors } from "@/theme";
 import { useEtaStore } from "@/store/etaStore";
 import { haversineDistance } from "@/utils/geo";
 import { isOpenAt } from "@/services/openingHoursParser";
@@ -17,7 +16,7 @@ import {
   MAP_BADGE_ICON_SIZE_EXPR,
 } from "./mapBadgeIcons";
 import type { POI, PlaceViewModel } from "@/types";
-import type { SymbolLayerStyle, CircleLayerStyle } from "@rnmapbox/maps";
+import type { SymbolLayerStyle } from "@rnmapbox/maps";
 
 const POI_BADGE_SVGS = buildPoiBadgeSvgs();
 const WP_BADGE_SVGS = buildWaypointBadgeSvgs();
@@ -39,7 +38,6 @@ export default function POILayer({ routeIds }: POILayerProps) {
   const allPlaces = usePlaceStore((s) => s.places);
   const getVisiblePlaces = usePlaceStore((s) => s.getVisiblePlaces);
   const setSelectedPlace = usePlaceStore((s) => s.setSelectedPlace);
-  const colors = useThemeColors();
 
   const visiblePlaces = useMemo(() => {
     if (panelTab !== "pois" && panelTab !== "waypoints") return [];
@@ -83,8 +81,9 @@ export default function POILayer({ routeIds }: POILayerProps) {
       features: deferredVisiblePlaces.map((place) => {
         const waypointCategory =
           place.entityType === "routeWaypoint" ? waypointCategoryForType(place.waypointType) : null;
-        const iconName = waypointCategory ? `wp-${waypointCategory}` : `poi-${place.category}`;
-        const starred = starredKeys.has(`${place.entityType}:${place.entityId}`) ? 1 : 0;
+        const baseIconName = waypointCategory ? `wp-${waypointCategory}` : `poi-${place.category}`;
+        const starred = starredKeys.has(`${place.entityType}:${place.entityId}`);
+        const iconName = starred ? `${baseIconName}-starred` : baseIconName;
         return {
           type: "Feature",
           properties: {
@@ -93,7 +92,6 @@ export default function POILayer({ routeIds }: POILayerProps) {
             entityType: place.entityType,
             category: place.category,
             iconName,
-            starred,
           },
           geometry: {
             type: "Point",
@@ -143,33 +141,10 @@ export default function POILayer({ routeIds }: POILayerProps) {
     [deferredVisiblePlaces, setSelectedPlace],
   );
 
-  const starredHaloStyle = useMemo<CircleLayerStyle>(
-    () => ({
-      circleRadius: ["interpolate", ["linear"], ["zoom"], 8, 10, 10, 13, 12, 16],
-      circleColor: colors.warning,
-      circleOpacity: 0.06,
-      circleStrokeColor: colors.warning,
-      circleStrokeOpacity: 0.65,
-      circleStrokeWidth: ["interpolate", ["linear"], ["zoom"], 8, 1, 10, 1.25, 12, 1.5],
-    }),
-    [colors.warning],
-  );
-
-  const normalBadgeStyle = useMemo<SymbolLayerStyle>(
+  const badgeStyle = useMemo<SymbolLayerStyle>(
     () => ({
       iconImage: ["get", "iconName"],
-      iconSize: MAP_BADGE_ICON_SIZE_EXPR,
-      iconAllowOverlap: true,
-      iconIgnorePlacement: true,
-      iconAnchor: "center",
-    }),
-    [],
-  );
-
-  const starredBadgeStyle = useMemo<SymbolLayerStyle>(
-    () => ({
-      iconImage: ["get", "iconName"],
-      iconSize: ["interpolate", ["linear"], ["zoom"], 8, 0.58, 10, 0.78, 12, 0.98],
+      iconSize: MAP_BADGE_ICON_SIZE_EXPR as SymbolLayerStyle["iconSize"],
       iconAllowOverlap: true,
       iconIgnorePlacement: true,
       iconAnchor: "center",
@@ -194,21 +169,7 @@ export default function POILayer({ routeIds }: POILayerProps) {
         onPress={handlePress}
         hitbox={{ width: 40, height: 40 }}
       >
-        <SymbolLayer
-          id="poi-normal-badge"
-          filter={["==", ["get", "starred"], 0]}
-          style={normalBadgeStyle}
-        />
-        <CircleLayer
-          id="poi-starred-halo"
-          filter={["==", ["get", "starred"], 1]}
-          style={starredHaloStyle}
-        />
-        <SymbolLayer
-          id="poi-starred-badge"
-          filter={["==", ["get", "starred"], 1]}
-          style={starredBadgeStyle}
-        />
+        <SymbolLayer id="poi-badge" style={badgeStyle} />
       </ShapeSource>
     </>
   );

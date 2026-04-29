@@ -683,7 +683,7 @@ function ExpandedProfileSegmentRow({
       ? { label: String(item.waypointCount), icon: <Flag size={11} color={colors.textTertiary} /> }
       : null,
     item.starredCount > 0
-      ? { label: String(item.starredCount), icon: <Star size={11} color={colors.textTertiary} /> }
+      ? { label: String(item.starredCount), icon: <Star size={11} color={colors.starred} /> }
       : null,
   ].filter(
     (metadataItem): metadataItem is NonNullable<typeof metadataItem> => metadataItem != null,

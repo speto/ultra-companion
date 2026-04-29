@@ -133,11 +133,12 @@ function SegmentRow({
     if (starredCount > 0) {
       items.push({
         label: String(starredCount),
-        icon: <Star size={11} color={colors.textTertiary} />,
+        icon: <Star size={11} color={colors.starred} />,
       });
     }
     return items;
   }, [
+    colors.starred,
     colors.textTertiary,
     poisByRoute,
     ridingTime,

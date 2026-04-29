@@ -418,8 +418,8 @@ function InlinePOIDetail({ poi, onBack }: { poi: POI; onBack: () => void }) {
         >
           <Star
             size={18}
-            color={isStarred ? colors.warning : colors.textTertiary}
-            fill={isStarred ? colors.warning : "none"}
+            color={isStarred ? colors.starred : colors.textTertiary}
+            fill={isStarred ? colors.starred : "none"}
           />
         </TouchableOpacity>
       </View>

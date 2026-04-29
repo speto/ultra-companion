@@ -1,6 +1,8 @@
 import { POI_CATEGORIES } from "@/constants";
 import { WAYPOINT_CATEGORIES } from "@/constants/waypointCategories";
-import type { SymbolLayerStyle } from "@rnmapbox/maps";
+import { COLORS } from "@/theme/colors";
+
+type MapboxExpression = number | readonly unknown[];
 
 const toHex = (c: number) => c.toString(16).padStart(2, "0");
 
@@ -21,8 +23,10 @@ const BADGE_CENTER = 16;
 const BADGE_RADIUS = 13;
 const BADGE_STROKE_WIDTH = 0.75;
 const BADGE_GLYPH_TRANSFORM = "translate(7, 7) scale(0.75)";
+const STARRED_PIP_COLOR = COLORS.light.starred;
+const STARRED_PIP_STROKE = "#FFFFFF";
 
-export const MAP_BADGE_ICON_SIZE_EXPR: SymbolLayerStyle["iconSize"] = [
+export const MAP_BADGE_ICON_SIZE_EXPR: MapboxExpression = [
   "interpolate",
   ["linear"],
   ["zoom"],
@@ -34,7 +38,7 @@ export const MAP_BADGE_ICON_SIZE_EXPR: SymbolLayerStyle["iconSize"] = [
   0.95,
 ];
 
-export const DISTANCE_CHIP_ICON_SIZE: SymbolLayerStyle["iconSize"] = 1;
+export const DISTANCE_CHIP_ICON_SIZE: MapboxExpression = 1;
 
 interface BadgeSvgConfig {
   color: string;
@@ -42,6 +46,7 @@ interface BadgeSvgConfig {
   borderTintAlpha: number;
   borderOpacity?: number;
   glyphSvg: string;
+  overlaySvg?: string;
 }
 
 function makeBadgeSvg({
@@ -50,6 +55,7 @@ function makeBadgeSvg({
   borderTintAlpha,
   borderOpacity = 1,
   glyphSvg,
+  overlaySvg = "",
 }: BadgeSvgConfig): string {
   const backgroundColor = tintColor(color, backgroundTintAlpha);
   const borderColor = tintColor(color, borderTintAlpha);
@@ -58,7 +64,12 @@ function makeBadgeSvg({
   <circle cx="${BADGE_CENTER}" cy="${BADGE_CENTER}" r="${BADGE_RADIUS}" fill="${backgroundColor}"/>
   <circle cx="${BADGE_CENTER}" cy="${BADGE_CENTER}" r="${BADGE_RADIUS}" fill="none" stroke="${borderColor}" stroke-opacity="${borderOpacity}" stroke-width="${BADGE_STROKE_WIDTH}"/>
   ${glyphSvg}
+  ${overlaySvg}
 </svg>`;
+}
+
+function makeStarredPipSvg(): string {
+  return `<path d="M24 4.6l1.67 3.39 3.74.54-2.7 2.63.64 3.72L24 13.12l-3.35 1.76.64-3.72-2.7-2.63 3.74-.54L24 4.6z" fill="${STARRED_PIP_COLOR}" stroke="${STARRED_PIP_STROKE}" stroke-width="1.25" stroke-linejoin="round"/>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -288,7 +299,7 @@ function lucideToSvgElements(
  * Generates a map badge SVG (32x32) using the same inset-chip geometry as
  * start/finish markers, with an opaque category tint background.
  */
-function makeLucideBadgeSvg(color: string, iconName: string): string {
+function makeLucideBadgeSvg(color: string, iconName: string, starred = false): string {
   const elements = LUCIDE_ICONS[iconName];
   const iconSvg = elements
     ? lucideToSvgElements(elements, color)
@@ -304,6 +315,7 @@ function makeLucideBadgeSvg(color: string, iconName: string): string {
     glyphSvg: `<g transform="${BADGE_GLYPH_TRANSFORM}">
     ${iconSvg}
   </g>`,
+    overlaySvg: starred ? makeStarredPipSvg() : undefined,
   });
 }
 
@@ -312,6 +324,7 @@ export function buildPoiBadgeSvgs(): BadgeSvgMap {
   const svgs: BadgeSvgMap = {};
   for (const cat of POI_CATEGORIES) {
     svgs[`poi-${cat.key}`] = makeLucideBadgeSvg(cat.color, cat.iconName);
+    svgs[`poi-${cat.key}-starred`] = makeLucideBadgeSvg(cat.color, cat.iconName, true);
   }
   return svgs;
 }
@@ -321,6 +334,7 @@ export function buildWaypointBadgeSvgs(): BadgeSvgMap {
   const svgs: BadgeSvgMap = {};
   for (const cat of WAYPOINT_CATEGORIES) {
     svgs[`wp-${cat.key}`] = makeLucideBadgeSvg(cat.color, cat.iconName);
+    svgs[`wp-${cat.key}-starred`] = makeLucideBadgeSvg(cat.color, cat.iconName, true);
   }
   return svgs;
 }
@@ -476,7 +490,7 @@ export function buildDistanceChipBackgrounds(): Record<DistanceChipSize, string>
 }
 
 /** Mapbox expression to select the right chip size based on markerLabel length. */
-export const CHIP_SIZE_EXPR: SymbolLayerStyle["iconImage"] = [
+export const CHIP_SIZE_EXPR = [
   "match",
   ["length", ["to-string", ["get", "markerLabel"]]],
   1,

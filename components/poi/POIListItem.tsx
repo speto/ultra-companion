@@ -1,5 +1,6 @@
-import React, { useMemo } from "react";
+import React, { useCallback, useMemo } from "react";
 import { View, TouchableOpacity } from "react-native";
+import type { GestureResponderEvent } from "react-native";
 import { Text } from "@/components/ui/text";
 import { Star } from "lucide-react-native";
 import { useThemeColors } from "@/theme";
@@ -27,7 +28,15 @@ export default function POIListItem({ poi, currentDistAlongRoute, onPress }: POI
   const IconComp = catMeta ? POI_ICON_MAP[catMeta.iconName] : null;
 
   const isStarred = useStarredStore((s) => s.starredKeys.has(`downloadedPoi:${poi.id}`));
+  const toggleStarred = useStarredStore((s) => s.toggleStarred);
   const getETAToPOI = useEtaStore((s) => s.getETAToPOI);
+  const handleStarPress = useCallback(
+    (event: GestureResponderEvent) => {
+      event.stopPropagation();
+      toggleStarred("downloadedPoi", poi.id);
+    },
+    [poi.id, toggleStarred],
+  );
 
   const distAhead =
     currentDistAlongRoute != null ? poi.distanceAlongRouteMeters - currentDistAlongRoute : null;
@@ -59,14 +68,21 @@ export default function POIListItem({ poi, currentDistAlongRoute, onPress }: POI
 
       <View className="flex-1 ml-3">
         <View className="flex-row items-center">
-          {isStarred && (
+          <TouchableOpacity
+            className="w-[32px] h-[32px] items-center justify-center -ml-2 mr-0.5"
+            hitSlop={8}
+            onPress={handleStarPress}
+            activeOpacity={0.7}
+            accessibilityLabel={isStarred ? "Unsave POI" : "Save POI"}
+            accessibilityRole="switch"
+            accessibilityState={{ checked: isStarred }}
+          >
             <Star
-              size={12}
-              color={colors.warning}
-              fill={colors.warning}
-              style={{ marginRight: 4 }}
+              size={17}
+              color={isStarred ? colors.starred : colors.textTertiary}
+              fill={isStarred ? colors.starred : "none"}
             />
-          )}
+          </TouchableOpacity>
           <Text
             className="text-[15px] font-barlow-medium text-foreground flex-shrink"
             numberOfLines={1}

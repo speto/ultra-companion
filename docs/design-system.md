@@ -61,6 +61,7 @@ iPhone 15 Pro has OLED — use near-black base for battery efficiency, with very
 | Token         | Light     | Dark      | Usage                             |
 | ------------- | --------- | --------- | --------------------------------- |
 | `positive`    | `#16A34A` | `#22C55E` | Completed, on-track               |
+| `starred`     | `#F5A623` | `#FFD166` | Saved/starred POIs and waypoints  |
 | `warning`     | `#D97706` | `#FBBF24` | Caution, approaching limit        |
 | `destructive` | `#DC2626` | `#EF4444` | Delete, off-route                 |
 | `info`        | `#0284C7` | `#38BDF8` | Informational, neutral highlights |

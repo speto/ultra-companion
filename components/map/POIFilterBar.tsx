@@ -218,13 +218,13 @@ export default function POIFilterBar({ routeIds }: POIFilterBarProps) {
             icon={
               <Star
                 size={18}
-                color={showSavedOnly ? colors.warning : colors.textTertiary}
-                fill={showSavedOnly ? colors.warning : "none"}
+                color={showSavedOnly ? colors.starred : colors.textTertiary}
+                fill={showSavedOnly ? colors.starred : "none"}
               />
             }
             label="Saved"
             accessibilityLabel={showSavedOnly ? "Show all POIs" : "Show only saved POIs"}
-            activeTone="warning"
+            activeTone="starred"
           />
         )}
         <FilterChip
@@ -278,7 +278,7 @@ function FilterChip({
   icon: React.ReactNode;
   label: string;
   badgeText?: string;
-  activeTone?: "accent" | "positive" | "warning";
+  activeTone?: "accent" | "positive" | "starred";
   accessibilityLabel: string;
   accessibilityCheckedState?: boolean | "mixed";
   accessibilityRoleOverride?: "button" | "switch";
@@ -291,8 +291,8 @@ function FilterChip({
         active
           ? activeTone === "positive"
             ? "bg-positive/10 border-positive/30"
-            : activeTone === "warning"
-              ? "bg-warning/10 border-warning/30"
+            : activeTone === "starred"
+              ? "bg-starred/10 border-starred/30"
               : "bg-accent/10 border-accent/30"
           : "border-transparent bg-muted",
       )}

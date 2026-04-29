@@ -1,5 +1,6 @@
-import React, { useMemo } from "react";
+import React, { useCallback, useMemo } from "react";
 import { View, TouchableOpacity } from "react-native";
+import type { GestureResponderEvent } from "react-native";
 import { Text } from "@/components/ui/text";
 import { Clock, Star } from "lucide-react-native";
 import { useThemeColors } from "@/theme";
@@ -47,6 +48,21 @@ export default function PlaceListItem({
 
   const isStarred = useStarredStore((s) =>
     s.starredKeys.has(`${place.entityType}:${place.entityId}`),
+  );
+  const toggleStarred = useStarredStore((s) => s.toggleStarred);
+  const starredAccessibilityLabel = isWaypoint
+    ? isStarred
+      ? "Unsave waypoint"
+      : "Save waypoint"
+    : isStarred
+      ? "Unsave POI"
+      : "Save POI";
+  const handleStarPress = useCallback(
+    (event: GestureResponderEvent) => {
+      event.stopPropagation();
+      toggleStarred(place.entityType, place.entityId);
+    },
+    [place.entityId, place.entityType, toggleStarred],
   );
 
   // ETA (only for downloaded POIs)
@@ -156,14 +172,21 @@ export default function PlaceListItem({
 
       <View className="flex-1 ml-3">
         <View className="flex-row items-center">
-          {isStarred && (
+          <TouchableOpacity
+            className="w-[32px] h-[32px] items-center justify-center -ml-2 mr-0.5"
+            hitSlop={8}
+            onPress={handleStarPress}
+            activeOpacity={0.7}
+            accessibilityLabel={starredAccessibilityLabel}
+            accessibilityRole="switch"
+            accessibilityState={{ checked: isStarred }}
+          >
             <Star
-              size={12}
-              color={colors.warning}
-              fill={colors.warning}
-              style={{ marginRight: 4 }}
+              size={17}
+              color={isStarred ? colors.starred : colors.textTertiary}
+              fill={isStarred ? colors.starred : "none"}
             />
-          )}
+          </TouchableOpacity>
           <Text
             className="text-[15px] font-barlow-medium text-foreground flex-shrink"
             numberOfLines={1}
