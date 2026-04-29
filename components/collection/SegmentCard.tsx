@@ -40,17 +40,17 @@ export default function SegmentCard({
   return (
     <View className="rounded-xl bg-muted/30 mb-2 overflow-hidden">
       <TouchableOpacity
-        className="flex-row items-center px-3 py-2.5"
+        className="flex-row px-3 py-2.5"
         style={{ minHeight: 56 }}
         onPress={onPress}
         activeOpacity={onPress ? 0.75 : 1}
         accessibilityRole={onPress ? "button" : undefined}
       >
         <View
-          className="rounded-full mr-3"
-          style={{ width: 5, height: 32, backgroundColor: color ?? colors.textTertiary }}
+          className="self-stretch rounded-full mr-3"
+          style={{ width: 5, backgroundColor: color ?? colors.textTertiary }}
         />
-        <View className="flex-1">
+        <View className="flex-1 justify-center">
           <View className="flex-row items-center">
             <Text
               className="font-barlow-semibold text-[14px] text-foreground flex-1 mr-2"
@@ -87,7 +87,9 @@ export default function SegmentCard({
             </View>
           )}
         </View>
-        {action ?? (onPress ? <Chevron size={18} color={colors.textTertiary} /> : null)}
+        <View className="self-center">
+          {action ?? (onPress ? <Chevron size={18} color={colors.textTertiary} /> : null)}
+        </View>
       </TouchableOpacity>
       {expanded && children ? <View className="px-2 pb-3">{children}</View> : null}
     </View>
