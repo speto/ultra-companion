@@ -229,16 +229,30 @@ Light:                              Dark:
 
 ### Floating Map Controls
 
-Positioned top-right (away from left-hand Dynamic Island). Grouped vertically with 12px gap.
+Three-position layout: compass (bottom-left), menu toggle (center-left), GPS/follow (top-right). All buttons are 52dp circular.
 
 ```
 size: 52 x 52dp
-rounded-xl (12px)
+rounded-full (circular)
 bg-surface/95 (95% opacity)
 border border-border-subtle
 icon: text-primary, 24px
 active state: bg-accent, text-white
+inactive placeholder (Layers): bg-surface/50, text-textTertiary
 ```
+
+### Map Controls Menu
+
+Toggled via SlidersHorizontal icon. Compact by default (icons + toggles/radios only). Labels expand via triangle button on left edge or swipe-left gesture.
+
+```
+layout: pathline options stacked above display toggles, zoom buckets to the right (groups vertically centered)
+pathline modes: Segments, Weather, Climbs selectable; Surface and Descends future/disabled
+display toggles: Distance markers, POIs, Waypoints (real); Weather markers (future/disabled)
+zoom buckets: vertical pill with ruler icon, sizes to content
+```
+
+Display settings (POIs, Waypoints, Distance markers) are persisted and also accessible in Settings > Map Display.
 
 ### Bottom Panel (Elevation / Data)
 
@@ -326,7 +340,7 @@ bg-accent/10 text-accent rounded-full px-2 py-0.5 font-labelSmall
 
 The map takes 100% of the screen. Everything else floats.
 
-- **Floating controls**: top-right corner, vertically stacked (center-on-user, panel mode toggle)
+- **Floating controls**: compass (bottom-left), menu toggle (center-left), GPS/follow (top-right). Tap menu to open controls menu.
 - **Bottom panel**: always visible, showing either elevation profile or weather. Tap buttons to switch; tap elevation button again to cycle distance
 - **No persistent HUD on map** — keep map clean. Data lives in the panel
 - **Panel closed state**: just the map + floating buttons + tab bar

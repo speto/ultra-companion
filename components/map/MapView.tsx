@@ -19,7 +19,7 @@ import { useThemeColors } from "@/theme";
 import { useColorScheme } from "nativewind";
 import { useMapStyle } from "@/hooks/useMapStyle";
 import { GPS_STALE_THRESHOLD_MS } from "@/constants";
-import MapControls from "./MapControls";
+import MapSheetControls from "./MapSheetControls";
 import RouteLayer, { RouteArrowLayer } from "./RouteLayer";
 import RouteMarkerLayer from "./RouteMarkerLayer";
 import POILayer from "./POILayer";
@@ -151,6 +151,7 @@ export default function MapScreen() {
   const climbScopeFitRequestId = usePanelStore((s) => s.climbScopeFitRequestId);
   const setHorizonFromZoom = usePanelStore((s) => s.setHorizonFromZoom);
   const setHorizonFromCamera = usePanelStore((s) => s.setHorizonFromCamera);
+  const setHorizonPopoverOpen = usePanelStore((s) => s.setHorizonPopoverOpen);
   const compactPanelHeight = Math.round(screenHeight * SHEET_COMPACT_RATIO) + safeBottom;
 
   const routes = useRouteStore((s) => s.routes);
@@ -735,6 +736,7 @@ export default function MapScreen() {
   const handleTouchStart = useCallback(() => {
     manualCameraInteraction.current = true;
     scheduleManualCameraInteractionClear();
+    setHorizonPopoverOpen(false);
     if (isCompassMode) {
       setIsCompassMode(false);
     }
@@ -746,6 +748,7 @@ export default function MapScreen() {
     isCompassMode,
     scheduleManualCameraInteractionClear,
     setFollowUser,
+    setHorizonPopoverOpen,
   ]);
 
   const handleResetNorth = useCallback(() => {
@@ -1234,11 +1237,25 @@ export default function MapScreen() {
         />
       </MapboxMapView>
 
-      <MapControls />
       <TabbedBottomPanel
         activeData={activeData}
         distanceMarkerInterval={distanceMarkerInterval}
         showDistanceMarkers={showDistanceMarkers}
+        floatingControls={
+          <MapSheetControls
+            activeData={activeData}
+            onLocate={handleLocate}
+            isFollowActive={advancedFocusMode === "follow"}
+            onFollowToggle={handleFollowToggle}
+            isCompassActive={isCompassMode}
+            onCompassPress={handleCompassPress}
+            onCompassLongPress={handleCompassLongPress}
+            isResettingNorth={isResettingNorth}
+            locateAccessibilityLabel={focusAccessibilityLabel}
+            heading={heading}
+            compassRotation={compassRotation}
+          />
+        }
       />
     </View>
   );
