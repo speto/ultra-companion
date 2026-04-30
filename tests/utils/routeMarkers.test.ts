@@ -3,9 +3,11 @@ import { buildRoutePoint } from "../fixtures/route";
 import {
   buildRouteMarkerSourceShape,
   buildAllDistanceMarkerFeatures,
+  buildDistanceMarkerDistances,
   buildStartFinishMarkerFeatures,
   deriveRouteMarkerSourceInput,
   DISTANCE_MARKER_BUCKETS,
+  getDistanceMarkerIntervalForZoom,
 } from "@/utils/routeMarkers";
 
 import type { RoutePoint } from "@/types";
@@ -116,6 +118,18 @@ describe("route marker generation", () => {
     expect(features.find((f) => f.properties.markerLabel === "99")?.properties.distanceKm).toBe(99);
   });
 
+  it("exposes absolute kilometer distances for graph/map marker alignment", () => {
+    expect(buildDistanceMarkerDistances(500)).toEqual([]);
+    expect(buildDistanceMarkerDistances(3_500)).toEqual([1000, 2000, 3000]);
+    expect(buildDistanceMarkerDistances(3_000)).toEqual([1000, 2000]);
+  });
+
+  it("filters absolute kilometer distances by requested interval", () => {
+    expect(buildDistanceMarkerDistances(121_000, 50)).toEqual([50_000, 100_000]);
+    expect(buildDistanceMarkerDistances(121_000, 25)).toEqual([25_000, 50_000, 75_000, 100_000]);
+    expect(buildDistanceMarkerDistances(10_000, 5)).toEqual([5_000]);
+  });
+
   it("marks the strongest available distance marker as an overview marker for short routes", () => {
     const points = [routePoint(0, 0, 0, 0), routePoint(15_000, 1, 0, 0.15)];
     const features = buildAllDistanceMarkerFeatures(points);
@@ -183,5 +197,23 @@ describe("route marker generation", () => {
       { intervalKm: 2, minZoom: 11.5, maxZoom: 12.5 },
       { intervalKm: 1, minZoom: 12.5 },
     ]);
+  });
+
+  it("derives marker intervals from zoom buckets with inclusive min and exclusive max", () => {
+    expect(getDistanceMarkerIntervalForZoom(-1)).toBe(100);
+    expect(getDistanceMarkerIntervalForZoom(0)).toBe(100);
+    expect(getDistanceMarkerIntervalForZoom(6.899)).toBe(100);
+    expect(getDistanceMarkerIntervalForZoom(6.9)).toBe(50);
+    expect(getDistanceMarkerIntervalForZoom(7.899)).toBe(50);
+    expect(getDistanceMarkerIntervalForZoom(7.9)).toBe(25);
+    expect(getDistanceMarkerIntervalForZoom(8.999)).toBe(25);
+    expect(getDistanceMarkerIntervalForZoom(9)).toBe(10);
+    expect(getDistanceMarkerIntervalForZoom(10.499)).toBe(10);
+    expect(getDistanceMarkerIntervalForZoom(10.5)).toBe(5);
+    expect(getDistanceMarkerIntervalForZoom(11.499)).toBe(5);
+    expect(getDistanceMarkerIntervalForZoom(11.5)).toBe(2);
+    expect(getDistanceMarkerIntervalForZoom(12.499)).toBe(2);
+    expect(getDistanceMarkerIntervalForZoom(12.5)).toBe(1);
+    expect(getDistanceMarkerIntervalForZoom(18)).toBe(1);
   });
 });

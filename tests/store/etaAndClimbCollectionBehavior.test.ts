@@ -156,4 +156,26 @@ describe("stitched collection coordinate behavior", () => {
       ["c2", 1_100, 1_400],
     ]);
   });
+
+  it("keeps source climb refs when merging collection-boundary climbs", () => {
+    useClimbStore.setState({
+      climbs: {
+        r1: [buildClimb("c1", "r1", 700, 990, { endElevationMeters: 220 })],
+        r2: [buildClimb("c2", "r2", 0, 350, { startElevationMeters: 215 })],
+      },
+    });
+
+    const display = useClimbStore
+      .getState()
+      .getClimbsForDisplay(["r1", "r2"], stitchedSegmentsFixture);
+
+    expect(display).toHaveLength(1);
+    expect(display[0]).toMatchObject({
+      id: "c1_c2",
+      sourceClimbs: [
+        { id: "c1", routeId: "r1" },
+        { id: "c2", routeId: "r2" },
+      ],
+    });
+  });
 });

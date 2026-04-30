@@ -22,6 +22,15 @@ export const DISTANCE_MARKER_BUCKETS: readonly DistanceMarkerBucket[] = [
   { intervalKm: 1, minZoom: 12.5 },
 ];
 
+export function getDistanceMarkerIntervalForZoom(zoom: number): DistanceMarkerInterval {
+  for (const bucket of DISTANCE_MARKER_BUCKETS) {
+    if (zoom >= bucket.minZoom && (bucket.maxZoom == null || zoom < bucket.maxZoom)) {
+      return bucket.intervalKm;
+    }
+  }
+  return DISTANCE_MARKER_BUCKETS[0].intervalKm;
+}
+
 export interface RouteMarkerSourceInput {
   activeContextKey: string | null;
   points: RoutePoint[];
@@ -142,8 +151,8 @@ export function buildAllDistanceMarkerFeatures(points: RoutePoint[]): RouteMarke
 
   const features: RouteMarkerFeature[] = [];
 
-  for (let km = 1; km < totalKm; km += 1) {
-    const distanceMeters = km * 1000;
+  for (const distanceMeters of buildDistanceMarkerDistances(totalDistanceMeters)) {
+    const km = distanceMeters / 1000;
     const point = interpolateAtDistance(points, distanceMeters);
     if (!point) continue;
 
@@ -181,6 +190,20 @@ export function buildAllDistanceMarkerFeatures(points: RoutePoint[]): RouteMarke
   }
 
   return features;
+}
+
+export function buildDistanceMarkerDistances(
+  totalDistanceMeters: number,
+  intervalKm: DistanceMarkerInterval = 1,
+): number[] {
+  const totalKm = totalDistanceMeters / 1000;
+  if (totalKm < 1) return [];
+
+  const distances: number[] = [];
+  for (let km = intervalKm; km < totalKm; km += intervalKm) {
+    distances.push(km * 1000);
+  }
+  return distances;
 }
 
 export function buildRouteMarkerFeatureCollection(

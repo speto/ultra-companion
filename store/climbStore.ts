@@ -228,6 +228,10 @@ function mergeAdjacentClimbs(sorted: Climb[], segments: StitchedSegmentInfo[]): 
       result.push({
         ...a,
         id: `${a.id}_${b.id}`,
+        sourceClimbs: [
+          { id: a.id, routeId: a.routeId },
+          { id: b.id, routeId: b.routeId },
+        ],
         name: a.name ?? b.name,
         endDistanceMeters: b.endDistanceMeters,
         endElevationMeters: b.endElevationMeters,

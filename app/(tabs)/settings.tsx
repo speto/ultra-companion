@@ -9,7 +9,7 @@ import { useMapStore } from "@/store/mapStore";
 import { useEtaStore } from "@/store/etaStore";
 import { usePoiStore } from "@/store/poiStore";
 import { solveVelocity } from "@/services/powerModel";
-import type { UnitSystem } from "@/types";
+import type { ClimbGraphSize, UnitSystem } from "@/types";
 import StorageSection from "@/components/offline/StorageSection";
 
 const UNIT_OPTIONS: { value: UnitSystem; label: string }[] = [
@@ -22,6 +22,12 @@ const CORRIDOR_OPTIONS: { value: string; label: string }[] = [
   { value: "1000", label: "1 km" },
   { value: "2000", label: "2 km" },
   { value: "5000", label: "5 km" },
+];
+
+const CLIMB_GRAPH_SIZE_OPTIONS: { value: ClimbGraphSize; label: string }[] = [
+  { value: "small", label: "Small" },
+  { value: "medium", label: "Medium" },
+  { value: "large", label: "Large" },
 ];
 
 function OptionGroup<T extends string>({
@@ -145,8 +151,49 @@ function ToggleRow({
   );
 }
 
+function SegmentedControl<T extends string>({
+  options,
+  value,
+  onChange,
+}: {
+  options: { value: T; label: string }[];
+  value: T;
+  onChange: (value: T) => void;
+}) {
+  return (
+    <View className="flex-row rounded-xl bg-muted p-1">
+      {options.map((option) => {
+        const selected = option.value === value;
+        return (
+          <TouchableOpacity
+            key={option.value}
+            className={cn(
+              "min-h-[44px] flex-1 items-center justify-center rounded-lg px-3",
+              selected ? "bg-card" : "bg-transparent",
+            )}
+            onPress={() => onChange(option.value)}
+            activeOpacity={0.75}
+            accessibilityRole="button"
+            accessibilityState={{ selected }}
+          >
+            <Text
+              className={cn(
+                "text-[15px] font-barlow-semibold",
+                selected ? "text-primary" : "text-muted-foreground",
+              )}
+            >
+              {option.label}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
+
 export default function SettingsScreen() {
-  const { units, setUnits } = useSettingsStore();
+  const { units, setUnits, climbGraphSize, setClimbGraphSize, showClimbSearch, setShowClimbSearch } =
+    useSettingsStore();
   const colors = useThemeColors();
   const showDistanceMarkers = useMapStore((s) => s.showDistanceMarkers);
   const toggleDistanceMarkers = useMapStore((s) => s.toggleDistanceMarkers);
@@ -175,6 +222,23 @@ export default function SettingsScreen() {
           description="Show kilometer badges along the active route"
           value={showDistanceMarkers}
           onToggle={toggleDistanceMarkers}
+        />
+      </View>
+
+      <Text className="text-[22px] font-barlow-semibold text-foreground mt-6 mb-3">Climbs</Text>
+      <View className="bg-card rounded-xl p-4">
+        <Text className="text-[15px] font-barlow-semibold text-foreground mb-2">Graph size</Text>
+        <SegmentedControl
+          options={CLIMB_GRAPH_SIZE_OPTIONS}
+          value={climbGraphSize}
+          onChange={setClimbGraphSize}
+        />
+        <View className="border-b border-border my-2" />
+        <ToggleRow
+          label="Show climb search"
+          description="Show a search field below the climb graph"
+          value={showClimbSearch}
+          onToggle={() => setShowClimbSearch(!showClimbSearch)}
         />
       </View>
 

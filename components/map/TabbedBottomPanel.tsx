@@ -22,6 +22,7 @@ import POITabContent from "./POITabContent";
 import WaypointsTabContent from "./WaypointsTabContent";
 import HorizonOverlay from "./HorizonOverlay";
 import type { ActiveRouteData, PanelTab } from "@/types";
+import type { DistanceMarkerInterval } from "@/utils/routeMarkers";
 import type { SceneRendererProps } from "react-native-tab-view";
 
 /** Combined handle + tabs height */
@@ -60,11 +61,15 @@ type PanelSceneProps = SceneRendererProps & { route: PanelRoute };
 
 interface TabbedBottomPanelProps {
   activeData: ActiveRouteData | null;
+  distanceMarkerInterval: DistanceMarkerInterval;
+  showDistanceMarkers: boolean;
   floatingControls?: React.ReactNode;
 }
 
 export default function TabbedBottomPanel({
   activeData,
+  distanceMarkerInterval,
+  showDistanceMarkers,
   floatingControls,
 }: TabbedBottomPanelProps) {
   const colors = useThemeColors();
@@ -181,7 +186,15 @@ export default function TabbedBottomPanel({
         case "weather":
           return <WeatherPanel />;
         case "climbs":
-          return <ClimbTabContent activeData={activeData} />;
+          return (
+            <ClimbTabContent
+              activeData={activeData}
+              distanceMarkerInterval={distanceMarkerInterval}
+              showDistanceMarkers={showDistanceMarkers}
+              sheetTranslateY={sheetTranslateY}
+              compactOffset={compactOffset}
+            />
+          );
         case "pois":
           return (
             <POITabContent
@@ -194,7 +207,16 @@ export default function TabbedBottomPanel({
           return <WaypointsTabContent activeData={activeData} />;
       }
     },
-    [activeData, compactContentHeight, contentHeight, screenWidth, sheetTranslateY, compactOffset],
+    [
+      activeData,
+      compactContentHeight,
+      contentHeight,
+      screenWidth,
+      distanceMarkerInterval,
+      showDistanceMarkers,
+      sheetTranslateY,
+      compactOffset,
+    ],
   );
 
   return (

@@ -9,6 +9,8 @@ export interface UserPosition {
 
 export type UnitSystem = "metric" | "imperial";
 
+export type ClimbGraphSize = "small" | "medium" | "large";
+
 export const MAP_STYLE_URL = "mapbox://styles/mapbox/outdoors-v12";
 
 // --- Phase 2: Route types ---
@@ -293,6 +295,7 @@ export interface ActiveRouteData {
 export interface Climb {
   id: string;
   routeId: string;
+  sourceClimbs?: Array<{ id: string; routeId: string }>;
   name: string | null;
   startDistanceMeters: number;
   endDistanceMeters: number;

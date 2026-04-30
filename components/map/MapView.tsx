@@ -47,6 +47,7 @@ import {
   type MapFocusTargetKind,
   type MapFocusPoint,
 } from "@/utils/mapFocus";
+import { getDistanceMarkerIntervalForZoom } from "@/utils/routeMarkers";
 import type { MapState } from "@rnmapbox/maps";
 import type { RoutePoint } from "@/types";
 
@@ -112,6 +113,10 @@ export default function MapScreen() {
   const mapRef = useRef<MapboxMapView>(null);
   const [hasGpsFix, setHasGpsFix] = useState(false);
   const [routeMarkerZoom, setRouteMarkerZoom] = useState(() => useMapStore.getState().zoom);
+  const [distanceMarkerInterval, setDistanceMarkerInterval] = useState(() =>
+    getDistanceMarkerIntervalForZoom(useMapStore.getState().zoom),
+  );
+  const distanceMarkerIntervalRef = useRef(distanceMarkerInterval);
   const [heading, setHeading] = useState(0);
   const [advancedFocusMode, setAdvancedFocusMode] = useState<"follow" | null>(() =>
     useMapStore.getState().followUser ? "follow" : null,
@@ -660,6 +665,11 @@ export default function MapScreen() {
       const nextHeading = state.properties.heading;
       lastCamera.current = { center: [c[0], c[1]], zoom: nextZoom, heading: nextHeading };
       setRouteMarkerZoom((current) => (current === nextZoom ? current : nextZoom));
+      const nextDistanceMarkerInterval = getDistanceMarkerIntervalForZoom(nextZoom);
+      if (distanceMarkerIntervalRef.current !== nextDistanceMarkerInterval) {
+        distanceMarkerIntervalRef.current = nextDistanceMarkerInterval;
+        setDistanceMarkerInterval(nextDistanceMarkerInterval);
+      }
       setHeading((prev) => nextDisplayHeading(prev, nextHeading));
 
       if (manualCameraInteraction.current) {
@@ -1190,6 +1200,8 @@ export default function MapScreen() {
       <MapControls />
       <TabbedBottomPanel
         activeData={activeData}
+        distanceMarkerInterval={distanceMarkerInterval}
+        showDistanceMarkers={showDistanceMarkers}
         floatingControls={
           <MapSheetControls
             onLocate={handleLocate}
