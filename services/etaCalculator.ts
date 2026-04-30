@@ -59,13 +59,22 @@ export function getETAToDistance(
   let lo = fromIndex;
   let hi = points.length - 1;
 
-  // Linear scan forward from fromIndex (POIs are usually relatively close)
-  for (let i = fromIndex; i < points.length; i++) {
-    if (points[i].distanceFromStartMeters >= targetDistanceAlongRouteM) {
-      hi = i;
-      lo = Math.max(fromIndex, i - 1);
-      break;
+  let left = fromIndex;
+  let right = points.length - 1;
+  let firstAtOrAfter = -1;
+  while (left <= right) {
+    const mid = left + Math.floor((right - left) / 2);
+    if (points[mid].distanceFromStartMeters >= targetDistanceAlongRouteM) {
+      firstAtOrAfter = mid;
+      right = mid - 1;
+    } else {
+      left = mid + 1;
     }
+  }
+
+  if (firstAtOrAfter !== -1) {
+    hi = firstAtOrAfter;
+    lo = Math.max(fromIndex, firstAtOrAfter - 1);
   }
 
   // Interpolate time between lo and hi

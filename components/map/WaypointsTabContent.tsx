@@ -76,6 +76,19 @@ export default function WaypointsTabContent({ activeData }: WaypointsTabContentP
     },
     [setSelectedPlace],
   );
+  const keyExtractor = useCallback((item: PlaceViewModel) => item.placeId, []);
+  const renderItem = useCallback(
+    ({ item }: { item: PlaceViewModel }) => (
+      <PlaceListItem
+        place={item}
+        currentDistAlongRoute={currentDist}
+        segmentName={segmentNameByRouteId.get(item.routeId) ?? null}
+        showAbsoluteDistance
+        onPress={handleWaypointPress}
+      />
+    ),
+    [currentDist, handleWaypointPress, segmentNameByRouteId],
+  );
 
   if (selectedPlace?.entityType === "routeWaypoint") {
     return <InlineWaypointDetail place={selectedPlace} onBack={() => setSelectedPlace(null)} />;
@@ -104,18 +117,14 @@ export default function WaypointsTabContent({ activeData }: WaypointsTabContentP
       </View>
       <FlatList
         data={waypoints}
-        keyExtractor={(item) => item.placeId}
-        renderItem={({ item }) => (
-          <PlaceListItem
-            place={item}
-            currentDistAlongRoute={currentDist}
-            segmentName={segmentNameByRouteId.get(item.routeId) ?? null}
-            showAbsoluteDistance
-            onPress={handleWaypointPress}
-          />
-        )}
+        keyExtractor={keyExtractor}
+        renderItem={renderItem}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: safeBottom }}
+        initialNumToRender={8}
+        maxToRenderPerBatch={8}
+        windowSize={3}
+        removeClippedSubviews={true}
       />
     </View>
   );

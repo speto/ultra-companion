@@ -15,7 +15,7 @@ import { formatDistance, formatDuration, formatETA, formatElevation } from "@/ut
 import { getOpeningHoursStatus, isOpenAt } from "@/services/openingHoursParser";
 import { useEtaStore } from "@/store/etaStore";
 import { isFoodShopCategory } from "@/utils/placeAdapter";
-import type { PlaceViewModel } from "@/types";
+import type { PlaceViewModel, POI } from "@/types";
 
 interface PlaceListItemProps {
   place: PlaceViewModel;
@@ -25,7 +25,7 @@ interface PlaceListItemProps {
   showAbsoluteDistance?: boolean;
 }
 
-export default function PlaceListItem({
+function PlaceListItem({
   place,
   currentDistAlongRoute,
   onPress,
@@ -68,11 +68,17 @@ export default function PlaceListItem({
 
   // ETA (only for downloaded POIs)
   const getETAToPOI = useEtaStore((s) => s.getETAToPOI);
-  const poiForETA = place.raw && place.entityType === "downloadedPoi" ? place.raw : null;
-  const etaResult = useMemo(
-    () => (poiForETA ? getETAToPOI(poiForETA as any) : null),
-    [poiForETA, getETAToPOI],
-  );
+  const etaRouteId = useEtaStore((s) => s.routeId);
+  const etaCacheVersion = useEtaStore((s) => s.cacheVersion);
+  const etaCachedPointsLength = useEtaStore((s) => s.cachedPoints?.length ?? 0);
+  const etaCumulativeTimeLength = useEtaStore((s) => s.cumulativeTime?.length ?? 0);
+  const etaCacheKey = `${etaRouteId ?? ""}:${etaCacheVersion}:${etaCachedPointsLength}:${etaCumulativeTimeLength}`;
+  const poiForETA =
+    place.raw && place.entityType === "downloadedPoi" ? (place.raw as POI) : null;
+  const etaResult = useMemo(() => {
+    void etaCacheKey;
+    return poiForETA ? getETAToPOI(poiForETA) : null;
+  }, [etaCacheKey, poiForETA, getETAToPOI]);
 
   const distAhead =
     currentDistAlongRoute != null
@@ -239,3 +245,5 @@ export default function PlaceListItem({
     </TouchableOpacity>
   );
 }
+
+export default React.memo(PlaceListItem);

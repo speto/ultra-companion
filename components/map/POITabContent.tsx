@@ -41,6 +41,8 @@ import { useStarredStore } from "@/store/starredStore";
 import PlaceListItem from "@/components/place/PlaceListItem";
 import { isFoodShopCategory } from "@/utils/placeAdapter";
 
+const DISTANCE_BUCKET_M = 100;
+
 interface POITabContentProps {
   activeData: ActiveRouteData | null;
   sheetTranslateY?: SharedValue<number>;
@@ -65,6 +67,11 @@ export default function POITabContent({
   const foodAvailabilityMode = usePoiStore((s) => s.foodAvailabilityMode);
   const foodAvailabilityCustomTime = usePoiStore((s) => s.foodAvailabilityCustomTime);
   const getETAToPOI = useEtaStore((s) => s.getETAToPOI);
+  const etaRouteId = useEtaStore((s) => s.routeId);
+  const etaCacheVersion = useEtaStore((s) => s.cacheVersion);
+  const etaCachedPointsLength = useEtaStore((s) => s.cachedPoints?.length ?? 0);
+  const etaCumulativeTimeLength = useEtaStore((s) => s.cumulativeTime?.length ?? 0);
+  const etaCacheKey = `${etaRouteId ?? ""}:${etaCacheVersion}:${etaCachedPointsLength}:${etaCumulativeTimeLength}`;
   const isExpanded = usePanelStore((s) => s.isExpanded);
   const horizon = usePanelStore((s) => s.horizon);
 
@@ -77,10 +84,14 @@ export default function POITabContent({
     [segments],
   );
   const currentDist = snappedPosition?.distanceAlongRouteMeters ?? null;
-  const horizonEndDist = useMemo(() => {
-    if (currentDist == null || !activeData) return null;
-    return horizonWindow(currentDist, horizon, activeData.totalDistanceMeters).endDist;
-  }, [currentDist, horizon, activeData]);
+  const currentDistBucket =
+    currentDist == null ? null : Math.floor(currentDist / DISTANCE_BUCKET_M);
+  const bucketedCurrentDist =
+    currentDistBucket == null ? null : currentDistBucket * DISTANCE_BUCKET_M;
+  const bucketedHorizonEndDist = useMemo(() => {
+    if (bucketedCurrentDist == null || !activeData) return null;
+    return horizonWindow(bucketedCurrentDist, horizon, activeData.totalDistanceMeters).endDist;
+  }, [bucketedCurrentDist, horizon, activeData]);
 
   const allPlaces = usePlaceStore((s) => s.places);
   const selectedPlace = usePlaceStore((s) => s.selectedPlace);
@@ -116,42 +127,42 @@ export default function POITabContent({
     // allPois/enabledCategories/showOpenOnly/starredKeys/allPlaces are reactivity triggers
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    isExpanded,
     routeIds,
     segments,
     allPois,
     enabledCategories,
     showOpenOnly,
     showSavedOnly,
-    foodAvailabilityMode,
     starredKeys,
     allPlaces,
   ]);
-  const sortedPlaces = useMemo(() => {
-    if (currentDist == null) {
-      return [...visiblePlaces].sort(
-        (a, b) => a.effectiveDistanceAlongRouteMeters - b.effectiveDistanceAlongRouteMeters,
-      );
-    }
-    return visiblePlaces
-      .filter(
-        (p) =>
-          p.effectiveDistanceAlongRouteMeters >= currentDist - POI_BEHIND_THRESHOLD_M &&
-          (horizonEndDist == null || p.effectiveDistanceAlongRouteMeters <= horizonEndDist),
-      )
-      .sort((a, b) => a.effectiveDistanceAlongRouteMeters - b.effectiveDistanceAlongRouteMeters);
-  }, [visiblePlaces, currentDist, horizonEndDist]);
-
-  const availabilityFilteredPlaces = useMemo(
+  const sortedVisiblePlaces = useMemo(
     () =>
-      filterByFoodAvailability(
-        sortedPlaces,
-        foodAvailabilityMode,
-        foodAvailabilityCustomTime,
-        getETAToPOI,
+      [...visiblePlaces].sort(
+        (a, b) => a.effectiveDistanceAlongRouteMeters - b.effectiveDistanceAlongRouteMeters,
       ),
-    [foodAvailabilityCustomTime, foodAvailabilityMode, getETAToPOI, sortedPlaces],
+    [visiblePlaces],
   );
+
+  const slicedPlaces = useMemo(() => {
+    if (bucketedCurrentDist == null) return sortedVisiblePlaces;
+    return sortedVisiblePlaces.filter(
+      (p) =>
+        p.effectiveDistanceAlongRouteMeters >= bucketedCurrentDist - POI_BEHIND_THRESHOLD_M &&
+        (bucketedHorizonEndDist == null ||
+          p.effectiveDistanceAlongRouteMeters <= bucketedHorizonEndDist),
+    );
+  }, [bucketedCurrentDist, bucketedHorizonEndDist, sortedVisiblePlaces]);
+
+  const availabilityFilteredPlaces = useMemo(() => {
+    void etaCacheKey;
+    return filterByFoodAvailability(
+      slicedPlaces,
+      foodAvailabilityMode,
+      foodAvailabilityCustomTime,
+      getETAToPOI,
+    );
+  }, [foodAvailabilityCustomTime, foodAvailabilityMode, getETAToPOI, slicedPlaces, etaCacheKey]);
 
   const searchFilteredPlaces = useMemo(() => {
     if (!searchQuery.trim()) return availabilityFilteredPlaces;
@@ -173,13 +184,13 @@ export default function POITabContent({
     ({ item }: { item: PlaceViewModel }) => (
       <PlaceListItem
         place={item}
-        currentDistAlongRoute={currentDist}
+        currentDistAlongRoute={bucketedCurrentDist}
         segmentName={segmentNameByRouteId.get(item.routeId) ?? null}
         showAbsoluteDistance={segments != null}
         onPress={handlePlacePress}
       />
     ),
-    [currentDist, segmentNameByRouteId, segments, handlePlacePress],
+    [bucketedCurrentDist, segmentNameByRouteId, segments, handlePlacePress],
   );
 
   const searchAnimatedStyle = useAnimatedStyle(() => {
