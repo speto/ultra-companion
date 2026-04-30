@@ -30,6 +30,7 @@ import StatBox from "@/components/common/StatBox";
 import SegmentList from "@/components/collection/SegmentList";
 import AddSegmentSheet from "@/components/collection/AddSegmentSheet";
 import CollectionOfflineSection from "@/components/collection/CollectionOfflineSection";
+import { StartPickerSheet } from "@/components/map/WeatherPanel";
 import { getWaypointCategoryMeta, WAYPOINT_ICON_MAP } from "@/constants/waypointCategories";
 import { getMapInspectHref } from "@/utils/mapInspect";
 import { Maximize2 } from "lucide-react-native";
@@ -50,6 +51,7 @@ export default function CollectionDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [isBusy, setIsBusy] = useState(false);
   const [showAddSheet, setShowAddSheet] = useState(false);
+  const [showStartPicker, setShowStartPicker] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const collections = useCollectionStore((s) => s.collections);
   const getCollectionSegmentsWithRoutes = useCollectionStore(
@@ -60,6 +62,7 @@ export default function CollectionDetailScreen() {
   const selectVariant = useCollectionStore((s) => s.selectVariant);
   const setActiveCollection = useCollectionStore((s) => s.setActiveCollection);
   const deleteCollection = useCollectionStore((s) => s.deleteCollection);
+  const updateCollectionPlanning = useCollectionStore((s) => s.updateCollectionPlanning);
   const visibleRoutePoints = useRouteStore((s) => s.visibleRoutePoints);
   const importRoute = useRouteStore((s) => s.importRoute);
   const units = useSettingsStore((s) => s.units);
@@ -241,6 +244,16 @@ export default function CollectionDetailScreen() {
     ]);
   }, [id, collection, deleteCollection, router]);
 
+  const handleApplyPlannedStart = useCallback(
+    async (value: number | null) => {
+      if (!id) return;
+      await updateCollectionPlanning(id, { plannedStartMs: value });
+      setCollection((current) => (current ? { ...current, plannedStartMs: value } : current));
+      setShowStartPicker(false);
+    },
+    [id, updateCollectionPlanning],
+  );
+
   const handleExportGPX = async () => {
     if (!collection || !stitched) return;
     try {
@@ -407,6 +420,17 @@ export default function CollectionDetailScreen() {
           </View>
         )}
 
+        <View className="px-4 mt-2 mb-4">
+          <Text className="text-[22px] font-barlow-semibold text-foreground mb-3">Plan</Text>
+          <View className="rounded-xl overflow-hidden border border-border bg-surface">
+            <PlanRow
+              label="Start time"
+              value={formatPlanStart(collection.plannedStartMs)}
+              onPress={() => setShowStartPicker(true)}
+            />
+          </View>
+        </View>
+
         {/* Segments */}
         <View className="flex-row items-center justify-between px-4 mt-2 mb-3">
           <Text className="text-[22px] font-barlow-semibold text-foreground">Segments</Text>
@@ -502,12 +526,51 @@ export default function CollectionDetailScreen() {
         existingRouteIds={existingRouteIds}
       />
 
+      <StartPickerSheet
+        visible={showStartPicker}
+        startMs={collection.plannedStartMs}
+        onApply={handleApplyPlannedStart}
+        onClose={() => setShowStartPicker(false)}
+      />
+
       {isBusy && (
         <View className="absolute inset-0 items-center justify-center z-40 bg-background/60">
           <ActivityIndicator size="large" color={colors.accent} />
         </View>
       )}
     </>
+  );
+}
+
+function formatPlanStart(startMs: number | null): string {
+  if (startMs == null) return "Now";
+  const date = new Date(startMs);
+  const today = new Date();
+  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+  const tomorrowStart = todayStart + 24 * 3600_000;
+  const dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const time = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  if (dayStart === todayStart) return `Today ${time}`;
+  if (dayStart === tomorrowStart) return `Tomorrow ${time}`;
+  return `${date.toLocaleDateString([], { weekday: "short" })} ${time}`;
+}
+
+function PlanRow({ label, value, onPress }: { label: string; value: string; onPress: () => void }) {
+  return (
+    <Pressable
+      className="min-h-[56px] flex-row items-center justify-between px-3 py-2.5 border-b border-border/60 last:border-b-0"
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`${label}: ${value}`}
+    >
+      <Text className="text-[14px] font-barlow-medium text-foreground">{label}</Text>
+      <Text
+        className="text-[14px] font-barlow-sc-semibold text-muted-foreground ml-3"
+        numberOfLines={1}
+      >
+        {value}
+      </Text>
+    </Pressable>
   );
 }
 

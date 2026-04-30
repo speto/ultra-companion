@@ -43,12 +43,16 @@ interface MapState {
   zoom: number;
   followUser: boolean;
   showDistanceMarkers: boolean;
+  showPOIs: boolean;
+  showWaypoints: boolean;
   userPosition: UserPosition | null;
   isRefreshing: boolean;
 
   setCenter: (center: [number, number]) => void;
   setFollowUser: (follow: boolean) => void;
   toggleDistanceMarkers: () => void;
+  togglePOIs: () => void;
+  toggleWaypoints: () => void;
   setUserPosition: (position: UserPosition | null) => void;
   refreshPosition: () => Promise<UserPosition | null>;
   persistCamera: (center: [number, number], zoom: number) => void;
@@ -61,6 +65,8 @@ export const useMapStore = create<MapState>((set, get) => ({
   zoom: persisted.zoom,
   followUser: readPersistedBoolean("followUser", false),
   showDistanceMarkers: readPersistedBoolean("showDistanceMarkers", false),
+  showPOIs: readPersistedBoolean("showPOIs", true),
+  showWaypoints: readPersistedBoolean("showWaypoints", true),
   userPosition: null,
   isRefreshing: false,
 
@@ -81,6 +87,24 @@ export const useMapStore = create<MapState>((set, get) => ({
       console.warn("Failed to persist distance marker preference:", error);
     }
     set({ showDistanceMarkers: next });
+  },
+  togglePOIs: () => {
+    const next = !get().showPOIs;
+    try {
+      getStorage().set("showPOIs", String(next));
+    } catch (error) {
+      console.warn("Failed to persist POI visibility preference:", error);
+    }
+    set({ showPOIs: next });
+  },
+  toggleWaypoints: () => {
+    const next = !get().showWaypoints;
+    try {
+      getStorage().set("showWaypoints", String(next));
+    } catch (error) {
+      console.warn("Failed to persist waypoint visibility preference:", error);
+    }
+    set({ showWaypoints: next });
   },
   setUserPosition: (userPosition) => set({ userPosition }),
 

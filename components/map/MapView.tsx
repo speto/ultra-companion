@@ -19,12 +19,12 @@ import { useThemeColors } from "@/theme";
 import { useColorScheme } from "nativewind";
 import { useMapStyle } from "@/hooks/useMapStyle";
 import { GPS_STALE_THRESHOLD_MS } from "@/constants";
-import MapControls from "./MapControls";
 import MapSheetControls from "./MapSheetControls";
 import RouteLayer, { RouteArrowLayer } from "./RouteLayer";
 import RouteMarkerLayer from "./RouteMarkerLayer";
 import POILayer from "./POILayer";
 import ClimbHighlightLayer from "./ClimbHighlightLayer";
+import TemperatureRouteOverlay from "./TemperatureRouteOverlay";
 import TabbedBottomPanel from "./TabbedBottomPanel";
 import { resolveActiveClimb } from "@/utils/climbSelect";
 import { snapToRoute } from "@/services/routeSnapping";
@@ -35,8 +35,8 @@ import { useWaypointStore } from "@/store/waypointStore";
 import { useStarredStore } from "@/store/starredStore";
 import { useClimbStore } from "@/store/climbStore";
 import { useEtaStore } from "@/store/etaStore";
-import { useWeatherStore } from "@/store/weatherStore";
-import { useOfflineStore } from "@/store/offlineStore";
+import { resolveEffectiveWeatherStart, useWeatherStore } from "@/store/weatherStore";
+import { useSettingsStore } from "@/store/settingsStore";
 import { horizonWindow, zoomToHorizon } from "@/utils/horizon";
 import { isNorthUp, nextDisplayHeading, normalizeHeading } from "@/utils/mapHeading";
 import { watchForegroundHeading, watchForegroundPosition } from "@/services/gps";
@@ -166,9 +166,12 @@ export default function MapScreen() {
   const loadStarredItems = useStarredStore((s) => s.loadStarredItems);
   const computeETAForRoute = useEtaStore((s) => s.computeETAForRoute);
   const cumulativeTime = useEtaStore((s) => s.cumulativeTime);
-  const fetchWeather = useWeatherStore((s) => s.fetchWeather);
-  const plannedStart = useWeatherStore((s) => s.plannedStart);
-  const isConnected = useOfflineStore((s) => s.isConnected);
+  const ensureWeatherFresh = useWeatherStore((s) => s.ensureWeatherFresh);
+  const forecastStartOverrideMs = useWeatherStore((s) => s.forecastStartOverrideMs);
+  const hasForecastStartOverride = useWeatherStore((s) => s.hasForecastStartOverride);
+  const weatherTimeline = useWeatherStore((s) => s.timeline);
+  const weatherRefreshMode = useSettingsStore((s) => s.weatherRefreshMode);
+  const weatherTemperatureDisplayMode = useSettingsStore((s) => s.weatherTemperatureDisplayMode);
 
   // Unified active context — works for both standalone routes and collections
   const activeData = useActiveRouteData();
@@ -179,6 +182,9 @@ export default function MapScreen() {
   const activeTotalDistance = activeData?.totalDistanceMeters ?? 0;
   const activeRouteIds = useMemo(() => activeData?.routeIds ?? [], [activeData?.routeIds]);
   const activeRouteIdsKey = useMemo(() => activeRouteIds.join(","), [activeRouteIds]);
+  const activeCollection = useCollectionStore((s) => s.collections.find((c) => c.isActive));
+  const collectionPlannedStartMs =
+    activeData?.type === "collection" ? (activeCollection?.plannedStartMs ?? null) : null;
 
   // Set of routeIds that are part of the active collection (for RouteLayer styling)
   const activeCollectionRouteIds = useMemo(() => {
@@ -281,27 +287,41 @@ export default function MapScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeData?.id, activeRoutePoints, computeETAForRoute]);
 
-  // Fetch weather when active context + snapped position + ETA are available (and online)
-  useEffect(() => {
-    if (
-      activeData &&
-      activeRoutePoints?.length &&
-      snappedPosition &&
-      cumulativeTime &&
-      isConnected
-    ) {
-      fetchWeather(activeData.id, activeRoutePoints, snappedPosition.pointIndex, cumulativeTime);
-    }
-    // Intentional: fire on id/pointIndex changes, not full object identities
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  const ensureActiveWeather = useCallback(async () => {
+    if (!activeData || !activeRoutePoints?.length || !cumulativeTime) return;
+    const latestEffectiveWeatherStartMs = resolveEffectiveWeatherStart({
+      hasOverride: hasForecastStartOverride,
+      overrideStartMs: forecastStartOverrideMs,
+      collectionPlannedStartMs,
+    });
+    const isValidSnap =
+      latestEffectiveWeatherStartMs == null &&
+      snappedPosition?.routeId === activeData.id &&
+      snappedPosition.distanceFromRouteMeters <= 1000;
+    await ensureWeatherFresh({
+      routeId: activeData.id,
+      points: activeRoutePoints,
+      fromIndex: isValidSnap ? snappedPosition.pointIndex : 0,
+      cumulativeTime,
+      plannedStartMs: latestEffectiveWeatherStartMs,
+      refreshMode: weatherRefreshMode,
+    });
   }, [
-    activeData?.id,
-    snappedPosition?.pointIndex,
-    isConnected,
+    activeData,
+    activeRoutePoints,
+    collectionPlannedStartMs,
     cumulativeTime,
-    fetchWeather,
-    plannedStart,
+    ensureWeatherFresh,
+    forecastStartOverrideMs,
+    hasForecastStartOverride,
+    snappedPosition,
+    weatherRefreshMode,
   ]);
+
+  // Route-first weather: use route start when no planned start and no close GPS snap.
+  useEffect(() => {
+    void ensureActiveWeather();
+  }, [ensureActiveWeather]);
 
   // Snap eagerly when routes load (don't wait for next GPS refresh)
   useEffect(() => {
@@ -341,6 +361,7 @@ export default function MapScreen() {
   useEffect(() => {
     const subscription = AppState.addEventListener("change", async (state) => {
       if (state !== "active") return;
+      await ensureActiveWeather();
       const pos = useMapStore.getState().userPosition;
       if (!pos || Date.now() - pos.timestamp >= GPS_STALE_THRESHOLD_MS) {
         const position = await refreshPosition();
@@ -351,7 +372,7 @@ export default function MapScreen() {
       }
     });
     return () => subscription.remove();
-  }, [refreshPosition, snapAfterRefresh, hasGpsFix]);
+  }, [refreshPosition, snapAfterRefresh, hasGpsFix, ensureActiveWeather]);
 
   // Track current climb based on snapped position
   useEffect(() => {
@@ -686,7 +707,13 @@ export default function MapScreen() {
         setIsResettingNorth(false);
       }
     },
-    [isCompassMode, isResettingNorth, scheduleManualCameraInteractionClear, setHorizonFromZoom, updateCompassDial],
+    [
+      isCompassMode,
+      isResettingNorth,
+      scheduleManualCameraInteractionClear,
+      setHorizonFromZoom,
+      updateCompassDial,
+    ],
   );
 
   // Persist camera to MMKV when app goes to background
@@ -716,7 +743,13 @@ export default function MapScreen() {
     if (followUser) {
       setFollowUser(false);
     }
-  }, [followUser, isCompassMode, scheduleManualCameraInteractionClear, setFollowUser, setHorizonPopoverOpen]);
+  }, [
+    followUser,
+    isCompassMode,
+    scheduleManualCameraInteractionClear,
+    setFollowUser,
+    setHorizonPopoverOpen,
+  ]);
 
   const handleResetNorth = useCallback(() => {
     clearResetNorthTimeout();
@@ -1180,6 +1213,13 @@ export default function MapScreen() {
             points={activeRoutePoints}
           />
         )}
+        {panelTab === "weather" && activeRoutePoints && weatherTimeline.length > 1 && (
+          <TemperatureRouteOverlay
+            points={activeRoutePoints}
+            timeline={weatherTimeline}
+            temperatureMode={weatherTemperatureDisplayMode}
+          />
+        )}
         <RouteMarkerLayer
           key={`route-markers-${overlayStackKey}`}
           activeContextKey={activeContextKey}
@@ -1197,13 +1237,13 @@ export default function MapScreen() {
         />
       </MapboxMapView>
 
-      <MapControls />
       <TabbedBottomPanel
         activeData={activeData}
         distanceMarkerInterval={distanceMarkerInterval}
         showDistanceMarkers={showDistanceMarkers}
         floatingControls={
           <MapSheetControls
+            activeData={activeData}
             onLocate={handleLocate}
             isFollowActive={advancedFocusMode === "follow"}
             onFollowToggle={handleFollowToggle}

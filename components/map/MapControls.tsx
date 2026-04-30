@@ -1,26 +1,35 @@
 import React from "react";
-import { View, TouchableOpacity } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { TouchableOpacity } from "react-native";
 import { useRouter } from "expo-router";
 import { Menu } from "lucide-react-native";
+import { cn } from "@/lib/cn";
 import { useThemeColors } from "@/theme";
 
-export default function MapControls() {
+interface MapControlsProps {
+  className?: string;
+  onBeforeOpen?: () => void;
+}
+
+export default function MapControls({ className, onBeforeOpen }: MapControlsProps) {
   const colors = useThemeColors();
-  const { top: safeTop } = useSafeAreaInsets();
   const router = useRouter();
 
-  const topControlOffset = safeTop + 12;
-
   return (
-    <View className="absolute left-4" style={{ top: topControlOffset }}>
-      <TouchableOpacity
-        className="w-[52px] h-[52px] rounded-xl items-center justify-center shadow-md bg-surface/95 border border-border-subtle"
-        onPress={() => router.push("/menu")}
-        accessibilityLabel="Open menu"
-      >
-        <Menu size={22} color={colors.textPrimary} />
-      </TouchableOpacity>
-    </View>
+    <TouchableOpacity
+      activeOpacity={0.85}
+      className={cn(
+        "w-[52px] h-[52px] rounded-full items-center justify-center shadow-md border bg-surface/95 border-border-subtle",
+        className,
+      )}
+      onPress={() => {
+        onBeforeOpen?.();
+        router.push("/menu");
+      }}
+      accessibilityLabel="Open menu"
+      accessibilityHint="Opens the main app menu."
+      accessibilityRole="button"
+    >
+      <Menu size={23} color={colors.textPrimary} />
+    </TouchableOpacity>
   );
 }

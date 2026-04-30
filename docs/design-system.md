@@ -229,16 +229,30 @@ Light:                              Dark:
 
 ### Floating Map Controls
 
-Positioned top-right (away from left-hand Dynamic Island). Grouped vertically with 12px gap.
+Three-position layout: compass (bottom-left), menu toggle (center-left), GPS/follow (top-right). All buttons are 52dp circular.
 
 ```
 size: 52 x 52dp
-rounded-xl (12px)
+rounded-full (circular)
 bg-surface/95 (95% opacity)
 border border-border-subtle
 icon: text-primary, 24px
 active state: bg-accent, text-white
+inactive placeholder (Layers): bg-surface/50, text-textTertiary
 ```
+
+### Map Controls Menu
+
+Toggled via SlidersHorizontal icon. Compact by default (icons + toggles/radios only). Labels expand via triangle button on left edge or swipe-left gesture.
+
+```
+layout: pathline options stacked above display toggles, zoom buckets to the right (groups vertically centered)
+pathline modes: Segments, Weather, Climbs selectable; Surface and Descends future/disabled
+display toggles: Distance markers, POIs, Waypoints (real); Weather markers (future/disabled)
+zoom buckets: vertical pill with ruler icon, sizes to content
+```
+
+Display settings (POIs, Waypoints, Distance markers) are persisted and also accessible in Settings > Map Display.
 
 ### Bottom Panel (Elevation / Data)
 
@@ -326,7 +340,7 @@ bg-accent/10 text-accent rounded-full px-2 py-0.5 font-labelSmall
 
 The map takes 100% of the screen. Everything else floats.
 
-- **Floating controls**: top-right corner, vertically stacked (center-on-user, panel mode toggle)
+- **Floating controls**: compass (bottom-left), menu toggle (center-left), GPS/follow (top-right). Tap menu to open controls menu.
 - **Bottom panel**: always visible, showing either elevation profile or weather. Tap buttons to switch; tap elevation button again to cycle distance
 - **No persistent HUD on map** — keep map clean. Data lives in the panel
 - **Panel closed state**: just the map + floating buttons + tab bar
@@ -373,12 +387,18 @@ The map takes 100% of the screen. Everything else floats.
 - **Parameters (power, weight)**: Settings screen section with numeric inputs. Not frequently changed — doesn't need to be prominent.
 - **Offline download manager**: Settings or dedicated screen. RNR `Progress` component for download bar. Download size estimate in `bodyMedium`.
 
-### Phase 5: Weather
-
-- **Weather strip**: Horizontal timeline at top of bottom panel (above elevation profile when both are shown). Shows hourly icons + temp for next 6–12 hours at estimated route positions.
-- **Wind indicator**: Directional arrow icon near current position on map, colored by intensity (green = light, yellow = moderate, red = strong). Arrow shows direction relative to route heading (headwind/tailwind/crosswind).
-- **Severe weather alert**: Full-width banner at top of screen in `warning` or `destructive` color. Persistent until dismissed. RNR `Alert` component.
-- **"Last updated" badge**: Small timestamp near weather data since it requires connectivity. Uses `text-tertiary` / `labelSmall`.
+- **Weather toolbar**: Horizontal chip row at top of weather panel. Chips: cycling sample filter (`All` neutral, `Hourly`/`10km` accent), Feels like, forecast-start chip (Now or selected time), and Refresh. Refresh spins and mutes while updating.
+- **Weather status row**: Thin text row below chips for auto/manual refresh age, warning count, and appended readable refresh outcomes/errors. Error text uses destructive color and cached data remains visible when refresh fails.
+- **Weather expand gesture**: Swipe up on the toolbar/status/gradient/current-row area expands the sheet; timeline list gestures stay reserved for scrolling.
+- **Weather timeline**: Compact row list in bottom panel (above elevation profile). Only rows with weather warnings are pressable to expand/collapse.
+- **Segment dividers**: Weather shows dividers only when entering later route segments; the current/first segment has no leading divider.
+- **Collapsed row (very tight)**: ETA/distance, primary temperature, condition icon/title, compact risk-specific warning badge (when present), moisture/humidity indicator with percent, gust pill, sustained wind.
+- **Current forecast row**: The first route forecast point renders as a full weather row above the scrollable timeline, not as a mini status summary.
+- **Expanded row**: Warning rows expand to show centered warning details — hazard title, impact, and action text. Non-warning rows do not expand.
+- **Temperature gradient strip**: Horizontal strip showing temperature trend by distance when enough route weather samples exist. Uses actual or feels-like mode.
+- **Night-aware icons**: Moon for clear night, CloudMoon for partly cloudy. Cool color palette (blue/info) instead of warm sun/starred.
+- **Wind indicator**: Directional arrow near current position on map, colored by intensity (green/yellow/red). Shows headwind/tailwind/crosswind relative to route heading.
+- **Severe weather alert**: Compact warning badge in row using the risk-specific icon; expanded rows show the hazard, impact, and action text.
 
 ---
 

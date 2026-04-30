@@ -136,6 +136,9 @@ export const collections = sqliteTable("collections", {
   name: text("name").notNull(),
   isActive: integer("isActive", { mode: "boolean" }).notNull().default(false),
   createdAt: text("createdAt").notNull(),
+  plannedStartMs: integer("plannedStartMs"),
+  plannedRoadSpeedKmh: real("plannedRoadSpeedKmh"),
+  plannedOffroadSpeedKmh: real("plannedOffroadSpeedKmh"),
 });
 
 // --- Collection Segments ---

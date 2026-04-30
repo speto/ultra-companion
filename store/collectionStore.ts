@@ -15,6 +15,7 @@ import {
   getRouteEndpoints,
   getAllAssignedRouteIds,
   setRoutesVisible,
+  updateCollectionPlanning as dbUpdateCollectionPlanning,
 } from "@/db/database";
 import { stitchCollection } from "@/services/stitchingService";
 import { generateId } from "@/utils/generateId";
@@ -42,6 +43,12 @@ interface CollectionState {
   createCollection: (name: string) => Promise<string>;
   deleteCollection: (id: string) => Promise<void>;
   renameCollection: (id: string, name: string) => Promise<void>;
+  updateCollectionPlanning: (
+    id: string,
+    planning: Partial<
+      Pick<Collection, "plannedStartMs" | "plannedRoadSpeedKmh" | "plannedOffroadSpeedKmh">
+    >,
+  ) => Promise<void>;
 
   addSegment: (collectionId: string, routeId: string) => Promise<void>;
   removeSegment: (collectionId: string, routeId: string) => Promise<void>;
@@ -98,6 +105,9 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
       name,
       isActive: false,
       createdAt: new Date().toISOString(),
+      plannedStartMs: null,
+      plannedRoadSpeedKmh: null,
+      plannedOffroadSpeedKmh: null,
     };
     await dbInsertCollection(collection);
     await get().loadCollections();
@@ -115,6 +125,16 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
   renameCollection: async (id, name) => {
     await dbRenameCollection(id, name);
     await get().loadCollections();
+  },
+
+  updateCollectionPlanning: async (id, planning) => {
+    await dbUpdateCollectionPlanning(id, planning);
+    set({
+      collections: get().collections.map((collection) => {
+        if (collection.id !== id) return collection;
+        return Object.assign({}, collection, planning);
+      }),
+    });
   },
 
   addSegment: async (collectionId, routeId) => {

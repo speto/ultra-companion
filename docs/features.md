@@ -8,7 +8,10 @@ What's implemented. For the "why" behind these, see `usage-context.md`.
 - On-demand GPS — position refreshes on app focus (if stale >10 min) or manual tap, no background polling
 - Position age indicator when stale
 - Heading-up / north-up toggle
-- Floating map controls (center-on-user, panel mode)
+- Floating map controls — compass (bottom-left), menu toggle (SlidersHorizontal icon, opens compact menu), GPS/follow (top-right)
+- Map controls menu — compact by default with icons + toggles; labels expand via triangle or swipe-left gesture
+- Pathline modes in the map controls menu: Segments, Weather, and Climbs selectable; Surface and Descends reserved for future overlays
+- Display toggles: Distance markers, POIs, Waypoints (persisted in Settings > Map Display)
 
 ## Routes
 
@@ -64,11 +67,19 @@ What's implemented. For the "why" behind these, see `usage-context.md`.
 
 ## Weather
 
-- Current weather at position
-- Forecast at waypoints along route (~50km spacing)
-- Weather timeline — conditions at estimated future positions (uses ETA calculator)
+- Route-aware forecast timeline at ETA positions with one cycling sample filter: All, Hourly, or 10km
+- Chip row: cycling sample filter, Feels like, forecast-start chip (Now or selected time), and animated Refresh chip
+- Status row: auto/manual refresh age, warning count, and appended readable refresh outcomes/errors
+- Swipe up on the toolbar, status, gradient, or current weather row expands the Weather tab
+- Current route forecast is shown as a full weather row above the timeline list
+- Segment dividers appear only when switching to later route segments, not before the current/first segment
+- Compact rows (very tight): ETA/distance, primary temp, condition icon/title, compact risk-specific warning badge when present, moisture/humidity indicator with percent, gust, and sustained wind
+- Warning rows expand to centered warning details; non-warning rows do not expand
+- Temperature gradient strip: shows trend by distance when enough samples exist
+- Actual or feels-like temperature mode
+- Night-aware icons (Moon, CloudMoon) with cool color palette
 - Wind indicator: headwind/tailwind/crosswind relative to route direction
-- Cached when online, shows "last updated" timestamp
+- Cached when online; failed refreshes keep cached values visible and show clear error status
 
 ## Offline Support
 

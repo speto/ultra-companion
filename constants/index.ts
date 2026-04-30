@@ -112,16 +112,16 @@ export const DEFAULT_POWER_CONFIG: PowerModelConfig = {
 /** Sample weather waypoints every N meters along route */
 export const WEATHER_WAYPOINT_INTERVAL_M = 20_000;
 
-/** Only fetch weather for the next N meters ahead */
-export const WEATHER_LOOKAHEAD_M = 200_000;
-
 /** Weather cache becomes stale after this (1 hour) */
 export const WEATHER_STALE_MS = 60 * 60 * 1000;
+
+/** Manual refresh no-ops within this window when the same forecast coverage is already fresh */
+export const WEATHER_MANUAL_REFRESH_THROTTLE_MS = 10 * 60 * 1000;
 
 /** Open-Meteo API base URL */
 export const OPEN_METEO_API_URL = "https://api.open-meteo.com/v1/forecast";
 
-/** Max number of hourly points to show in weather timeline */
+/** Upper bound used for weather forecast/cache horizon calculations */
 export const WEATHER_TIMELINE_HOURS = 24;
 
 // --- Phase 4b: Offline ---

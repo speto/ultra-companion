@@ -9,7 +9,7 @@ import { useMapStore } from "@/store/mapStore";
 import { useEtaStore } from "@/store/etaStore";
 import { usePoiStore } from "@/store/poiStore";
 import { solveVelocity } from "@/services/powerModel";
-import type { ClimbGraphSize, UnitSystem } from "@/types";
+import type { ClimbGraphSize, UnitSystem, WeatherRefreshMode } from "@/types";
 import StorageSection from "@/components/offline/StorageSection";
 
 const UNIT_OPTIONS: { value: UnitSystem; label: string }[] = [
@@ -22,6 +22,11 @@ const CORRIDOR_OPTIONS: { value: string; label: string }[] = [
   { value: "1000", label: "1 km" },
   { value: "2000", label: "2 km" },
   { value: "5000", label: "5 km" },
+];
+
+const WEATHER_REFRESH_OPTIONS: { value: WeatherRefreshMode; label: string }[] = [
+  { value: "manual", label: "Manual" },
+  { value: "automatic", label: "Automatic" },
 ];
 
 const CLIMB_GRAPH_SIZE_OPTIONS: { value: ClimbGraphSize; label: string }[] = [
@@ -192,11 +197,25 @@ function SegmentedControl<T extends string>({
 }
 
 export default function SettingsScreen() {
-  const { units, setUnits, climbGraphSize, setClimbGraphSize, showClimbSearch, setShowClimbSearch } =
-    useSettingsStore();
+  const {
+    units,
+    setUnits,
+    weatherRefreshMode,
+    setWeatherRefreshMode,
+    climbGraphSize,
+    setClimbGraphSize,
+    showClimbSearch,
+    setShowClimbSearch,
+    hideClimbValueHeadersOnScroll,
+    setHideClimbValueHeadersOnScroll,
+  } = useSettingsStore();
   const colors = useThemeColors();
   const showDistanceMarkers = useMapStore((s) => s.showDistanceMarkers);
+  const showPOIs = useMapStore((s) => s.showPOIs);
+  const showWaypoints = useMapStore((s) => s.showWaypoints);
   const toggleDistanceMarkers = useMapStore((s) => s.toggleDistanceMarkers);
+  const togglePOIs = useMapStore((s) => s.togglePOIs);
+  const toggleWaypoints = useMapStore((s) => s.toggleWaypoints);
   const powerConfig = useEtaStore((s) => s.powerConfig);
   const updatePowerConfig = useEtaStore((s) => s.updatePowerConfig);
   const corridorWidthM = usePoiStore((s) => s.corridorWidthM);
@@ -223,6 +242,20 @@ export default function SettingsScreen() {
           value={showDistanceMarkers}
           onToggle={toggleDistanceMarkers}
         />
+        <View className="border-b border-border" />
+        <ToggleRow
+          label="POIs"
+          description="Show filtered points of interest on the map"
+          value={showPOIs}
+          onToggle={togglePOIs}
+        />
+        <View className="border-b border-border" />
+        <ToggleRow
+          label="Waypoints"
+          description="Show route waypoints on the map"
+          value={showWaypoints}
+          onToggle={toggleWaypoints}
+        />
       </View>
 
       <Text className="text-[22px] font-barlow-semibold text-foreground mt-6 mb-3">Climbs</Text>
@@ -240,6 +273,13 @@ export default function SettingsScreen() {
           value={showClimbSearch}
           onToggle={() => setShowClimbSearch(!showClimbSearch)}
         />
+        <View className="border-b border-border" />
+        <ToggleRow
+          label="Hide value headers on scroll"
+          description="Preference saved for a future scroll animation pass"
+          value={hideClimbValueHeadersOnScroll}
+          onToggle={() => setHideClimbValueHeadersOnScroll(!hideClimbValueHeadersOnScroll)}
+        />
       </View>
 
       <Text className="text-[22px] font-barlow-semibold text-foreground mt-6 mb-3">
@@ -250,6 +290,23 @@ export default function SettingsScreen() {
         value={String(corridorWidthM)}
         onChange={(v) => setCorridorWidth(Number(v))}
       />
+
+      <Text className="text-[22px] font-barlow-semibold text-foreground mt-6 mb-3">Weather</Text>
+      <View className="bg-card rounded-xl p-4">
+        <Text className="text-[15px] font-barlow-semibold text-foreground mb-2">
+          Weather refresh
+        </Text>
+        <SegmentedControl
+          options={WEATHER_REFRESH_OPTIONS}
+          value={weatherRefreshMode}
+          onChange={setWeatherRefreshMode}
+        />
+        <Text className="text-[12px] font-barlow text-muted-foreground mt-2">
+          {weatherRefreshMode === "automatic"
+            ? "Refreshes when route details change or cached weather is over 1 hour old."
+            : "Only refreshes when you tap Refresh in Weather."}
+        </Text>
+      </View>
 
       <Text className="text-[22px] font-barlow-semibold text-foreground mt-8 mb-1">
         ETA Calculator

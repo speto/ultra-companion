@@ -23,6 +23,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@react-native-community/datetimepicker": "8.6.0",
     "@react-navigation/native": "^7.1.33",
     "@rnmapbox/maps": "^10.3.0",
     "class-variance-authority": "^0.7.1",

@@ -470,6 +470,9 @@ export async function insertCollection(collection: Collection): Promise<void> {
       name: collection.name,
       isActive: collection.isActive,
       createdAt: collection.createdAt,
+      plannedStartMs: collection.plannedStartMs,
+      plannedRoadSpeedKmh: collection.plannedRoadSpeedKmh,
+      plannedOffroadSpeedKmh: collection.plannedOffroadSpeedKmh,
     })
     .run();
 }
@@ -485,6 +488,15 @@ export async function deleteCollection(collectionId: string): Promise<void> {
 
 export async function renameCollection(collectionId: string, name: string): Promise<void> {
   db.update(collections).set({ name }).where(eq(collections.id, collectionId)).run();
+}
+
+export async function updateCollectionPlanning(
+  collectionId: string,
+  planning: Partial<
+    Pick<Collection, "plannedStartMs" | "plannedRoadSpeedKmh" | "plannedOffroadSpeedKmh">
+  >,
+): Promise<void> {
+  db.update(collections).set(planning).where(eq(collections.id, collectionId)).run();
 }
 
 export async function setActiveCollection(collectionId: string): Promise<void> {

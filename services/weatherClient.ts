@@ -1,4 +1,5 @@
 import { OPEN_METEO_API_URL } from "@/constants";
+import { startWeatherDebug } from "./weatherDebug";
 
 /**
  * Raw hourly forecast data from Open-Meteo for a single location.
@@ -9,12 +10,16 @@ export interface HourlyForecast {
   hours: {
     time: string; // ISO 8601
     temperature2m: number;
+    apparentTemperature2m: number;
+    dewPoint2m: number;
+    relativeHumidity2m: number;
     precipitation: number;
     precipitationProbability: number;
     weatherCode: number;
     windSpeed10m: number;
     windDirection10m: number;
     windGusts10m: number;
+    isDay: number;
   }[];
 }
 
@@ -24,12 +29,16 @@ interface OpenMeteoResponse {
   hourly: {
     time: string[];
     temperature_2m: number[];
+    apparent_temperature: number[];
+    dew_point_2m: number[];
+    relative_humidity_2m: number[];
     precipitation: number[];
     precipitation_probability: number[];
     weather_code: number[];
     wind_speed_10m: number[];
     wind_direction_10m: number[];
     wind_gusts_10m: number[];
+    is_day: number[];
   };
 }
 
@@ -45,20 +54,42 @@ export async function fetchForecasts(
 
   // Deduplicate nearby coordinates (within ~1km) to reduce API calls
   const deduped = deduplicateCoords(coordinates, 0.01);
+  const debug = startWeatherDebug("fetch", {
+    coordinatesRequested: coordinates.length,
+    coordinatesDeduped: deduped.length,
+    forecastHoursRequested: forecastHours,
+  });
 
   const results: HourlyForecast[] = [];
 
   // Fetch in parallel, max 5 concurrent to be a good API citizen
   const batches = chunk(deduped, 5);
-  for (const batch of batches) {
+  let failed = 0;
+  for (let index = 0; index < batches.length; index++) {
+    const batch = batches[index];
     const promises = batch.map((coord) => fetchSingleForecast(coord, forecastHours));
     const batchResults = await Promise.allSettled(promises);
     for (const result of batchResults) {
       if (result.status === "fulfilled") {
         results.push(result.value);
+      } else {
+        failed += 1;
       }
     }
+    debug.step("batch", {
+      batch: index + 1,
+      batches: batches.length,
+      succeeded: batchResults.filter((result) => result.status === "fulfilled").length,
+      failed: batchResults.filter((result) => result.status === "rejected").length,
+    });
   }
+
+  debug.end({
+    status: failed > 0 ? "partial" : "success",
+    forecastsReturned: results.length,
+    failed,
+    forecastHoursReceived: results[0]?.hours.length ?? 0,
+  });
 
   return results;
 }
@@ -72,12 +103,16 @@ async function fetchSingleForecast(
     longitude: coord.longitude.toFixed(4),
     hourly: [
       "temperature_2m",
+      "apparent_temperature",
+      "dew_point_2m",
+      "relative_humidity_2m",
       "precipitation",
       "precipitation_probability",
       "weather_code",
       "wind_speed_10m",
       "wind_direction_10m",
       "wind_gusts_10m",
+      "is_day",
     ].join(","),
     forecast_hours: String(forecastHours),
     timezone: "auto",
@@ -93,12 +128,16 @@ async function fetchSingleForecast(
   const hours = data.hourly.time.map((time, i) => ({
     time,
     temperature2m: data.hourly.temperature_2m[i],
+    apparentTemperature2m: data.hourly.apparent_temperature[i],
+    dewPoint2m: data.hourly.dew_point_2m[i],
+    relativeHumidity2m: data.hourly.relative_humidity_2m[i],
     precipitation: data.hourly.precipitation[i],
     precipitationProbability: data.hourly.precipitation_probability[i],
     weatherCode: data.hourly.weather_code[i],
     windSpeed10m: data.hourly.wind_speed_10m[i],
     windDirection10m: data.hourly.wind_direction_10m[i],
     windGusts10m: data.hourly.wind_gusts_10m[i],
+    isDay: data.hourly.is_day[i],
   }));
 
   return {

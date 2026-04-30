@@ -7,6 +7,7 @@ export default {
       { idx: 0, when: 1774960304141, tag: "0000_misty_true_believers", breakpoints: true },
       { idx: 1, when: 1774960400000, tag: "0001_add_climbs", breakpoints: true },
       { idx: 2, when: 1774960500000, tag: "0002_route_waypoints_starred_items", breakpoints: true },
+      { idx: 3, when: 1774960600000, tag: "0003_collection_planning", breakpoints: true },
     ],
   },
   migrations: {
@@ -113,6 +114,10 @@ CREATE TABLE \`starred_items\` (
 	\`createdAt\` text NOT NULL,
 	PRIMARY KEY(\`entityType\`,\`entityId\`)
 );
+`,
+    m0003: `ALTER TABLE \`collections\` ADD \`plannedStartMs\` integer;--> statement-breakpoint
+ALTER TABLE \`collections\` ADD \`plannedRoadSpeedKmh\` real;--> statement-breakpoint
+ALTER TABLE \`collections\` ADD \`plannedOffroadSpeedKmh\` real;
 `,
   },
 };

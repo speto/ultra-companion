@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Pressable, type PressableProps } from "react-native";
+import { Pressable, type PressableProps, type StyleProp, type ViewStyle } from "react-native";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/cn";
 import { Text } from "./text";
@@ -44,9 +44,26 @@ interface ButtonProps extends PressableProps, VariantProps<typeof buttonVariants
 }
 
 const Button = React.forwardRef<React.ComponentRef<typeof Pressable>, ButtonProps>(
-  ({ className, textClassName, variant, size, label, children, ...props }, ref) => {
+  (
+    { className, textClassName, variant, size, label, children, style, disabled, ...props },
+    ref,
+  ) => {
     return (
-      <Pressable ref={ref} className={cn(buttonVariants({ variant, size }), className)} {...props}>
+      <Pressable
+        ref={ref}
+        className={cn(buttonVariants({ variant, size }), className)}
+        disabled={disabled}
+        style={(state) => {
+          const { pressed } = state;
+          const baseStyle: StyleProp<ViewStyle> = [
+            pressed && !disabled ? { opacity: 0.72, transform: [{ scale: 0.98 }] } : null,
+            disabled ? { opacity: 0.5 } : null,
+          ];
+          if (typeof style === "function") return [baseStyle, style(state)];
+          return [baseStyle, style];
+        }}
+        {...props}
+      >
         {label ? (
           <Text className={cn(buttonTextVariants({ variant }), textClassName)}>{label}</Text>
         ) : (

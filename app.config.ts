@@ -149,6 +149,7 @@ export default (_: ConfigContext): ExpoConfig => ({
           "Ultra Companion uses background location to track your position during ultra-distance rides.",
       },
     ],
+    "@react-native-community/datetimepicker",
     "expo-sqlite",
     "./plugins/withShareSheetImport",
   ],

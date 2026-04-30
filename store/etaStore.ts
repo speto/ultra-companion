@@ -29,6 +29,7 @@ interface ETAState {
   cumulativeTime: number[] | null;
   routeId: string | null;
   cachedPoints: RoutePoint[] | null;
+  cacheVersion: number;
 
   updatePowerConfig: (partial: Partial<PowerModelConfig>) => void;
   computeETAForRoute: (routeId: string, points: RoutePoint[]) => void;
@@ -44,13 +45,20 @@ export const useEtaStore = create<ETAState>((set, get) => ({
   cumulativeTime: null,
   routeId: null,
   cachedPoints: null,
+  cacheVersion: 0,
 
   updatePowerConfig: (partial) => {
     const next = { ...get().powerConfig, ...partial };
     try {
       getStorage().set("powerConfig", JSON.stringify(next));
     } catch {}
-    set({ powerConfig: next, cumulativeTime: null, routeId: null, cachedPoints: null });
+    set((state) => ({
+      powerConfig: next,
+      cumulativeTime: null,
+      routeId: null,
+      cachedPoints: null,
+      cacheVersion: state.cacheVersion + 1,
+    }));
   },
 
   computeETAForRoute: (routeId, points) => {
@@ -61,11 +69,21 @@ export const useEtaStore = create<ETAState>((set, get) => ({
       return;
     }
     const cumulative = computeRouteETA(points, get().powerConfig);
-    set({ cumulativeTime: cumulative, routeId, cachedPoints: points });
+    set((state) => ({
+      cumulativeTime: cumulative,
+      routeId,
+      cachedPoints: points,
+      cacheVersion: state.cacheVersion + 1,
+    }));
   },
 
   invalidateCache: () => {
-    set({ cumulativeTime: null, routeId: null, cachedPoints: null });
+    set((state) => ({
+      cumulativeTime: null,
+      routeId: null,
+      cachedPoints: null,
+      cacheVersion: state.cacheVersion + 1,
+    }));
   },
 
   getETAToPOI: (poi) => {
@@ -91,15 +109,15 @@ export const useEtaStore = create<ETAState>((set, get) => ({
   },
 
   _resolveETA: (targetDistM) => {
-    const { cumulativeTime, routeId } = get();
-    if (!cumulativeTime || !routeId) return null;
+    const { cumulativeTime, cachedPoints, routeId } = get();
+    if (!cumulativeTime || !cachedPoints?.length) return null;
 
     const snapped = useRouteStore.getState().snappedPosition;
-    if (!snapped) return null;
+    const fromIndex =
+      snapped && snapped.routeId === routeId && snapped.pointIndex >= 0 && snapped.pointIndex < cachedPoints.length
+        ? snapped.pointIndex
+        : 0;
 
-    const routePoints = useRouteStore.getState().visibleRoutePoints[routeId];
-    if (!routePoints?.length) return null;
-
-    return getETAToDistance(cumulativeTime, routePoints, snapped.pointIndex, targetDistM);
+    return getETAToDistance(cumulativeTime, cachedPoints, fromIndex, targetDistM);
   },
 }));

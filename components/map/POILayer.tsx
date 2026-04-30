@@ -2,7 +2,7 @@ import React, { useMemo, useCallback, useDeferredValue } from "react";
 import { ShapeSource, SymbolLayer, Images, Image } from "@rnmapbox/maps";
 import { SvgXml } from "react-native-svg";
 import { usePoiStore } from "@/store/poiStore";
-import { usePanelStore } from "@/store/panelStore";
+import { useMapStore } from "@/store/mapStore";
 import { usePlaceStore } from "@/store/placeStore";
 import { useStarredStore } from "@/store/starredStore";
 import { useEtaStore } from "@/store/etaStore";
@@ -33,28 +33,33 @@ export default function POILayer({ routeIds }: POILayerProps) {
   const foodAvailabilityMode = usePoiStore((s) => s.foodAvailabilityMode);
   const foodAvailabilityCustomTime = usePoiStore((s) => s.foodAvailabilityCustomTime);
   const getETAToPOI = useEtaStore((s) => s.getETAToPOI);
+  const showPOIs = useMapStore((s) => s.showPOIs);
+  const showWaypoints = useMapStore((s) => s.showWaypoints);
   const starredKeys = useStarredStore((s) => s.starredKeys);
-  const panelTab = usePanelStore((s) => s.panelTab);
   const allPlaces = usePlaceStore((s) => s.places);
   const getVisiblePlaces = usePlaceStore((s) => s.getVisiblePlaces);
   const setSelectedPlace = usePlaceStore((s) => s.setSelectedPlace);
 
   const visiblePlaces = useMemo(() => {
-    if (panelTab !== "pois" && panelTab !== "waypoints") return [];
+    if (!showPOIs && !showWaypoints) return [];
 
-    const places: PlaceViewModel[] = [];
+    const placesById = new Map<string, PlaceViewModel>();
     for (const routeId of routeIds) {
-      if (panelTab === "pois") {
-        places.push(...getVisiblePlaces(routeId));
+      if (showPOIs) {
+        for (const place of getVisiblePlaces(routeId)) {
+          placesById.set(place.placeId, place);
+        }
       }
-      if (panelTab === "waypoints") {
-        places.push(
-          ...(allPlaces[routeId] ?? []).filter((place) => place.entityType === "routeWaypoint"),
-        );
+      if (showWaypoints) {
+        for (const place of allPlaces[routeId] ?? []) {
+          if (place.entityType === "routeWaypoint") {
+            placesById.set(place.placeId, place);
+          }
+        }
       }
     }
     return filterByFoodAvailability(
-      places,
+      Array.from(placesById.values()),
       foodAvailabilityMode,
       foodAvailabilityCustomTime,
       getETAToPOI,
@@ -69,7 +74,8 @@ export default function POILayer({ routeIds }: POILayerProps) {
     foodAvailabilityCustomTime,
     getETAToPOI,
     starredKeys,
-    panelTab,
+    showPOIs,
+    showWaypoints,
     getVisiblePlaces,
   ]);
 

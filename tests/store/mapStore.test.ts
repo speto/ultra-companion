@@ -28,6 +28,13 @@ describe("map store preferences", () => {
     expect(useMapStore.getState().showDistanceMarkers).toBe(false);
   });
 
+  it("defaults POIs and waypoints to visible", async () => {
+    const useMapStore = await loadMapStore();
+
+    expect(useMapStore.getState().showPOIs).toBe(true);
+    expect(useMapStore.getState().showWaypoints).toBe(true);
+  });
+
   it("hydrates persisted distance marker visibility", async () => {
     reactNativeMmkvMocks.getString.mockImplementation((key) =>
       key === "showDistanceMarkers" ? "true" : null,
@@ -38,6 +45,19 @@ describe("map store preferences", () => {
     expect(useMapStore.getState().showDistanceMarkers).toBe(true);
   });
 
+  it("hydrates persisted POI and waypoint visibility", async () => {
+    reactNativeMmkvMocks.getString.mockImplementation((key) => {
+      if (key === "showPOIs") return "false";
+      if (key === "showWaypoints") return "false";
+      return null;
+    });
+
+    const useMapStore = await loadMapStore();
+
+    expect(useMapStore.getState().showPOIs).toBe(false);
+    expect(useMapStore.getState().showWaypoints).toBe(false);
+  });
+
   it("toggles and persists distance marker visibility", async () => {
     const useMapStore = await loadMapStore();
 
@@ -45,6 +65,24 @@ describe("map store preferences", () => {
 
     expect(useMapStore.getState().showDistanceMarkers).toBe(true);
     expect(reactNativeMmkvMocks.set).toHaveBeenCalledWith("showDistanceMarkers", "true");
+  });
+
+  it("toggles and persists POI visibility", async () => {
+    const useMapStore = await loadMapStore();
+
+    useMapStore.getState().togglePOIs();
+
+    expect(useMapStore.getState().showPOIs).toBe(false);
+    expect(reactNativeMmkvMocks.set).toHaveBeenCalledWith("showPOIs", "false");
+  });
+
+  it("toggles and persists waypoint visibility", async () => {
+    const useMapStore = await loadMapStore();
+
+    useMapStore.getState().toggleWaypoints();
+
+    expect(useMapStore.getState().showWaypoints).toBe(false);
+    expect(reactNativeMmkvMocks.set).toHaveBeenCalledWith("showWaypoints", "false");
   });
 
   it("defaults Follow GPS mode to off", async () => {

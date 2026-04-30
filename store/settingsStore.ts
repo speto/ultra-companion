@@ -1,6 +1,11 @@
 import { create } from "zustand";
 import { createMMKV, type MMKV } from "react-native-mmkv";
-import type { ClimbGraphSize, UnitSystem } from "@/types";
+import type {
+  ClimbGraphSize,
+  UnitSystem,
+  WeatherRefreshMode,
+  WeatherTemperatureDisplayMode,
+} from "@/types";
 
 let storage: MMKV | null = null;
 
@@ -34,10 +39,14 @@ function readClimbGraphSize(): ClimbGraphSize {
 
 interface SettingsState {
   units: UnitSystem;
+  weatherRefreshMode: WeatherRefreshMode;
+  weatherTemperatureDisplayMode: WeatherTemperatureDisplayMode;
   climbGraphSize: ClimbGraphSize;
   showClimbSearch: boolean;
   climbGraphSwipeHintSeen: boolean;
   setUnits: (units: UnitSystem) => void;
+  setWeatherRefreshMode: (mode: WeatherRefreshMode) => void;
+  setWeatherTemperatureDisplayMode: (mode: WeatherTemperatureDisplayMode) => void;
   setClimbGraphSize: (size: ClimbGraphSize) => void;
   setShowClimbSearch: (show: boolean) => void;
   setClimbGraphSwipeHintSeen: (seen: boolean) => void;
@@ -45,6 +54,9 @@ interface SettingsState {
 
 export const useSettingsStore = create<SettingsState>((set) => ({
   units: (readString("units") as UnitSystem) ?? "metric",
+  weatherRefreshMode: (readString("weatherRefreshMode") as WeatherRefreshMode) ?? "automatic",
+  weatherTemperatureDisplayMode:
+    (readString("weatherTemperatureDisplayMode") as WeatherTemperatureDisplayMode) ?? "actual",
   climbGraphSize: readClimbGraphSize(),
   showClimbSearch: readBoolean("showClimbSearch", true),
   climbGraphSwipeHintSeen: readBoolean("climbGraphSwipeHintSeen", false),
@@ -54,6 +66,20 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       getStorage().set("units", units);
     } catch {}
     set({ units });
+  },
+
+  setWeatherRefreshMode: (weatherRefreshMode) => {
+    try {
+      getStorage().set("weatherRefreshMode", weatherRefreshMode);
+    } catch {}
+    set({ weatherRefreshMode });
+  },
+
+  setWeatherTemperatureDisplayMode: (weatherTemperatureDisplayMode) => {
+    try {
+      getStorage().set("weatherTemperatureDisplayMode", weatherTemperatureDisplayMode);
+    } catch {}
+    set({ weatherTemperatureDisplayMode });
   },
 
   setClimbGraphSize: (climbGraphSize) => {
