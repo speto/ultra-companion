@@ -48,7 +48,6 @@ interface PanelState {
   /** Which tab is active in the bottom panel */
   panelTab: PanelTab;
   setPanelTab: (tab: PanelTab) => void;
-  setPanelTabKeepingPopoverOpen: (tab: PanelTab) => void;
 
   /** Whether the bottom sheet is in expanded mode */
   isExpanded: boolean;
@@ -150,12 +149,6 @@ export const usePanelStore = create<PanelState>((set, get) => ({
       getStorage().set("panelTab", panelTab);
     } catch {}
     set({ panelTab, isHorizonPopoverOpen: false });
-  },
-  setPanelTabKeepingPopoverOpen: (panelTab) => {
-    try {
-      getStorage().set("panelTab", panelTab);
-    } catch {}
-    set({ panelTab });
   },
 
   isExpanded: false,

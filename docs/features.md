@@ -8,10 +8,7 @@ What's implemented. For the "why" behind these, see `usage-context.md`.
 - On-demand GPS — position refreshes on app focus (if stale >10 min) or manual tap, no background polling
 - Position age indicator when stale
 - Heading-up / north-up toggle
-- Floating map controls — compass (bottom-left), menu toggle (SlidersHorizontal icon, opens compact menu), GPS/follow (top-right)
-- Map controls menu — compact by default with icons + toggles; labels expand via triangle or swipe-left gesture
-- Pathline modes in the map controls menu: Segments, Weather, and Climbs selectable; Surface and Descends reserved for future overlays
-- Display toggles: Distance markers, POIs, Waypoints (persisted in Settings > Map Display)
+- Floating map controls (center-on-user, panel mode)
 
 ## Routes
 

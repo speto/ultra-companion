@@ -20,6 +20,7 @@ import WeatherPanel from "./WeatherPanel";
 import ClimbTabContent from "./ClimbTabContent";
 import POITabContent from "./POITabContent";
 import WaypointsTabContent from "./WaypointsTabContent";
+import HorizonOverlay from "./HorizonOverlay";
 import type { ActiveRouteData, PanelTab } from "@/types";
 import type { DistanceMarkerInterval } from "@/utils/routeMarkers";
 import type { SceneRendererProps } from "react-native-tab-view";
@@ -226,11 +227,12 @@ export default function TabbedBottomPanel({
         animatedSheetStyle,
       ]}
     >
+      <HorizonOverlay activeData={activeData} />
       {floatingControls && (
         <View
           pointerEvents="box-none"
-          className="absolute left-0 right-0"
-          style={{ top: -144, height: 144, zIndex: 40, elevation: 40 }}
+          className="absolute items-center gap-3"
+          style={{ top: -128, right: 16, zIndex: 10, elevation: 10 }}
         >
           {floatingControls}
         </View>
