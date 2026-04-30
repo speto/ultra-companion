@@ -44,12 +44,14 @@ interface SettingsState {
   climbGraphSize: ClimbGraphSize;
   showClimbSearch: boolean;
   climbGraphSwipeHintSeen: boolean;
+  hideClimbValueHeadersOnScroll: boolean;
   setUnits: (units: UnitSystem) => void;
   setWeatherRefreshMode: (mode: WeatherRefreshMode) => void;
   setWeatherTemperatureDisplayMode: (mode: WeatherTemperatureDisplayMode) => void;
   setClimbGraphSize: (size: ClimbGraphSize) => void;
   setShowClimbSearch: (show: boolean) => void;
   setClimbGraphSwipeHintSeen: (seen: boolean) => void;
+  setHideClimbValueHeadersOnScroll: (hide: boolean) => void;
 }
 
 export const useSettingsStore = create<SettingsState>((set) => ({
@@ -60,6 +62,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   climbGraphSize: readClimbGraphSize(),
   showClimbSearch: readBoolean("showClimbSearch", true),
   climbGraphSwipeHintSeen: readBoolean("climbGraphSwipeHintSeen", false),
+  hideClimbValueHeadersOnScroll: readBoolean("hideClimbValueHeadersOnScroll", false),
 
   setUnits: (units) => {
     try {
@@ -101,5 +104,12 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       getStorage().set("climbGraphSwipeHintSeen", String(climbGraphSwipeHintSeen));
     } catch {}
     set({ climbGraphSwipeHintSeen });
+  },
+
+  setHideClimbValueHeadersOnScroll: (hideClimbValueHeadersOnScroll) => {
+    try {
+      getStorage().set("hideClimbValueHeadersOnScroll", String(hideClimbValueHeadersOnScroll));
+    } catch {}
+    set({ hideClimbValueHeadersOnScroll });
   },
 }));
