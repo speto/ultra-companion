@@ -9,6 +9,7 @@ import {
   useWindowDimensions,
   type ListRenderItem,
   type TextStyle,
+  type ViewStyle,
 } from "react-native";
 import Animated, {
   useSharedValue,
@@ -50,6 +51,7 @@ import {
   Thermometer,
   Flame,
   AlertTriangle,
+  Umbrella,
 } from "lucide-react-native";
 import { useThemeColors } from "@/theme";
 import {
@@ -79,6 +81,7 @@ import type {
   HorizonKm,
   StitchedSegmentInfo,
   WeatherPoint,
+  WeatherTimelineMetricKey,
   WeatherTemperatureDisplayMode,
   WindRelative,
 } from "@/types";
@@ -133,6 +136,62 @@ type TimelineListItem =
 type WeatherSampleMode = "all" | "hourly" | "distance";
 
 const WEATHER_SAMPLE_MODES: readonly WeatherSampleMode[] = ["all", "hourly", "distance"];
+const WEATHER_TIMELINE_METRICS: readonly WeatherTimelineMetricKey[] = [
+  "precipitation",
+  "humidity",
+  "gusts",
+];
+const DEFAULT_WEATHER_TIMELINE_METRICS: readonly WeatherTimelineMetricKey[] = [
+  "precipitation",
+  "gusts",
+];
+const WEATHER_TIMELINE_HORIZONTAL_PADDING = 12;
+const WEATHER_TIMELINE_CONDITION_GAP = 8;
+const WEATHER_TIMELINE_TIME_WIDTH = 44;
+const WEATHER_TIMELINE_TEMP_WIDTH = 36;
+const WEATHER_TIMELINE_WIND_WIDTH = 58;
+const WEATHER_TIMELINE_METRIC_WIDTH: Record<WeatherTimelineMetricKey, number> = {
+  precipitation: 62,
+  humidity: 34,
+  gusts: 50,
+};
+const WEATHER_TIMELINE_GRID_PADDING_STYLE = {
+  paddingLeft: WEATHER_TIMELINE_HORIZONTAL_PADDING,
+  paddingRight: WEATHER_TIMELINE_HORIZONTAL_PADDING,
+};
+const WEATHER_TIMELINE_CONDITION_COLUMN_STYLE = {
+  marginLeft: WEATHER_TIMELINE_CONDITION_GAP,
+};
+const WEATHER_TIMELINE_METRIC_LABEL: Record<WeatherTimelineMetricKey, string> = {
+  precipitation: "Rain",
+  humidity: "",
+  gusts: "Gust",
+};
+const WEATHER_TIMELINE_METRIC_SHEET_LABEL: Record<WeatherTimelineMetricKey, string> = {
+  precipitation: "Precipitation",
+  humidity: "Humidity",
+  gusts: "Gusts",
+};
+
+function normalizeWeatherTimelineMetrics(
+  metrics: readonly WeatherTimelineMetricKey[],
+): WeatherTimelineMetricKey[] {
+  const normalized = WEATHER_TIMELINE_METRICS.filter((metric) => metrics.includes(metric));
+  return normalized.length > 0 ? normalized : [...DEFAULT_WEATHER_TIMELINE_METRICS];
+}
+
+function toggleWeatherTimelineMetric(
+  metrics: readonly WeatherTimelineMetricKey[],
+  metric: WeatherTimelineMetricKey,
+): WeatherTimelineMetricKey[] {
+  const normalized = normalizeWeatherTimelineMetrics(metrics);
+  if (normalized.includes(metric)) {
+    if (normalized.length === 1) return normalized;
+    return normalized.filter((item) => item !== metric);
+  }
+
+  return WEATHER_TIMELINE_METRICS.filter((item) => item === metric || normalized.includes(item));
+}
 
 function hasMeaningfulRouteDistance(distanceMeters: number): boolean {
   return Number.isFinite(distanceMeters) && distanceMeters > 50;
@@ -165,8 +224,8 @@ function conditionColor(
 }
 
 function humidityColor(percent: number, colors: ReturnType<typeof useThemeColors>): string {
-  if (percent >= 90 || percent <= 30) return colors.warning;
   if (percent >= 70) return colors.info;
+  if (percent <= 40) return colors.warning;
   return colors.textSecondary;
 }
 
@@ -324,14 +383,34 @@ function isPrecipitationCode(code: number): boolean {
   );
 }
 
-function precipitationLabel(point: WeatherPoint): string | null {
+type PrecipitationDisplay = {
+  amountLabel: string | null;
+  probabilityLabel: string | null;
+  accessibilityLabel: string;
+};
+
+function precipitationDisplay(point: WeatherPoint): PrecipitationDisplay | null {
   const probability = Math.round(point.precipitationProbability);
   const hasAmount = point.precipitationMm >= 0.1;
   const hasChance = probability > 0;
   if (!hasAmount && !hasChance && !isPrecipitationCode(point.weatherCode)) return null;
-  if (hasAmount && hasChance) return `${point.precipitationMm.toFixed(1)}mm ${probability}%`;
-  if (hasAmount) return `${point.precipitationMm.toFixed(1)}mm`;
-  if (hasChance) return `${probability}%`;
+  if (hasAmount && hasChance) {
+    const amountLabel = `${point.precipitationMm.toFixed(1)}mm`;
+    const probabilityLabel = `${probability}%`;
+    return {
+      amountLabel,
+      probabilityLabel,
+      accessibilityLabel: `${amountLabel} ${probabilityLabel}`,
+    };
+  }
+  if (hasAmount) {
+    const amountLabel = `${point.precipitationMm.toFixed(1)}mm`;
+    return { amountLabel, probabilityLabel: null, accessibilityLabel: amountLabel };
+  }
+  if (hasChance) {
+    const probabilityLabel = `${probability}%`;
+    return { amountLabel: null, probabilityLabel, accessibilityLabel: probabilityLabel };
+  }
   return null;
 }
 
@@ -646,12 +725,324 @@ function WeatherRiskBadge({ risk }: { risk: WeatherRiskInfo }) {
   );
 }
 
+function WeatherMetricIcon({
+  metric,
+  color,
+  size = 12,
+}: {
+  metric: WeatherTimelineMetricKey;
+  color: string;
+  size?: number;
+}) {
+  switch (metric) {
+    case "precipitation":
+      return <Umbrella size={size} color={color} />;
+    case "humidity":
+      return <HumidityIcon size={size} color={color} />;
+    case "gusts":
+      return <Wind size={size} color={color} />;
+  }
+}
+
+function WeatherHeaderCell({
+  label,
+  icon,
+  className,
+  style,
+}: {
+  label: string;
+  icon: React.ReactNode;
+  className?: string;
+  style?: Pick<ViewStyle, "width" | "marginLeft">;
+}) {
+  return (
+    <View
+      className={cn("min-w-0 items-center px-0.5 py-1.5", className)}
+      style={style}
+      accessible={false}
+    >
+      <View className="flex-row items-center justify-center min-w-0">
+        {icon ? (
+          <View className={cn("items-center", label ? "w-[13px] mr-0.5" : "")}>{icon}</View>
+        ) : null}
+        {label ? (
+          <Text
+            className="text-[10px] text-muted-foreground font-barlow-medium text-center"
+            numberOfLines={1}
+          >
+            {label}
+          </Text>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
+function WeatherMetricHeader({
+  visibleMetrics,
+  onOpenSettings,
+}: {
+  visibleMetrics: readonly WeatherTimelineMetricKey[];
+  onOpenSettings: () => void;
+}) {
+  const colors = useThemeColors();
+
+  return (
+    <Pressable
+      className="flex-row items-center bg-surface"
+      style={[
+        WEATHER_TIMELINE_GRID_PADDING_STYLE,
+        {
+          borderTopWidth: StyleSheet.hairlineWidth,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderTopColor: colors.borderSubtle,
+          borderBottomColor: colors.borderSubtle,
+        },
+      ]}
+      accessibilityRole="header"
+      accessibilityLabel="Weather timeline metrics"
+      accessibilityHint="Long press to configure visible weather metrics."
+      accessibilityActions={[{ name: "activate", label: "Configure weather timeline metrics" }]}
+      onAccessibilityAction={(event) => {
+        if (event.nativeEvent.actionName === "activate") {
+          onOpenSettings();
+        }
+      }}
+      onLongPress={onOpenSettings}
+      delayLongPress={420}
+    >
+      <WeatherHeaderCell
+        label=""
+        icon={
+          <View className="flex-row items-center">
+            <Clock3 size={10} color={colors.textTertiary} />
+            <Ruler size={10} color={colors.textTertiary} />
+          </View>
+        }
+        className="items-start pr-0.5"
+        style={{ width: WEATHER_TIMELINE_TIME_WIDTH }}
+      />
+      <WeatherHeaderCell
+        label="Temp"
+        icon={<Thermometer size={11} color={colors.textTertiary} />}
+        style={{ width: WEATHER_TIMELINE_TEMP_WIDTH }}
+      />
+      <WeatherHeaderCell
+        label=""
+        icon={null}
+        className="flex-1"
+        style={WEATHER_TIMELINE_CONDITION_COLUMN_STYLE}
+      />
+      {visibleMetrics.map((metric) => (
+        <WeatherHeaderCell
+          key={metric}
+          label={WEATHER_TIMELINE_METRIC_LABEL[metric]}
+          icon={<WeatherMetricIcon metric={metric} color={colors.textTertiary} size={11} />}
+          style={{ width: WEATHER_TIMELINE_METRIC_WIDTH[metric] }}
+        />
+      ))}
+      <WeatherHeaderCell
+        label="Wind"
+        icon={<Wind size={11} color={colors.textTertiary} />}
+        style={{ width: WEATHER_TIMELINE_WIND_WIDTH }}
+      />
+    </Pressable>
+  );
+}
+
+function WeatherMetricsSheet({
+  visible,
+  visibleMetrics,
+  onToggleMetric,
+  onClose,
+}: {
+  visible: boolean;
+  visibleMetrics: readonly WeatherTimelineMetricKey[];
+  onToggleMetric: (metric: WeatherTimelineMetricKey) => void;
+  onClose: () => void;
+}) {
+  const colors = useThemeColors();
+  const { bottom } = useSafeAreaInsets();
+  const [isRendered, setIsRendered] = useState(visible);
+  const translateY = useSharedValue(320);
+  const dragStartY = useSharedValue(0);
+
+  React.useEffect(() => {
+    if (visible) {
+      setIsRendered(true);
+      translateY.value = withSpring(0, SPRING_CONFIG);
+    } else {
+      translateY.value = withSpring(320, SPRING_CONFIG, () => {
+        runOnJS(setIsRendered)(false);
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- shared values are refs, not deps
+  }, [visible]);
+
+  const panGesture = Gesture.Pan()
+    .activeOffsetY([-5, 5])
+    .onStart(() => {
+      dragStartY.value = translateY.value;
+    })
+    .onUpdate((event) => {
+      translateY.value = Math.max(0, dragStartY.value + event.translationY);
+    })
+    .onEnd((event) => {
+      const shouldClose = event.translationY > 80 || event.velocityY > 300;
+      if (shouldClose) {
+        translateY.value = withSpring(320, SPRING_CONFIG, () => {
+          runOnJS(onClose)();
+        });
+      } else {
+        translateY.value = withSpring(0, SPRING_CONFIG);
+      }
+    });
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: translateY.value }],
+  }));
+
+  const backdropStyle = useAnimatedStyle(() => ({
+    opacity: translateY.value < 320 ? 1 - translateY.value / 320 : 0,
+  }));
+
+  if (!isRendered) return null;
+
+  return (
+    <Modal
+      visible={isRendered}
+      transparent
+      presentationStyle="overFullScreen"
+      animationType="none"
+      statusBarTranslucent
+      onRequestClose={onClose}
+    >
+      <View className="flex-1" pointerEvents={visible ? "auto" : "none"}>
+        <Animated.View
+          className="absolute inset-0 bg-black/40"
+          style={backdropStyle}
+          pointerEvents="auto"
+        >
+          <Pressable className="flex-1" onPress={onClose} />
+        </Animated.View>
+
+        <Animated.View
+          className="absolute bottom-0 left-0 right-0 bg-surface rounded-t-2xl px-4 pt-3"
+          style={[{ paddingBottom: bottom + 16 }, animatedStyle]}
+          pointerEvents="auto"
+        >
+          <GestureDetector gesture={panGesture}>
+            <Animated.View>
+              <View className="items-center pb-2">
+                <View
+                  className="rounded-full"
+                  style={{
+                    width: 32,
+                    height: 4,
+                    backgroundColor: colors.textTertiary,
+                    opacity: 0.5,
+                  }}
+                />
+              </View>
+              <View className="min-h-[48px] flex-row items-center justify-between">
+                <Text className="text-[22px] font-barlow-semibold text-foreground">
+                  Timeline Metrics
+                </Text>
+                <Pressable
+                  className="min-h-[48px] px-3 items-center justify-center"
+                  onPress={onClose}
+                  style={({ pressed }) =>
+                    pressed ? { opacity: 0.72, transform: [{ scale: 0.98 }] } : undefined
+                  }
+                  accessibilityRole="button"
+                  accessibilityLabel="Close weather timeline metric settings"
+                >
+                  <Text className="text-[15px] font-barlow-semibold text-accent">Done</Text>
+                </Pressable>
+              </View>
+            </Animated.View>
+          </GestureDetector>
+
+          <View className="gap-2 mt-1">
+            {WEATHER_TIMELINE_METRICS.map((metric) => {
+              const checked = visibleMetrics.includes(metric);
+              const disabled = checked && visibleMetrics.length === 1;
+              return (
+                <Pressable
+                  key={metric}
+                  className={cn(
+                    "min-h-[56px] flex-row items-center rounded-xl border border-border bg-card px-3",
+                    disabled && "opacity-60",
+                  )}
+                  onPress={() => onToggleMetric(metric)}
+                  disabled={disabled}
+                  style={({ pressed }) =>
+                    pressed && !disabled
+                      ? { opacity: 0.72, transform: [{ scale: 0.99 }] }
+                      : undefined
+                  }
+                  accessibilityRole="switch"
+                  accessibilityState={{ checked, disabled }}
+                  accessibilityLabel={`Show ${WEATHER_TIMELINE_METRIC_SHEET_LABEL[metric]} in weather timeline`}
+                >
+                  <View className="h-9 w-9 items-center justify-center rounded-full bg-muted mr-3">
+                    <WeatherMetricIcon
+                      metric={metric}
+                      color={checked ? colors.accent : colors.textTertiary}
+                      size={18}
+                    />
+                  </View>
+                  <View className="flex-1 min-w-0">
+                    <Text
+                      className="text-[16px] font-barlow-semibold text-foreground"
+                      numberOfLines={1}
+                    >
+                      {WEATHER_TIMELINE_METRIC_SHEET_LABEL[metric]}
+                    </Text>
+                    <Text
+                      className="text-[12px] font-barlow-medium text-muted-foreground"
+                      numberOfLines={1}
+                    >
+                      {metric === "precipitation"
+                        ? "Amount and probability"
+                        : metric === "humidity"
+                          ? "Relative humidity"
+                          : "Wind gust speed"}
+                    </Text>
+                  </View>
+                  <View
+                    className="h-6 w-11 rounded-full justify-center px-0.5"
+                    style={{
+                      backgroundColor: checked ? colors.accent : colors.border,
+                    }}
+                    accessible={false}
+                  >
+                    <View
+                      className="h-5 w-5 rounded-full bg-surface"
+                      style={{ transform: [{ translateX: checked ? 20 : 0 }] }}
+                    />
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
+          <Text className="mt-2 px-1 text-[12px] font-barlow-medium text-muted-foreground text-center">
+            At least one optional metric stays visible for quick weather scanning.
+          </Text>
+        </Animated.View>
+      </View>
+    </Modal>
+  );
+}
+
 const WeatherRow = React.memo(function WeatherRow({
   point,
   temperatureMode,
+  visibleMetrics,
 }: {
   point: WeatherPoint;
   temperatureMode: WeatherTemperatureDisplayMode;
+  visibleMetrics: readonly WeatherTimelineMetricKey[];
 }) {
   const colors = useThemeColors();
   const [expanded, setExpanded] = useState(false);
@@ -664,33 +1055,43 @@ const WeatherRow = React.memo(function WeatherRow({
   const displayTempC = displayTemperatureC(point, temperatureMode);
   const tColor = temperatureGradientColor(displayTempC);
   const info = getWeatherInfo(point.weatherCode, point.isDay);
-  const precip = precipitationLabel(point);
+  const precip = precipitationDisplay(point);
   const risk = getWeatherRisk(point);
   const riskVisual = risk ? weatherRiskPresentation(risk, colors) : null;
   const canExpand = Boolean(risk);
   const isExpanded = canExpand && expanded;
   const rowTime = point.etaTime ?? point.time;
   const distanceLabel = hasMeaningfulRouteDistance(point.routeDistanceMeters)
-    ? formatDistanceKm(point.routeDistanceMeters)
+    ? formatWholeDistanceKm(point.routeDistanceMeters)
     : null;
   const sustainedWindKmh = Math.round(point.windSpeedKmh);
   const gustWindKmh = Math.round(point.windGustKmh);
-  const showGust = Number.isFinite(point.windGustKmh);
+  const showPrecipitation = visibleMetrics.includes("precipitation");
+  const hasGust = Number.isFinite(point.windGustKmh);
   const gustColor = gustSeverityColor(gustWindKmh, sustainedWindKmh, colors);
   const humidityPercent = Math.round(point.relativeHumidityPercent);
-  const showHumidity = Number.isFinite(point.relativeHumidityPercent);
+  const hasHumidity = Number.isFinite(point.relativeHumidityPercent);
   const hColor = humidityColor(humidityPercent, colors);
+  const precipColor = precip ? colors.info : colors.textTertiary;
   const phaseLabel = point.phase === "post-finish" ? "after finish forecast" : "route forecast";
   const accessibilityActionLabel = canExpand
     ? isExpanded
       ? "tap to collapse warning details"
       : "tap for warning details"
     : null;
-  const accessibilityLabel = `${formatHour(rowTime)}${distanceLabel ? `, ${distanceLabel}` : ""} ${phaseLabel}, ${info.label}, ${formatTemp(displayTempC)}${precip ? `, precipitation ${precip}` : ""}${showHumidity ? `, humidity ${humidityPercent} percent` : ""}${risk ? `, ${severityLabel(risk.severity)} ${risk.hazard}` : ""}${showGust ? `, gusts ${gustWindKmh} kilometers per hour` : ""}, wind ${sustainedWindKmh} kilometers per hour${accessibilityActionLabel ? `, ${accessibilityActionLabel}` : ""}`;
+  const optionalAccessibility = [
+    showPrecipitation && precip ? `precipitation ${precip.accessibilityLabel}` : null,
+    visibleMetrics.includes("humidity") && hasHumidity
+      ? `humidity ${humidityPercent} percent`
+      : null,
+    visibleMetrics.includes("gusts") && hasGust ? `gusts ${gustWindKmh} kilometers per hour` : null,
+  ].filter(Boolean);
+  const accessibilityLabel = `${formatHour(rowTime)}${distanceLabel ? `, ${distanceLabel}` : ""} ${phaseLabel}, ${info.label}, ${formatTemp(displayTempC)}${optionalAccessibility.length > 0 ? `, ${optionalAccessibility.join(", ")}` : ""}${risk ? `, ${severityLabel(risk.severity)} ${risk.hazard}` : ""}, wind ${sustainedWindKmh} kilometers per hour${accessibilityActionLabel ? `, ${accessibilityActionLabel}` : ""}`;
 
   return (
     <Pressable
-      className="px-3 py-0.5 relative"
+      className="py-0.5 relative"
+      style={WEATHER_TIMELINE_GRID_PADDING_STYLE}
       onPress={canExpand ? () => setExpanded((current) => !current) : undefined}
       disabled={!canExpand}
       hitSlop={canExpand ? { top: 6, bottom: 6, left: 0, right: 0 } : undefined}
@@ -699,7 +1100,10 @@ const WeatherRow = React.memo(function WeatherRow({
       accessibilityLabel={accessibilityLabel}
     >
       <View className="min-h-[36px] flex-row items-center">
-        <View className="w-[44px] pr-1 self-stretch justify-center">
+        <View
+          className="pr-0.5 self-stretch justify-center"
+          style={{ width: WEATHER_TIMELINE_TIME_WIDTH }}
+        >
           <Text
             className="text-[15px] font-barlow-sc-semibold text-foreground"
             numberOfLines={1}
@@ -718,62 +1122,129 @@ const WeatherRow = React.memo(function WeatherRow({
           )}
         </View>
         <Text
-          className="text-[21px] font-barlow-sc-semibold w-[34px] text-right mr-1.5"
-          style={{ color: tColor }}
+          className="text-[21px] font-barlow-sc-semibold text-right"
+          style={{ width: WEATHER_TIMELINE_TEMP_WIDTH, color: tColor }}
         >
           {formatTemp(displayTempC)}
         </Text>
-        <View className="flex-1 flex-row items-center mr-1 min-w-0">
+        <View
+          className="flex-1 flex-row items-center min-w-0"
+          style={WEATHER_TIMELINE_CONDITION_COLUMN_STYLE}
+        >
           <WeatherIcon point={point} size={23} />
           <CompactConditionTitle label={info.label} />
-        </View>
-        <View className="flex-row items-center justify-end ml-1">
           {risk && (
-            <View className="mr-2 flex-shrink-0">
+            <View className="ml-1.5 flex-shrink-0">
               <WeatherRiskBadge risk={risk} />
             </View>
           )}
-          {showHumidity && (
-            <View className="h-[24px] flex-row items-center justify-center flex-shrink-0 mr-1.5">
-              <View className="h-[24px] w-[20px] items-center justify-center">
-                <HumidityIcon size={20} color={hColor} />
+        </View>
+        {visibleMetrics.map((metric) => {
+          if (metric === "precipitation") {
+            return (
+              <View
+                key={metric}
+                className="h-[30px] items-center justify-center flex-shrink-0 px-0.5"
+                style={{ width: WEATHER_TIMELINE_METRIC_WIDTH.precipitation }}
+              >
+                {precip ? (
+                  precip.amountLabel && precip.probabilityLabel ? (
+                    <>
+                      <Text
+                        className="text-[15px] font-barlow-sc-semibold text-center"
+                        style={{ color: precipColor, lineHeight: 15, includeFontPadding: false }}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.78}
+                      >
+                        {precip.amountLabel}
+                      </Text>
+                      <Text
+                        className="text-[12px] font-barlow-sc-semibold text-center"
+                        style={{ color: precipColor, lineHeight: 12, includeFontPadding: false }}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.78}
+                      >
+                        {precip.probabilityLabel}
+                      </Text>
+                    </>
+                  ) : (
+                    <Text
+                      className="text-[15px] font-barlow-sc-semibold text-center"
+                      style={{ color: precipColor, lineHeight: 15, includeFontPadding: false }}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.78}
+                    >
+                      {precip.amountLabel ?? precip.probabilityLabel}
+                    </Text>
+                  )
+                ) : null}
               </View>
-              <Text
-                className="text-[15px] font-barlow-sc-semibold ml-0.5"
-                style={{ color: hColor, lineHeight: 18, includeFontPadding: false }}
+            );
+          }
+
+          if (metric === "humidity") {
+            return (
+              <View
+                key={metric}
+                className="h-[24px] items-center justify-center flex-shrink-0 px-0.5"
+                style={{ width: WEATHER_TIMELINE_METRIC_WIDTH.humidity }}
               >
-                {humidityPercent}%
-              </Text>
-            </View>
-          )}
-          {showGust && (
+                {hasHumidity ? (
+                  <Text
+                    className="text-[12px] font-barlow-sc-semibold text-center"
+                    style={{ color: hColor, lineHeight: 14, includeFontPadding: false }}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.86}
+                  >
+                    {humidityPercent}%
+                  </Text>
+                ) : null}
+              </View>
+            );
+          }
+
+          return (
             <View
-              className="flex-row items-center rounded-full px-1.5 py-0.5 mr-1.5"
-              style={{ backgroundColor: `${gustColor}1A` }}
+              key={metric}
+              className="items-center justify-center flex-shrink-0 px-0.5"
+              style={{ width: WEATHER_TIMELINE_METRIC_WIDTH.gusts }}
             >
-              <Wind size={13} color={gustColor} />
-              <Text
-                className="text-[17px] font-barlow-sc-semibold ml-1"
-                style={{ color: gustColor }}
-              >
-                {gustWindKmh}
-              </Text>
-              <Text className="text-[11px] font-barlow-medium ml-0.5" style={{ color: gustColor }}>
-                km/h
-              </Text>
+              {hasGust ? (
+                <>
+                  <Text
+                    className="text-[17px] font-barlow-sc-semibold text-center"
+                    style={{ color: gustColor, lineHeight: 18, includeFontPadding: false }}
+                    numberOfLines={1}
+                  >
+                    {gustWindKmh}
+                  </Text>
+                  <Text
+                    className="text-[10px] font-barlow-medium text-muted-foreground text-center"
+                    style={{ lineHeight: 10, includeFontPadding: false }}
+                    numberOfLines={1}
+                  >
+                    km/h
+                  </Text>
+                </>
+              ) : null}
             </View>
-          )}
-          <View className="flex-row items-center justify-end w-[64px]">
-            <View style={{ transform: [{ rotate: `${rotation}deg` }] }}>
-              <ArrowUp size={16} color={wColor} />
-            </View>
-            <Text className="text-[21px] font-barlow-sc-semibold ml-1" style={{ color: wColor }}>
-              {sustainedWindKmh}
-            </Text>
-            <Text className="text-[10px] font-barlow-medium ml-0.5 text-muted-foreground">
-              km/h
-            </Text>
+          );
+        })}
+        <View
+          className="flex-row items-center justify-end"
+          style={{ width: WEATHER_TIMELINE_WIND_WIDTH }}
+        >
+          <View style={{ transform: [{ rotate: `${rotation}deg` }] }}>
+            <ArrowUp size={16} color={wColor} />
           </View>
+          <Text className="text-[21px] font-barlow-sc-semibold ml-1" style={{ color: wColor }}>
+            {sustainedWindKmh}
+          </Text>
+          <Text className="text-[10px] font-barlow-medium ml-0.5 text-muted-foreground">km/h</Text>
         </View>
       </View>
       {isExpanded && risk && riskVisual && (
@@ -1667,6 +2138,10 @@ function formatDistanceKm(distanceMeters: number): string {
   return `${roundedKm.toFixed(1)} km`;
 }
 
+function formatWholeDistanceKm(distanceMeters: number): string {
+  return `${Math.round(distanceMeters / 1_000)} km`;
+}
+
 function forecastStartLimitMs(nowMs = Date.now()): number {
   return (
     Math.floor((nowMs + FORECAST_START_HORIZON_MS) / FORECAST_CUSTOM_INTERVAL_MS) *
@@ -1839,6 +2314,7 @@ function TimelineList({
   sampleMode,
   isExpanded,
   temperatureMode,
+  visibleMetrics,
 }: {
   timeline: WeatherPoint[];
   horizon: HorizonKm;
@@ -1847,6 +2323,7 @@ function TimelineList({
   sampleMode: WeatherSampleMode;
   isExpanded: boolean;
   temperatureMode: WeatherTemperatureDisplayMode;
+  visibleMetrics: readonly WeatherTimelineMetricKey[];
 }) {
   const { bottom: safeBottom } = useSafeAreaInsets();
   const listData = React.useMemo<TimelineListItem[]>(() => {
@@ -1919,9 +2396,15 @@ function TimelineList({
   const renderItem = React.useCallback<ListRenderItem<TimelineListItem>>(
     ({ item }) => {
       if (item.type === "section") return <TimelineSectionHeader label={item.label} />;
-      return <WeatherRow point={item.point} temperatureMode={temperatureMode} />;
+      return (
+        <WeatherRow
+          point={item.point}
+          temperatureMode={temperatureMode}
+          visibleMetrics={visibleMetrics}
+        />
+      );
     },
-    [temperatureMode],
+    [temperatureMode, visibleMetrics],
   );
 
   return (
@@ -1949,9 +2432,15 @@ export default function WeatherPanel({ activeData }: { activeData: ActiveRouteDa
   const isExpanded = usePanelStore((s) => s.isExpanded);
   const setIsExpanded = usePanelStore((s) => s.setIsExpanded);
   const temperatureMode = useSettingsStore((s) => s.weatherTemperatureDisplayMode);
+  const configuredMetrics = useSettingsStore((s) => s.weatherTimelineMetrics);
+  const setWeatherTimelineMetrics = useSettingsStore((s) => s.setWeatherTimelineMetrics);
   const [sampleMode, setSampleMode] = useState<WeatherSampleMode>("all");
+  const [metricsSheetOpen, setMetricsSheetOpen] = useState(false);
   const current = timeline.length > 0 ? timeline[0] : null;
-  const timelineRows = React.useMemo(() => timeline.slice(1), [timeline]);
+  const visibleMetrics = React.useMemo(
+    () => normalizeWeatherTimelineMetrics(configuredMetrics),
+    [configuredMetrics],
+  );
   const warningCount = React.useMemo(
     () =>
       timeline.filter((point) => isRenderableWeatherPoint(point) && getWeatherRisk(point)).length,
@@ -1960,6 +2449,12 @@ export default function WeatherPanel({ activeData }: { activeData: ActiveRouteDa
   const cycleSampleMode = React.useCallback(() => {
     setSampleMode((currentMode) => nextWeatherSampleMode(currentMode));
   }, []);
+  const toggleMetric = React.useCallback(
+    (metric: WeatherTimelineMetricKey) => {
+      setWeatherTimelineMetrics(toggleWeatherTimelineMetric(visibleMetrics, metric));
+    },
+    [setWeatherTimelineMetrics, visibleMetrics],
+  );
   const expandSwipeGesture = React.useMemo(
     () =>
       Gesture.Pan()
@@ -2004,24 +2499,34 @@ export default function WeatherPanel({ activeData }: { activeData: ActiveRouteDa
                 routeLengthMeters={activeData?.totalDistanceMeters ?? null}
                 temperatureMode={temperatureMode}
               />
-              <WeatherRow point={current} temperatureMode={temperatureMode} />
             </>
           )}
         </View>
       </GestureDetector>
       {current && (
         <View className="flex-1">
+          <WeatherMetricHeader
+            visibleMetrics={visibleMetrics}
+            onOpenSettings={() => setMetricsSheetOpen(true)}
+          />
           <TimelineList
-            timeline={timelineRows}
+            timeline={timeline}
             horizon={horizon}
             currentDistanceMeters={current?.distanceAlongRouteM ?? 0}
             segments={activeData?.segments ?? null}
             sampleMode={sampleMode}
             isExpanded={isExpanded}
             temperatureMode={temperatureMode}
+            visibleMetrics={visibleMetrics}
           />
         </View>
       )}
+      <WeatherMetricsSheet
+        visible={metricsSheetOpen}
+        visibleMetrics={visibleMetrics}
+        onToggleMetric={toggleMetric}
+        onClose={() => setMetricsSheetOpen(false)}
+      />
     </View>
   );
 }

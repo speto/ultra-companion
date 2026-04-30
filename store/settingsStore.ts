@@ -5,6 +5,7 @@ import type {
   UnitSystem,
   WeatherRefreshMode,
   WeatherTemperatureDisplayMode,
+  WeatherTimelineMetricKey,
 } from "@/types";
 
 let storage: MMKV | null = null;
@@ -37,10 +38,37 @@ function readClimbGraphSize(): ClimbGraphSize {
   return "small";
 }
 
+const DEFAULT_WEATHER_TIMELINE_METRICS: WeatherTimelineMetricKey[] = ["precipitation", "gusts"];
+
+function isWeatherTimelineMetricKey(value: unknown): value is WeatherTimelineMetricKey {
+  return value === "precipitation" || value === "humidity" || value === "gusts";
+}
+
+function normalizeWeatherTimelineMetrics(metrics: unknown): WeatherTimelineMetricKey[] {
+  if (!Array.isArray(metrics)) return DEFAULT_WEATHER_TIMELINE_METRICS;
+
+  const validMetrics = metrics.filter(isWeatherTimelineMetricKey);
+  const dedupedMetrics = Array.from(new Set(validMetrics));
+
+  return dedupedMetrics.length > 0 ? dedupedMetrics : DEFAULT_WEATHER_TIMELINE_METRICS;
+}
+
+function readWeatherTimelineMetrics(): WeatherTimelineMetricKey[] {
+  const raw = readString("weatherTimelineMetrics");
+  if (!raw) return DEFAULT_WEATHER_TIMELINE_METRICS;
+
+  try {
+    return normalizeWeatherTimelineMetrics(JSON.parse(raw));
+  } catch {
+    return DEFAULT_WEATHER_TIMELINE_METRICS;
+  }
+}
+
 interface SettingsState {
   units: UnitSystem;
   weatherRefreshMode: WeatherRefreshMode;
   weatherTemperatureDisplayMode: WeatherTemperatureDisplayMode;
+  weatherTimelineMetrics: WeatherTimelineMetricKey[];
   climbGraphSize: ClimbGraphSize;
   showClimbSearch: boolean;
   climbGraphSwipeHintSeen: boolean;
@@ -48,6 +76,7 @@ interface SettingsState {
   setUnits: (units: UnitSystem) => void;
   setWeatherRefreshMode: (mode: WeatherRefreshMode) => void;
   setWeatherTemperatureDisplayMode: (mode: WeatherTemperatureDisplayMode) => void;
+  setWeatherTimelineMetrics: (metrics: WeatherTimelineMetricKey[]) => void;
   setClimbGraphSize: (size: ClimbGraphSize) => void;
   setShowClimbSearch: (show: boolean) => void;
   setClimbGraphSwipeHintSeen: (seen: boolean) => void;
@@ -59,6 +88,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   weatherRefreshMode: (readString("weatherRefreshMode") as WeatherRefreshMode) ?? "automatic",
   weatherTemperatureDisplayMode:
     (readString("weatherTemperatureDisplayMode") as WeatherTemperatureDisplayMode) ?? "actual",
+  weatherTimelineMetrics: readWeatherTimelineMetrics(),
   climbGraphSize: readClimbGraphSize(),
   showClimbSearch: readBoolean("showClimbSearch", true),
   climbGraphSwipeHintSeen: readBoolean("climbGraphSwipeHintSeen", false),
@@ -83,6 +113,14 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       getStorage().set("weatherTemperatureDisplayMode", weatherTemperatureDisplayMode);
     } catch {}
     set({ weatherTemperatureDisplayMode });
+  },
+
+  setWeatherTimelineMetrics: (metrics) => {
+    const weatherTimelineMetrics = normalizeWeatherTimelineMetrics(metrics);
+    try {
+      getStorage().set("weatherTimelineMetrics", JSON.stringify(weatherTimelineMetrics));
+    } catch {}
+    set({ weatherTimelineMetrics });
   },
 
   setClimbGraphSize: (climbGraphSize) => {

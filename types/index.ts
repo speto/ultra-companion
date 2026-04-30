@@ -17,6 +17,8 @@ export type WeatherTemperatureDisplayMode = "actual" | "feels-like";
 
 export type WeatherSampleKind = "hourly" | "distance" | "finish" | "post-finish";
 
+export type WeatherTimelineMetricKey = "precipitation" | "humidity" | "gusts";
+
 export const MAP_STYLE_URL = "mapbox://styles/mapbox/outdoors-v12";
 
 // --- Phase 2: Route types ---
