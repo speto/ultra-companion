@@ -2,6 +2,7 @@ import React, { useCallback, useMemo } from "react";
 import { View, TouchableOpacity } from "react-native";
 import type { GestureResponderEvent } from "react-native";
 import { Text } from "@/components/ui/text";
+import { ListDivider } from "@/components/ui/list-divider";
 import { Clock, Star } from "lucide-react-native";
 import { useThemeColors } from "@/theme";
 import { useSettingsStore } from "@/store/settingsStore";
@@ -159,7 +160,7 @@ export default function PlaceListItem({
 
   return (
     <TouchableOpacity
-      className="flex-row items-center px-4 py-3 border-b border-border"
+      className="flex-row items-center px-4 py-3 relative"
       onPress={() => onPress(place)}
       accessibilityLabel={place.name ?? meta?.label ?? (isWaypoint ? "Waypoint" : "POI")}
     >
@@ -234,6 +235,7 @@ export default function PlaceListItem({
           </Text>
         ) : null}
       </View>
+      <ListDivider className="absolute bottom-0 left-[60px] right-0" />
     </TouchableOpacity>
   );
 }

@@ -4,7 +4,6 @@ import {
   FlatList,
   ScrollView,
   TouchableOpacity,
-  TextInput as RNTextInput,
   Linking,
 } from "react-native";
 import Animated, { useAnimatedStyle, interpolate, Extrapolation } from "react-native-reanimated";
@@ -12,7 +11,7 @@ import type { SharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
-import { Star, MapPin, Clock, ChevronLeft, Phone, Search } from "lucide-react-native";
+import { Star, MapPin, Clock, ChevronLeft, Phone } from "lucide-react-native";
 import { useThemeColors } from "@/theme";
 import { useSettingsStore } from "@/store/settingsStore";
 import { useRouteStore } from "@/store/routeStore";
@@ -27,6 +26,7 @@ import { formatDistance, formatDuration, formatETA } from "@/utils/formatters";
 import { horizonWindow } from "@/utils/horizon";
 import { getOpeningHoursStatus, isOpenAt, getDaySchedules } from "@/services/openingHoursParser";
 import POIFilterBar from "@/components/map/POIFilterBar";
+import PanelSearchInput from "@/components/map/PanelSearchInput";
 import {
   buildAppleMapsUrl,
   buildGoogleMapsUrl,
@@ -243,23 +243,12 @@ export default function POITabContent({
   return (
     <View className="flex-1">
       <Animated.View style={searchAnimatedStyle}>
-        <View
-          className="flex-row items-center px-4 py-2"
-          style={{ borderBottomWidth: 1, borderBottomColor: colors.borderSubtle, height: 48 }}
-        >
-          <Search size={16} color={colors.textTertiary} />
-          <RNTextInput
-            className="flex-1 ml-2 text-[15px] font-barlow text-foreground"
-            placeholder="Search by name..."
-            placeholderTextColor={colors.textTertiary}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            autoCorrect={false}
-            returnKeyType="search"
-            clearButtonMode="while-editing"
-            accessibilityLabel="Search POIs"
-          />
-        </View>
+        <PanelSearchInput
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          placeholder="Search by name..."
+          accessibilityLabel="Search POIs"
+        />
       </Animated.View>
 
       <View style={{ borderBottomWidth: 1, borderBottomColor: colors.borderSubtle }}>
