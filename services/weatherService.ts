@@ -1,5 +1,5 @@
 import type { RoutePoint, WeatherPoint, WeatherSampleKind, WindRelative } from "@/types";
-import { WEATHER_WAYPOINT_INTERVAL_M } from "@/constants";
+import { OPEN_METEO_MAX_FORECAST_HOURS, WEATHER_WAYPOINT_INTERVAL_M } from "@/constants";
 import { fetchForecasts, type HourlyForecast } from "./weatherClient";
 import { getETAToDistance } from "./etaCalculator";
 import { computeBearing } from "@/utils/geo";
@@ -135,7 +135,10 @@ function forecastHoursForProjection(projectionStart: Date, maxRidingTimeSeconds:
   );
   const neededHours =
     hoursUntilProjection + Math.ceil(maxRidingTimeSeconds / 3600) + POST_FINISH_FORECAST_HOURS + 2;
-  return Math.max(MIN_FORECAST_HOURS_TO_CACHE, neededHours);
+  return Math.min(
+    OPEN_METEO_MAX_FORECAST_HOURS,
+    Math.max(MIN_FORECAST_HOURS_TO_CACHE, neededHours),
+  );
 }
 
 function ridingTimeToRoutePosition(

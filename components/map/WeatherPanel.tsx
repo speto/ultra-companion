@@ -83,6 +83,7 @@ import type {
   WindRelative,
 } from "@/types";
 import { horizonToMeters } from "@/utils/horizon";
+import { OPEN_METEO_MAX_FORECAST_HOURS } from "@/constants";
 
 const SPRING_CONFIG = { damping: 28, stiffness: 300, overshootClamping: true };
 type NativeDateTimePickerConfig = { NativeProps?: Record<string, unknown> };
@@ -117,6 +118,8 @@ const TEMPERATURE_STRIP_LABEL_GAP = 8;
 const FORECAST_PRESET_MATCH_TOLERANCE_MS = 5 * 60_000;
 const FORECAST_CUSTOM_MINUTE_INTERVAL = 15;
 const FORECAST_CUSTOM_INTERVAL_MS = FORECAST_CUSTOM_MINUTE_INTERVAL * 60_000;
+const FORECAST_START_HORIZON_MS = OPEN_METEO_MAX_FORECAST_HOURS * 3600_000;
+const FORECAST_START_HORIZON_DAYS = OPEN_METEO_MAX_FORECAST_HOURS / 24;
 const WEATHER_TOOLBAR_HORIZONTAL_PADDING = 24;
 const WEATHER_TOOLBAR_GAP_WIDTH = 8;
 const WEATHER_CHIP_BASE_WIDTH = 46;
@@ -831,11 +834,19 @@ function TimelineSectionHeader({ label }: { label: string }) {
 export function StartPickerSheet({
   visible,
   startMs,
+  title = "Forecast Start",
+  accessibilityContextLabel = "forecast start",
+  maxStartMs,
+  helperText,
   onApply,
   onClose,
 }: {
   visible: boolean;
   startMs: number | null;
+  title?: string;
+  accessibilityContextLabel?: string;
+  maxStartMs?: number;
+  helperText?: string;
   onApply: (value: number | null) => void;
   onClose: () => void;
 }) {
@@ -843,7 +854,9 @@ export function StartPickerSheet({
   const { bottom } = useSafeAreaInsets();
   const [isRendered, setIsRendered] = useState(visible);
   const [customMode, setCustomMode] = useState(false);
-  const [draftDate, setDraftDate] = useState(new Date(roundForecastStartMs(startMs ?? Date.now())));
+  const [draftDate, setDraftDate] = useState(
+    new Date(clampPickerStartMs(startMs ?? Date.now(), maxStartMs)),
+  );
   const translateY = useSharedValue(400);
   const dragStartY = useSharedValue(0);
 
@@ -858,7 +871,7 @@ export function StartPickerSheet({
   React.useEffect(() => {
     if (visible) {
       setCustomMode(false);
-      setDraftDate(new Date(roundForecastStartMs(startMs ?? Date.now())));
+      setDraftDate(new Date(clampPickerStartMs(startMs ?? Date.now(), maxStartMs)));
       setIsRendered(true);
       translateY.value = withSpring(0, SPRING_CONFIG);
     } else {
@@ -867,7 +880,7 @@ export function StartPickerSheet({
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- shared values are refs, not deps
-  }, [visible, startMs]);
+  }, [visible, startMs, maxStartMs]);
 
   const panGesture = Gesture.Pan()
     .activeOffsetY([-5, 5])
@@ -907,6 +920,7 @@ export function StartPickerSheet({
     [8, 5, 3, 1, "custom"],
   ] as const;
   const nowMs = Date.now();
+  const maxStartDate = maxStartMs == null ? undefined : new Date(maxStartMs);
   const isNowSelected = startMs == null;
   const isPresetSelected = (hours: number) =>
     startMs != null &&
@@ -951,9 +965,7 @@ export function StartPickerSheet({
                 />
               </View>
               <View className="min-h-[48px] flex-row items-center justify-between">
-                <Text className="text-[22px] font-barlow-semibold text-foreground">
-                  Forecast Start
-                </Text>
+                <Text className="text-[22px] font-barlow-semibold text-foreground">{title}</Text>
                 <Pressable
                   className="min-h-[48px] px-3 items-center justify-center"
                   onPress={handleCancel}
@@ -961,7 +973,7 @@ export function StartPickerSheet({
                     pressed ? { opacity: 0.72, transform: [{ scale: 0.98 }] } : undefined
                   }
                   accessibilityRole="button"
-                  accessibilityLabel="Cancel forecast start change"
+                  accessibilityLabel={`Cancel ${accessibilityContextLabel} change`}
                 >
                   <Text className="text-[15px] font-barlow-semibold text-accent">Cancel</Text>
                 </Pressable>
@@ -986,7 +998,7 @@ export function StartPickerSheet({
                                 : "h-14 w-[56px] px-1"
                             }
                             accessibilityState={{ selected: isNowSelected }}
-                            accessibilityLabel="Set forecast start to now"
+                            accessibilityLabel={`Set ${accessibilityContextLabel} to now`}
                           >
                             <Text
                               className={
@@ -1010,30 +1022,37 @@ export function StartPickerSheet({
                             key="custom"
                             variant="secondary"
                             onPress={() => {
-                              setDraftDate(new Date(roundForecastStartMs(startMs ?? Date.now())));
+                              setDraftDate(
+                                new Date(clampPickerStartMs(startMs ?? Date.now(), maxStartMs)),
+                              );
                               setCustomMode(true);
                             }}
                             className="h-14 w-[56px] px-1"
-                            accessibilityLabel="Choose forecast start date and time"
+                            accessibilityLabel={`Choose ${accessibilityContextLabel} date and time`}
                           >
                             <CalendarClock size={21} color={colors.accent} />
                           </Button>
                         );
                       }
 
+                      const presetMs = nowMs + preset * 3600_000;
+                      const presetDisabled = maxStartMs != null && presetMs > maxStartMs;
                       const selected = isPresetSelected(preset);
                       return (
                         <Button
                           key={preset}
                           variant="secondary"
-                          onPress={() => onApply(Date.now() + preset * 3600_000)}
+                          onPress={() =>
+                            onApply(clampPickerStartMs(Date.now() + preset * 3600_000, maxStartMs))
+                          }
                           className={
                             selected
                               ? "h-14 w-[56px] px-1 border-accent bg-accent"
                               : "h-14 w-[56px] px-1"
                           }
-                          accessibilityState={{ selected }}
-                          accessibilityLabel={`Set forecast start plus ${preset} hours`}
+                          disabled={presetDisabled}
+                          accessibilityState={{ selected, disabled: presetDisabled }}
+                          accessibilityLabel={`Set ${accessibilityContextLabel} plus ${preset} hours`}
                         >
                           <Text
                             className={
@@ -1053,6 +1072,11 @@ export function StartPickerSheet({
                   </View>
                 ))}
               </View>
+              {helperText && (
+                <Text className="mt-2 px-1 text-[12px] font-barlow-medium text-muted-foreground text-center">
+                  {helperText}
+                </Text>
+              )}
             </>
           ) : (
             <>
@@ -1064,8 +1088,11 @@ export function StartPickerSheet({
                     display="spinner"
                     minuteInterval={FORECAST_CUSTOM_MINUTE_INTERVAL}
                     minimumDate={new Date()}
+                    maximumDate={maxStartDate}
                     onChange={(_, date) => {
-                      if (date) setDraftDate(new Date(roundForecastStartMs(date.getTime())));
+                      if (date) {
+                        setDraftDate(new Date(clampPickerStartMs(date.getTime(), maxStartMs)));
+                      }
                     }}
                     style={{ alignSelf: "stretch", height: 236 }}
                   />
@@ -1077,6 +1104,11 @@ export function StartPickerSheet({
                   </Text>
                 </View>
               )}
+              {helperText && (
+                <Text className="mt-2 px-1 text-[12px] font-barlow-medium text-muted-foreground text-center">
+                  {helperText}
+                </Text>
+              )}
               <View className="flex-row justify-end gap-2 mt-3">
                 <Button
                   variant="secondary"
@@ -1086,7 +1118,7 @@ export function StartPickerSheet({
                 />
                 <Button
                   label="Use time"
-                  onPress={() => onApply(roundForecastStartMs(draftDate.getTime()))}
+                  onPress={() => onApply(clampPickerStartMs(draftDate.getTime(), maxStartMs))}
                   className="h-12 px-5"
                   disabled={!HAS_NATIVE_DATETIME_PICKER}
                 />
@@ -1133,6 +1165,7 @@ function ActionStatusBar({
   const sampleModeLabel = weatherSampleModeLabel(sampleMode);
   const nextSampleModeLabel = weatherSampleModeLabel(nextWeatherSampleMode(sampleMode));
   const sampleModeActive = sampleMode !== "all";
+  const weatherForecastStartLimitMs = forecastStartLimitMs();
   const collectionPlannedStartMs =
     activeData?.type === "collection" ? (activeCollection?.plannedStartMs ?? null) : null;
   const startMs = resolveEffectiveWeatherStart({
@@ -1193,9 +1226,13 @@ function ActionStatusBar({
   };
 
   const applyStart = async (value: number | null) => {
-    setForecastStartOverride(value);
+    const constrainedValue = value == null ? null : clampForecastStartMs(value);
+    setForecastStartOverride(constrainedValue);
     setPickerOpen(false);
-    const context = buildContext(activeData, { hasOverride: true, overrideStartMs: value });
+    const context = buildContext(activeData, {
+      hasOverride: true,
+      overrideStartMs: constrainedValue,
+    });
     if (context) await refreshWeatherNow(context);
     else recordManualRefreshUnavailable("Weather refresh unavailable");
   };
@@ -1306,6 +1343,8 @@ function ActionStatusBar({
       <StartPickerSheet
         visible={pickerOpen}
         startMs={startMs}
+        maxStartMs={weatherForecastStartLimitMs}
+        helperText={`Up to ${FORECAST_START_HORIZON_DAYS} days ahead`}
         onApply={applyStart}
         onClose={() => setPickerOpen(false)}
       />
@@ -1628,11 +1667,30 @@ function formatDistanceKm(distanceMeters: number): string {
   return `${roundedKm.toFixed(1)} km`;
 }
 
-function roundForecastStartMs(valueMs: number): number {
-  const now = Date.now();
+function forecastStartLimitMs(nowMs = Date.now()): number {
+  return (
+    Math.floor((nowMs + FORECAST_START_HORIZON_MS) / FORECAST_CUSTOM_INTERVAL_MS) *
+    FORECAST_CUSTOM_INTERVAL_MS
+  );
+}
+
+function roundForecastStartMs(valueMs: number, nowMs = Date.now()): number {
   const rounded = Math.round(valueMs / FORECAST_CUSTOM_INTERVAL_MS) * FORECAST_CUSTOM_INTERVAL_MS;
-  if (rounded >= now) return rounded;
-  return Math.ceil(now / FORECAST_CUSTOM_INTERVAL_MS) * FORECAST_CUSTOM_INTERVAL_MS;
+  if (rounded >= nowMs) return rounded;
+  return Math.ceil(nowMs / FORECAST_CUSTOM_INTERVAL_MS) * FORECAST_CUSTOM_INTERVAL_MS;
+}
+
+function clampPickerStartMs(
+  valueMs: number,
+  maxStartMs: number | undefined,
+  nowMs = Date.now(),
+): number {
+  const rounded = roundForecastStartMs(valueMs, nowMs);
+  return maxStartMs == null ? rounded : Math.min(rounded, maxStartMs);
+}
+
+function clampForecastStartMs(valueMs: number, nowMs = Date.now()): number {
+  return clampPickerStartMs(valueMs, forecastStartLimitMs(nowMs), nowMs);
 }
 
 function segmentForDistance(

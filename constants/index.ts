@@ -121,6 +121,9 @@ export const WEATHER_MANUAL_REFRESH_THROTTLE_MS = 10 * 60 * 1000;
 /** Open-Meteo API base URL */
 export const OPEN_METEO_API_URL = "https://api.open-meteo.com/v1/forecast";
 
+/** Open-Meteo forecast_hours upper bound */
+export const OPEN_METEO_MAX_FORECAST_HOURS = 384;
+
 /** Upper bound used for weather forecast/cache horizon calculations */
 export const WEATHER_TIMELINE_HOURS = 24;
 

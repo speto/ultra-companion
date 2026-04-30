@@ -529,6 +529,8 @@ export default function CollectionDetailScreen() {
       <StartPickerSheet
         visible={showStartPicker}
         startMs={collection.plannedStartMs}
+        title="Planned Start"
+        accessibilityContextLabel="planned start"
         onApply={handleApplyPlannedStart}
         onClose={() => setShowStartPicker(false)}
       />

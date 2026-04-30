@@ -152,6 +152,20 @@ describe("weatherService", () => {
     );
   });
 
+  it("caps requested forecast hours to the Open-Meteo limit", async () => {
+    const points = [routePoint(0, 0), routePoint(40_000, 1)];
+    const cumulativeTime = [0, 500 * 3600];
+    mockFetchForecasts.mockResolvedValue(
+      points.map((point) => forecast(point.latitude, point.longitude)),
+    );
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:30:00.000Z"));
+
+    await buildWeatherTimeline(points, 0, cumulativeTime);
+
+    expect(mockFetchForecasts).toHaveBeenCalledWith(expect.any(Array), 384);
+  });
+
   it("marks the final guard row as finish when no prior sample already covers finish", async () => {
     const points = [routePoint(0, 0), routePoint(10_000, 1), routePoint(25_000, 2)];
     const cumulativeTime = [0, 1800, 5400];
