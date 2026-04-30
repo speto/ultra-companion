@@ -289,7 +289,7 @@ export default function RouteDetailScreen() {
   );
 }
 
-function RouteWaypointRow({
+const RouteWaypointRow = React.memo(function RouteWaypointRow({
   waypoint,
   units,
 }: {
@@ -335,4 +335,4 @@ function RouteWaypointRow({
       </View>
     </View>
   );
-}
+});

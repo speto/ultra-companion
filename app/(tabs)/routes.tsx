@@ -354,6 +354,9 @@ export default function RoutesScreen() {
           }
           contentContainerStyle={{ padding: 16, paddingBottom: 112 }}
           stickySectionHeadersEnabled={false}
+          initialNumToRender={8}
+          maxToRenderPerBatch={8}
+          windowSize={5}
         />
       )}
 

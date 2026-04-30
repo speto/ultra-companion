@@ -96,7 +96,14 @@ export default function ProfileTabContent({
   const horizon = usePanelStore((s) => s.horizon);
   const setPanelTab = usePanelStore((s) => s.setPanelTab);
   const isExpanded = usePanelStore((s) => s.isExpanded);
-  const snappedPosition = useRouteStore((s) => s.snappedPosition);
+  const snappedRouteId = useRouteStore((s) => s.snappedPosition?.routeId ?? null);
+  const snappedPointIndex = useRouteStore((s) => s.snappedPosition?.pointIndex ?? null);
+  const snappedDistanceAlongRoute = useRouteStore(
+    (s) => s.snappedPosition?.distanceAlongRouteMeters ?? null,
+  );
+  const snappedDistanceFromRoute = useRouteStore(
+    (s) => s.snappedPosition?.distanceFromRouteMeters ?? null,
+  );
   const units = useSettingsStore((s) => s.units);
   const powerConfig = useEtaStore((s) => s.powerConfig);
   const setSelectedPOI = usePoiStore((s) => s.setSelectedPOI);
@@ -112,11 +119,15 @@ export default function ProfileTabContent({
     [starredKeys],
   );
 
-  const isSnapped =
-    snappedPosition &&
+  const isSnapped = Boolean(
+    snappedRouteId &&
     activeId &&
-    snappedPosition.routeId === activeId &&
-    snappedPosition.distanceFromRouteMeters <= MAX_SNAP_DISTANCE_M;
+    snappedRouteId === activeId &&
+    snappedPointIndex != null &&
+    snappedDistanceAlongRoute != null &&
+    snappedDistanceFromRoute != null &&
+    snappedDistanceFromRoute <= MAX_SNAP_DISTANCE_M,
+  );
 
   const getStarredPOIs = usePoiStore((s) => s.getStarredPOIs);
   const [expandedSegmentIds, setExpandedSegmentIds] = useState<Set<string>>(() => new Set());
@@ -179,8 +190,8 @@ export default function ProfileTabContent({
       activeRoutePoints[startIdx].distanceFromStartMeters;
     const sliced = extractRouteSlice(activeRoutePoints, startIdx, totalSliceM);
     let currentIdxInSlice: number | undefined;
-    if (isSnapped) {
-      currentIdxInSlice = snappedPosition!.pointIndex - startIdx;
+    if (isSnapped && snappedPointIndex != null) {
+      currentIdxInSlice = snappedPointIndex - startIdx;
       if (currentIdxInSlice < 0 || currentIdxInSlice >= sliced.length) {
         currentIdxInSlice = undefined;
       }
@@ -190,20 +201,29 @@ export default function ProfileTabContent({
       currentIdxInSlice,
       offsetMeters: activeRoutePoints[startIdx].distanceFromStartMeters,
     };
-  }, [currentClimb, activeRoutePoints, isSnapped, snappedPosition]);
+  }, [currentClimb, activeRoutePoints, isSnapped, snappedPointIndex]);
 
   const climbProgressText = useMemo(() => {
-    if (!currentClimb || !isSnapped || !snappedPosition || !activeRoutePoints?.length) return null;
-    const currentDist = snappedPosition.distanceAlongRouteMeters;
+    if (!currentClimb || !isSnapped || !activeRoutePoints?.length || snappedPointIndex == null) {
+      return null;
+    }
+    const currentDist = snappedDistanceAlongRoute!;
     const distToTop = currentClimb.endDistanceMeters - currentDist;
     if (distToTop <= 0) return null;
     const ascentRemaining = computeSliceAscent(
       activeRoutePoints,
-      snappedPosition.pointIndex,
+      snappedPointIndex,
       currentClimb.endDistanceMeters,
     );
     return `↑ ${formatElevation(ascentRemaining, units)} remaining  ·  ${formatDistance(distToTop, units)} to top  ·  ${currentClimb.averageGradientPercent}% avg`;
-  }, [currentClimb, isSnapped, snappedPosition, activeRoutePoints, units]);
+  }, [
+    currentClimb,
+    isSnapped,
+    snappedDistanceAlongRoute,
+    snappedPointIndex,
+    activeRoutePoints,
+    units,
+  ]);
 
   const showClimbZoom = isClimbZoomed && currentClimb && climbSlice && climbSlice.points.length > 1;
 
@@ -212,11 +232,11 @@ export default function ProfileTabContent({
     if (!isSnapped || !activeRoutePoints?.length) {
       return { windowStartDist: 0, windowEndDist: 0, riderIdx: 0 };
     }
-    const idx = snappedPosition!.pointIndex;
+    const idx = snappedPointIndex!;
     const distDone = activeRoutePoints[idx]?.distanceFromStartMeters ?? 0;
     const { endDist } = horizonWindow(distDone, horizon, activeTotalDistance);
     return { windowStartDist: distDone, windowEndDist: endDist, riderIdx: idx };
-  }, [isSnapped, snappedPosition, activeRoutePoints, horizon, activeTotalDistance]);
+  }, [isSnapped, snappedPointIndex, activeRoutePoints, horizon, activeTotalDistance]);
 
   const statsText = useMemo(() => {
     if (!isSnapped || !activeRoutePoints?.length) return null;
@@ -270,11 +290,9 @@ export default function ProfileTabContent({
     const segments = activeSegments;
 
     let currentSegIdx = 0;
-    if (isSnapped && snappedPosition) {
+    if (isSnapped && snappedPointIndex != null) {
       const idx = segments.findIndex(
-        (s) =>
-          snappedPosition.pointIndex >= s.startPointIndex &&
-          snappedPosition.pointIndex <= s.endPointIndex,
+        (s) => snappedPointIndex >= s.startPointIndex && snappedPointIndex <= s.endPointIndex,
       );
       if (idx >= 0) currentSegIdx = idx;
     }
@@ -283,7 +301,7 @@ export default function ProfileTabContent({
 
     for (let i = currentSegIdx; i < segments.length; i++) {
       const seg = segments[i];
-      const isCurrent = Boolean(i === currentSegIdx && isSnapped && snappedPosition);
+      const isCurrent = Boolean(i === currentSegIdx && isSnapped && snappedPointIndex != null);
 
       let startIdx = seg.startPointIndex;
       let offsetMeters = seg.distanceOffsetMeters;
@@ -296,7 +314,7 @@ export default function ProfileTabContent({
       let descent = seg.segmentDescentMeters;
 
       if (isCurrent) {
-        startIdx = snappedPosition!.pointIndex;
+        startIdx = snappedPointIndex!;
         offsetMeters = activeRoutePoints[startIdx].distanceFromStartMeters;
         distance = Math.max(0, segmentEndDist - offsetMeters);
         ascent = computeSliceAscent(activeRoutePoints, startIdx, segmentEndDist);
@@ -367,7 +385,7 @@ export default function ProfileTabContent({
     profileSegments,
     cumulativeEta,
     isSnapped,
-    snappedPosition,
+    snappedPointIndex,
     units,
     waypointsByRoute,
     starredRouteWaypointIds,
@@ -389,7 +407,7 @@ export default function ProfileTabContent({
   const chartHeight = height - headerBlockHeight - safeBottom;
   const chartWidth = width - HORIZONTAL_PADDING * 2;
   const compactChartHeight = clampChartHeight(compactHeight - safeBottom);
-  const effectivePointIndex = isSnapped ? snappedPosition!.pointIndex : 0;
+  const effectivePointIndex = isSnapped && snappedPointIndex != null ? snappedPointIndex : 0;
   const lookAhead = horizonToMeters(horizon) ?? activeTotalDistance;
 
   const collectionMetaAnimatedStyle = useAnimatedStyle(() => {
@@ -487,7 +505,9 @@ export default function ProfileTabContent({
             units={units}
             width={chartWidth}
             height={compactChartHeight}
-            currentPointIndex={isSnapped ? snappedPosition!.pointIndex : undefined}
+            currentPointIndex={
+              isSnapped && snappedPointIndex != null ? snappedPointIndex : undefined
+            }
             distanceOffsetMeters={0}
             pois={poisForChart}
             climbs={climbsForChart}
@@ -526,7 +546,7 @@ export default function ProfileTabContent({
     poisForChart,
     profileSegments,
     showExpandedCollection,
-    snappedPosition,
+    snappedPointIndex,
     toggleAllSegments,
     units,
   ]);

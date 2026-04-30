@@ -576,7 +576,7 @@ function PlanRow({ label, value, onPress }: { label: string; value: string; onPr
   );
 }
 
-function CollectionWaypointRow({
+const CollectionWaypointRow = React.memo(function CollectionWaypointRow({
   waypoint,
   units,
 }: {
@@ -622,4 +622,4 @@ function CollectionWaypointRow({
       </View>
     </View>
   );
-}
+});

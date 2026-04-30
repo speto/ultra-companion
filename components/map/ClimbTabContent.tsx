@@ -44,6 +44,7 @@ import type { DistanceMarkerInterval } from "@/utils/routeMarkers";
 
 const EXPANDED_LIST_MOUNT_DELAY_MS = 180;
 const SWIPE_HINT_HIDE_DELAY_MS = 7000;
+const DISTANCE_BUCKET_M = 100;
 const CLIMB_ROW_HEIGHT = 72;
 const CLIMB_SEARCH_HEIGHT = 49;
 const CLIMB_GRAPH_HEIGHT: Record<ClimbGraphSize, { min: number; ratio: number }> = {
@@ -76,7 +77,8 @@ export default function ClimbTabContent({
   const climbGraphSwipeHintSeen = useSettingsStore((s) => s.climbGraphSwipeHintSeen);
   const setClimbGraphSwipeHintSeen = useSettingsStore((s) => s.setClimbGraphSwipeHintSeen);
   const { width: screenWidth } = useWindowDimensions();
-  const snappedPosition = useRouteStore((s) => s.snappedPosition);
+  const currentDist = useRouteStore((s) => s.snappedPosition?.distanceAlongRouteMeters ?? null);
+  const snappedPointIndex = useRouteStore((s) => s.snappedPosition?.pointIndex ?? null);
   const getClimbsForDisplay = useClimbStore((s) => s.getClimbsForDisplay);
   const allClimbs = useClimbStore((s) => s.climbs);
   const selectedClimb = useClimbStore((s) => s.selectedClimb);
@@ -89,7 +91,11 @@ export default function ClimbTabContent({
 
   const routeIds = useMemo(() => activeData?.routeIds ?? [], [activeData?.routeIds]);
   const segments = activeData?.segments ?? null;
-  const currentDist = snappedPosition?.distanceAlongRouteMeters ?? null;
+  const currentDistBucket =
+    currentDist == null ? null : Math.floor(currentDist / DISTANCE_BUCKET_M);
+  const bucketedCurrentDist =
+    currentDistBucket == null ? null : currentDistBucket * DISTANCE_BUCKET_M;
+  const snappedPositionPresent = snappedPointIndex != null;
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState("");
   const [editingClimb, setEditingClimb] = useState<Climb | null>(null);
@@ -130,8 +136,8 @@ export default function ClimbTabContent({
     const sliced = extractRouteSlice(points, startIdx, sliceLength);
     if (sliced.length < 2) return null;
     let currentIdxInSlice: number | undefined;
-    if (snappedPosition) {
-      const idx = snappedPosition.pointIndex - startIdx;
+    if (snappedPointIndex != null) {
+      const idx = snappedPointIndex - startIdx;
       if (idx >= 0 && idx < sliced.length) currentIdxInSlice = idx;
     }
     return {
@@ -139,7 +145,7 @@ export default function ClimbTabContent({
       offsetMeters: points[startIdx].distanceFromStartMeters,
       currentIdxInSlice,
     };
-  }, [climb, activeData, snappedPosition]);
+  }, [climb, activeData, snappedPointIndex]);
 
   const climbElevationDomain = useMemo(() => {
     if (!climb || !climbProfile?.points.length) return undefined;
@@ -542,8 +548,8 @@ export default function ClimbTabContent({
       return (
         <ClimbListItem
           climb={item}
-          currentDistAlongRoute={currentDist}
-          isPast={currentDist != null && item.endDistanceMeters < currentDist}
+          currentDistAlongRoute={bucketedCurrentDist}
+          isPast={bucketedCurrentDist != null && item.endDistanceMeters < bucketedCurrentDist}
           isSelected={climb?.id === item.id}
           onPress={handleClimbPress}
           onEdit={isExpanded && canEdit ? handleStartEdit : undefined}
@@ -554,14 +560,14 @@ export default function ClimbTabContent({
           onCancelEdit={handleEditBlur}
           onSaveEditIntentStart={handleSaveEditIntentStart}
           ordinal={ordinalByClimbId.get(item.id) ?? null}
-          snappedPositionPresent={snappedPosition != null}
+          snappedPositionPresent={snappedPositionPresent}
         />
       );
     },
     [
       allClimbs,
+      bucketedCurrentDist,
       climb?.id,
-      currentDist,
       editName,
       editingClimb?.id,
       handleEditBlur,
@@ -572,7 +578,7 @@ export default function ClimbTabContent({
       isExpanded,
       isEditing,
       ordinalByClimbId,
-      snappedPosition,
+      snappedPositionPresent,
     ],
   );
 

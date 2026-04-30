@@ -300,7 +300,7 @@ interface GradeFillRegion {
   linePath: string;
 }
 
-export default function ElevationProfile({
+function ElevationProfile({
   points,
   units,
   width,
@@ -1582,3 +1582,5 @@ export default function ElevationProfile({
     </View>
   );
 }
+
+export default React.memo(ElevationProfile);

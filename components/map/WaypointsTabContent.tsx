@@ -17,6 +17,8 @@ interface WaypointsTabContentProps {
   activeData: ActiveRouteData | null;
 }
 
+const DISTANCE_BUCKET_M = 100;
+
 export default function WaypointsTabContent({ activeData }: WaypointsTabContentProps) {
   const colors = useThemeColors();
   const { bottom: safeBottom } = useSafeAreaInsets();
@@ -33,10 +35,14 @@ export default function WaypointsTabContent({ activeData }: WaypointsTabContentP
     [segments],
   );
   const currentDist = snappedPosition?.distanceAlongRouteMeters ?? null;
+  const currentDistBucket =
+    currentDist == null ? null : Math.floor(currentDist / DISTANCE_BUCKET_M);
+  const bucketedCurrentDist =
+    currentDistBucket == null ? null : currentDistBucket * DISTANCE_BUCKET_M;
   const horizonEndDist = useMemo(() => {
-    if (currentDist == null || !activeData) return null;
-    return horizonWindow(currentDist, horizon, activeData.totalDistanceMeters).endDist;
-  }, [currentDist, horizon, activeData]);
+    if (bucketedCurrentDist == null || !activeData) return null;
+    return horizonWindow(bucketedCurrentDist, horizon, activeData.totalDistanceMeters).endDist;
+  }, [bucketedCurrentDist, horizon, activeData]);
 
   const waypoints = useMemo(() => {
     const result: PlaceViewModel[] = [];
@@ -63,12 +69,13 @@ export default function WaypointsTabContent({ activeData }: WaypointsTabContentP
     return result
       .filter(
         (place) =>
-          currentDist == null ||
-          (place.effectiveDistanceAlongRouteMeters >= currentDist - POI_BEHIND_THRESHOLD_M &&
+          bucketedCurrentDist == null ||
+          (place.effectiveDistanceAlongRouteMeters >=
+            bucketedCurrentDist - POI_BEHIND_THRESHOLD_M &&
             (horizonEndDist == null || place.effectiveDistanceAlongRouteMeters <= horizonEndDist)),
       )
       .sort((a, b) => a.effectiveDistanceAlongRouteMeters - b.effectiveDistanceAlongRouteMeters);
-  }, [segments, routeIds, allPlaces, currentDist, horizonEndDist]);
+  }, [segments, routeIds, allPlaces, bucketedCurrentDist, horizonEndDist]);
 
   const handleWaypointPress = useCallback(
     (place: PlaceViewModel) => {
@@ -81,13 +88,13 @@ export default function WaypointsTabContent({ activeData }: WaypointsTabContentP
     ({ item }: { item: PlaceViewModel }) => (
       <PlaceListItem
         place={item}
-        currentDistAlongRoute={currentDist}
+        currentDistAlongRoute={bucketedCurrentDist}
         segmentName={segmentNameByRouteId.get(item.routeId) ?? null}
         showAbsoluteDistance
         onPress={handleWaypointPress}
       />
     ),
-    [currentDist, handleWaypointPress, segmentNameByRouteId],
+    [bucketedCurrentDist, handleWaypointPress, segmentNameByRouteId],
   );
 
   if (selectedPlace?.entityType === "routeWaypoint") {

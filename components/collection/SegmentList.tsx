@@ -21,13 +21,18 @@ import { formatDistance, formatElevation, formatDuration } from "@/utils/formatt
 import { getSegmentControlVisibility } from "@/utils/collectionEditMode";
 import { SEGMENT_COLORS_DARK, SEGMENT_COLORS_LIGHT } from "@/constants";
 import SegmentCard, { type SegmentCardMetadataItem } from "./SegmentCard";
-import type { CollectionSegmentWithRoute, RoutePoint } from "@/types";
+import type { CollectionSegmentWithRoute, RoutePoint, UnitSystem } from "@/types";
 
 /** A position slot: one or more variants grouped together */
 interface PositionGroup {
   key: string;
   position: number;
   variants: CollectionSegmentWithRoute[];
+}
+
+interface RouteMetadataCounts {
+  waypointCount: number;
+  starredCount: number;
 }
 
 interface SegmentListProps {
@@ -55,59 +60,51 @@ function groupByPosition(segments: CollectionSegmentWithRoute[]): PositionGroup[
     }));
 }
 
-function useSegmentTime(points: RoutePoint[] | undefined): number | null {
-  const powerConfig = useEtaStore((s) => s.powerConfig);
-  return useMemo(() => {
-    if (!points || points.length < 2) return null;
-    const cumulative = computeRouteETA(points, powerConfig);
-    return cumulative[cumulative.length - 1];
-  }, [points, powerConfig]);
-}
-
 /** Single segment row — shows name, stats, and riding time */
-function SegmentRow({
+function SegmentRowContent({
   sw,
   isSelected,
   hasVariants,
   posIdx,
-  points,
+  ridingTime,
+  waypointCount,
+  starredCount,
   drag,
-  onSelect,
+  onSelectVariant,
   onRemove,
   isEditing,
+  units,
 }: {
   sw: CollectionSegmentWithRoute;
   isSelected: boolean;
   hasVariants: boolean;
   posIdx: number;
-  points: RoutePoint[] | undefined;
+  ridingTime: number | null;
+  waypointCount: number;
+  starredCount: number;
   drag?: () => void;
-  onSelect: () => void;
-  onRemove: () => void;
+  onSelectVariant: (routeId: string) => void;
+  onRemove: (routeId: string) => void;
   isEditing: boolean;
+  units: UnitSystem;
 }) {
   const colors = useThemeColors();
   const { colorScheme } = useColorScheme();
-  const units = useSettingsStore((s) => s.units);
-  const poisByRoute = usePoiStore((s) => s.pois);
-  const starredKeys = useStarredStore((s) => s.starredKeys);
-  const waypointsByRoute = useWaypointStore((s) => s.waypoints);
   const router = useRouter();
-  const ridingTime = useSegmentTime(points);
   const { showLeftControls, showRemove, showChevron } = getSegmentControlVisibility(isEditing);
   const segmentColor = (colorScheme === "dark" ? SEGMENT_COLORS_DARK : SEGMENT_COLORS_LIGHT)[
     posIdx % SEGMENT_COLORS_LIGHT.length
   ];
+  const handleSelect = useCallback(() => {
+    onSelectVariant(sw.route.id);
+  }, [onSelectVariant, sw.route.id]);
+  const handleRemove = useCallback(() => {
+    onRemove(sw.route.id);
+  }, [onRemove, sw.route.id]);
+  const handleOpenRoute = useCallback(() => {
+    router.push(`/route/${sw.route.id}`);
+  }, [router, sw.route.id]);
   const metadataItems = useMemo<SegmentCardMetadataItem[]>(() => {
-    const routeWaypoints = waypointsByRoute[sw.route.id] ?? [];
-    const waypointCount = routeWaypoints.length;
-    const starredWaypointCount = routeWaypoints.filter((waypoint) =>
-      starredKeys.has(`routeWaypoint:${waypoint.id}`),
-    ).length;
-    const starredPoiCount = (poisByRoute[sw.route.id] ?? []).filter((poi) =>
-      starredKeys.has(`downloadedPoi:${poi.id}`),
-    ).length;
-    const starredCount = starredWaypointCount + starredPoiCount;
     const items: SegmentCardMetadataItem[] = [
       {
         label: formatElevation(sw.route.totalAscentMeters, units),
@@ -140,21 +137,19 @@ function SegmentRow({
   }, [
     colors.starred,
     colors.textTertiary,
-    poisByRoute,
     ridingTime,
-    starredKeys,
-    sw.route.id,
+    starredCount,
     sw.route.totalAscentMeters,
     sw.route.totalDescentMeters,
     units,
-    waypointsByRoute,
+    waypointCount,
   ]);
   const action = showRemove ? (
     <View className="flex-row items-center">
       {(isSelected || hasVariants) && (
         <TouchableOpacity
           className="w-[48px] h-[48px] items-center justify-center"
-          onPress={onRemove}
+          onPress={handleRemove}
           hitSlop={4}
         >
           <X size={16} color={colors.destructive} />
@@ -178,7 +173,7 @@ function SegmentRow({
         ) : (
           <TouchableOpacity
             className="w-[48px] h-[48px] items-center justify-center -ml-2"
-            onPress={onSelect}
+            onPress={handleSelect}
             disabled={isSelected || !hasVariants}
           >
             <View
@@ -202,13 +197,15 @@ function SegmentRow({
           metadataItems={metadataItems}
           color={segmentColor}
           index={hasVariants ? undefined : posIdx + 1}
-          onPress={() => router.push(`/route/${sw.route.id}`)}
+          onPress={handleOpenRoute}
           action={showChevron ? undefined : action}
         />
       </View>
     </View>
   );
 }
+
+const SegmentRow = React.memo(SegmentRowContent);
 
 export default function SegmentList({
   segmentsWithRoutes,
@@ -219,6 +216,11 @@ export default function SegmentList({
   isEditing,
 }: SegmentListProps) {
   const colors = useThemeColors();
+  const units = useSettingsStore((s) => s.units);
+  const powerConfig = useEtaStore((s) => s.powerConfig);
+  const poisByRoute = usePoiStore((s) => s.pois);
+  const starredKeys = useStarredStore((s) => s.starredKeys);
+  const waypointsByRoute = useWaypointStore((s) => s.waypoints);
 
   // Local order state for drag reordering
   const serverGroups = useMemo(() => groupByPosition(segmentsWithRoutes), [segmentsWithRoutes]);
@@ -228,6 +230,42 @@ export default function SegmentList({
   useEffect(() => {
     setLocalGroups(serverGroups);
   }, [serverGroups]);
+
+  const ridingTimeByRouteId = useMemo(() => {
+    const map = new Map<string, number | null>();
+    for (const sw of segmentsWithRoutes) {
+      const routeId = sw.route.id;
+      if (map.has(routeId)) continue;
+      const points = pointsByRouteId[routeId];
+      if (!points || points.length < 2) {
+        map.set(routeId, null);
+        continue;
+      }
+      const cumulative = computeRouteETA(points, powerConfig);
+      map.set(routeId, cumulative[cumulative.length - 1] ?? null);
+    }
+    return map;
+  }, [pointsByRouteId, powerConfig, segmentsWithRoutes]);
+
+  const metadataCountsByRouteId = useMemo(() => {
+    const map = new Map<string, RouteMetadataCounts>();
+    for (const sw of segmentsWithRoutes) {
+      const routeId = sw.route.id;
+      if (map.has(routeId)) continue;
+      const routeWaypoints = waypointsByRoute[routeId] ?? [];
+      const starredWaypointCount = routeWaypoints.filter((waypoint) =>
+        starredKeys.has(`routeWaypoint:${waypoint.id}`),
+      ).length;
+      const starredPoiCount = (poisByRoute[routeId] ?? []).filter((poi) =>
+        starredKeys.has(`downloadedPoi:${poi.id}`),
+      ).length;
+      map.set(routeId, {
+        waypointCount: routeWaypoints.length,
+        starredCount: starredWaypointCount + starredPoiCount,
+      });
+    }
+    return map;
+  }, [poisByRoute, segmentsWithRoutes, starredKeys, waypointsByRoute]);
 
   const hasOrderChanged = useMemo(() => {
     if (localGroups.length !== serverGroups.length) return false;
@@ -256,13 +294,15 @@ export default function SegmentList({
       drag,
       isDragging,
       decorate,
+      index,
     }: {
       group: PositionGroup;
+      index: number;
       drag?: () => void;
       isDragging: boolean;
       decorate: boolean;
     }) => {
-      const posIdx = localGroups.indexOf(group);
+      const posIdx = index;
       const hasVariants = group.variants.length > 1;
 
       const content = (
@@ -284,6 +324,7 @@ export default function SegmentList({
             <View className="rounded-xl overflow-hidden border border-border">
               {group.variants.map((sw, vIdx) => {
                 const isSelected = sw.segment.isSelected;
+                const metadataCounts = metadataCountsByRouteId.get(sw.route.id);
                 return (
                   <View key={sw.route.id}>
                     {vIdx > 0 && (
@@ -297,42 +338,59 @@ export default function SegmentList({
                       isSelected={isSelected}
                       hasVariants
                       posIdx={posIdx}
-                      points={pointsByRouteId[sw.route.id]}
-                      onSelect={() => onSelectVariant(sw.route.id)}
-                      onRemove={() => onRemove(sw.route.id)}
+                      ridingTime={ridingTimeByRouteId.get(sw.route.id) ?? null}
+                      waypointCount={metadataCounts?.waypointCount ?? 0}
+                      starredCount={metadataCounts?.starredCount ?? 0}
+                      onSelectVariant={onSelectVariant}
+                      onRemove={onRemove}
                       isEditing={isEditing}
+                      units={units}
                     />
                   </View>
                 );
               })}
             </View>
           ) : (
-            group.variants.map((sw) => (
-              <SegmentRow
-                key={sw.route.id}
-                sw={sw}
-                isSelected={sw.segment.isSelected}
-                hasVariants={false}
-                posIdx={posIdx}
-                points={pointsByRouteId[sw.route.id]}
-                drag={drag}
-                onSelect={() => {}}
-                onRemove={() => onRemove(sw.route.id)}
-                isEditing={isEditing}
-              />
-            ))
+            group.variants.map((sw) => {
+              const metadataCounts = metadataCountsByRouteId.get(sw.route.id);
+              return (
+                <SegmentRow
+                  key={sw.route.id}
+                  sw={sw}
+                  isSelected={sw.segment.isSelected}
+                  hasVariants={false}
+                  posIdx={posIdx}
+                  ridingTime={ridingTimeByRouteId.get(sw.route.id) ?? null}
+                  waypointCount={metadataCounts?.waypointCount ?? 0}
+                  starredCount={metadataCounts?.starredCount ?? 0}
+                  drag={drag}
+                  onSelectVariant={onSelectVariant}
+                  onRemove={onRemove}
+                  isEditing={isEditing}
+                  units={units}
+                />
+              );
+            })
           )}
         </View>
       );
 
       return decorate ? <ScaleDecorator>{content}</ScaleDecorator> : content;
     },
-    [localGroups, colors, pointsByRouteId, onSelectVariant, onRemove, isEditing],
+    [
+      colors,
+      isEditing,
+      metadataCountsByRouteId,
+      onRemove,
+      onSelectVariant,
+      ridingTimeByRouteId,
+      units,
+    ],
   );
 
   const renderItem = useCallback(
-    ({ item: group, drag, isActive: isDragging }: RenderItemParams<PositionGroup>) =>
-      renderGroup({ group, drag, isDragging, decorate: true }),
+    ({ item: group, getIndex, drag, isActive: isDragging }: RenderItemParams<PositionGroup>) =>
+      renderGroup({ group, index: getIndex() ?? 0, drag, isDragging, decorate: true }),
     [renderGroup],
   );
 
@@ -352,10 +410,15 @@ export default function SegmentList({
           keyExtractor={(item) => item.key}
           renderItem={renderItem}
           onDragEnd={handleDragEnd}
+          initialNumToRender={8}
+          maxToRenderPerBatch={8}
+          windowSize={3}
         />
       ) : (
-        localGroups.map((group) => (
-          <View key={group.key}>{renderGroup({ group, isDragging: false, decorate: false })}</View>
+        localGroups.map((group, index) => (
+          <View key={group.key}>
+            {renderGroup({ group, index, isDragging: false, decorate: false })}
+          </View>
         ))
       )}
       {isEditing && hasOrderChanged && (

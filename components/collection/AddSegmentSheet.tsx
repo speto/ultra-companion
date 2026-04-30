@@ -103,6 +103,10 @@ export default function AddSegmentSheet({
           keyExtractor={(r) => r.id}
           renderItem={renderItem}
           contentContainerStyle={{ paddingBottom: 100 }}
+          initialNumToRender={8}
+          maxToRenderPerBatch={8}
+          windowSize={3}
+          removeClippedSubviews={true}
         />
       )}
     </Animated.View>
