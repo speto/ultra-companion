@@ -25,6 +25,7 @@ import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import Svg, { Defs, LinearGradient, Path, Rect, Stop } from "react-native-svg";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useColorScheme } from "nativewind";
 import { Button } from "@/components/ui/button";
 import { ListDivider } from "@/components/ui/list-divider";
 import { Text } from "@/components/ui/text";
@@ -86,7 +87,11 @@ import type {
   WindRelative,
 } from "@/types";
 import { horizonToMeters } from "@/utils/horizon";
-import { OPEN_METEO_MAX_FORECAST_HOURS } from "@/constants";
+import {
+  OPEN_METEO_MAX_FORECAST_HOURS,
+  SEGMENT_COLORS_DARK,
+  SEGMENT_COLORS_LIGHT,
+} from "@/constants";
 
 const SPRING_CONFIG = { damping: 28, stiffness: 300, overshootClamping: true };
 type NativeDateTimePickerConfig = { NativeProps?: Record<string, unknown> };
@@ -128,11 +133,13 @@ const WEATHER_TOOLBAR_GAP_WIDTH = 8;
 const WEATHER_CHIP_BASE_WIDTH = 46;
 const WEATHER_CHIP_LABEL_CHAR_WIDTH = 7.2;
 const WEATHER_REFRESH_LABEL = "Refresh";
+const SEGMENT_SECTION_TINT_ALPHA = "1A";
 
 type TemperatureStripSample = WeatherPoint;
 type TimelineListItem =
   | { type: "weather"; key: string; point: WeatherPoint }
-  | { type: "section"; key: string; label: string };
+  | { type: "day"; key: string; label: string }
+  | { type: "section"; key: string; label: string; color?: string };
 type WeatherSampleMode = "all" | "hourly" | "distance";
 
 const WEATHER_SAMPLE_MODES: readonly WeatherSampleMode[] = ["all", "hourly", "distance"];
@@ -419,6 +426,29 @@ function formatHour(isoTime: string | null | undefined): string {
   const d = new Date(isoTime);
   if (Number.isNaN(d.getTime())) return "--:--";
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function weatherTimelineDate(point: WeatherPoint): Date | null {
+  const rowTime = point.etaTime ?? point.time;
+  if (!rowTime) return null;
+  const date = new Date(rowTime);
+  if (Number.isNaN(date.getTime())) return null;
+  return date;
+}
+
+function weatherTimelineDayKey(point: WeatherPoint): string | null {
+  const date = weatherTimelineDate(point);
+  if (!date) return null;
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function weatherTimelineDayLabel(point: WeatherPoint): string | null {
+  const date = weatherTimelineDate(point);
+  if (!date) return null;
+  return date.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
 }
 
 function formatTemp(tempC: number): string {
@@ -1039,10 +1069,12 @@ const WeatherRow = React.memo(function WeatherRow({
   point,
   temperatureMode,
   visibleMetrics,
+  showDivider = true,
 }: {
   point: WeatherPoint;
   temperatureMode: WeatherTemperatureDisplayMode;
   visibleMetrics: readonly WeatherTimelineMetricKey[];
+  showDivider?: boolean;
 }) {
   const colors = useThemeColors();
   const [expanded, setExpanded] = useState(false);
@@ -1273,31 +1305,49 @@ const WeatherRow = React.memo(function WeatherRow({
           </View>
         </View>
       )}
-      <ListDivider className="absolute bottom-0 left-3 right-0" />
+      {showDivider ? <ListDivider className="absolute bottom-0 left-3 right-0" /> : null}
     </Pressable>
   );
 });
 
-function TimelineSectionHeader({ label }: { label: string }) {
-  const colors = useThemeColors();
+function TimelineSectionHeader({ label, color }: { label: string; color?: string }) {
+  const tintColor = color ? `${color}${SEGMENT_SECTION_TINT_ALPHA}` : undefined;
   return (
     <View
-      className="px-3 pt-2.5 pb-1.5 bg-surface"
-      style={{
-        borderBottomWidth: StyleSheet.hairlineWidth,
-        borderBottomColor: colors.borderSubtle,
-        borderTopWidth: StyleSheet.hairlineWidth,
-        borderTopColor: colors.border,
-      }}
+      className="px-3 pt-1.5 pb-1 bg-surface items-center"
       accessibilityRole="header"
     >
-      <View className="flex-row items-center">
-        <View className="h-[1px] flex-1" style={{ backgroundColor: colors.border }} />
-        <Text className="mx-2 text-[11px] font-barlow-bold uppercase tracking-wide text-muted-foreground">
+      {color ? (
+        <View
+          className="rounded-full border px-2.5 py-0.5"
+          style={{ backgroundColor: tintColor, borderColor: color }}
+        >
+          <Text
+            className="text-[10px] font-barlow-sc-semibold uppercase tracking-wide"
+            style={{ color }}
+            numberOfLines={1}
+          >
+            {label}
+          </Text>
+        </View>
+      ) : (
+        <Text
+          className="text-[10px] font-barlow-medium uppercase tracking-wide text-muted-foreground"
+          numberOfLines={1}
+        >
           {label}
         </Text>
-        <View className="h-[1px] flex-1" style={{ backgroundColor: colors.border }} />
-      </View>
+      )}
+    </View>
+  );
+}
+
+function TimelineDayHeader({ label }: { label: string }) {
+  return (
+    <View className="px-3 pt-2 pb-0.5 bg-surface items-center" accessibilityRole="header">
+      <Text className="text-[11px] font-barlow-semibold text-muted-foreground" numberOfLines={1}>
+        {label}
+      </Text>
     </View>
   );
 }
@@ -2326,15 +2376,39 @@ function TimelineList({
   visibleMetrics: readonly WeatherTimelineMetricKey[];
 }) {
   const { bottom: safeBottom } = useSafeAreaInsets();
+  const { colorScheme } = useColorScheme();
   const listData = React.useMemo<TimelineListItem[]>(() => {
     const renderableTimeline = timeline.filter(isRenderableWeatherPoint);
     const horizonMeters = horizonToMeters(horizon);
+    const segmentColors = colorScheme === "dark" ? SEGMENT_COLORS_DARK : SEGMENT_COLORS_LIGHT;
     const items: TimelineListItem[] = [];
     let routeIndex = 0;
     let postFinishIndex = 0;
     let hasPostFinishHeader = false;
     let currentSegmentId: string | null = null;
     let hasSeenRouteSegment = false;
+    let currentDayKey: string | null = null;
+    const dayKeyCounts = new Map<string, number>();
+
+    const pushDayHeader = (point: WeatherPoint) => {
+      const dayKey = weatherTimelineDayKey(point);
+      if (!dayKey || dayKey === currentDayKey) return;
+      if (currentDayKey === null) {
+        dayKeyCounts.set(dayKey, (dayKeyCounts.get(dayKey) ?? 0) + 1);
+        currentDayKey = dayKey;
+        return;
+      }
+      const label = weatherTimelineDayLabel(point);
+      if (!label) return;
+      const occurrence = dayKeyCounts.get(dayKey) ?? 0;
+      dayKeyCounts.set(dayKey, occurrence + 1);
+      items.push({
+        type: "day",
+        key: occurrence === 0 ? `day-${dayKey}` : `day-${dayKey}-${occurrence + 1}`,
+        label,
+      });
+      currentDayKey = dayKey;
+    };
 
     for (const point of renderableTimeline) {
       if (point.phase === "route") {
@@ -2349,6 +2423,8 @@ function TimelineList({
           if (distanceFromCurrent < 0 || distanceFromCurrent > horizonMeters) continue;
         }
 
+        pushDayHeader(point);
+
         const segment = segmentForDistance(point.routeDistanceMeters, segments);
         if (segment && segment.routeId !== currentSegmentId) {
           if (hasSeenRouteSegment) {
@@ -2356,6 +2432,7 @@ function TimelineList({
               type: "section",
               key: `segment-${segment.position}-${segment.routeId}`,
               label: segmentDividerLabel(segment),
+              color: segmentColors[segment.position % SEGMENT_COLORS_LIGHT.length],
             });
           }
           currentSegmentId = segment.routeId;
@@ -2372,6 +2449,8 @@ function TimelineList({
       }
 
       if (point.phase === "post-finish") {
+        pushDayHeader(point);
+
         if (!hasPostFinishHeader) {
           items.push({
             type: "section",
@@ -2391,20 +2470,25 @@ function TimelineList({
     }
 
     return items;
-  }, [currentDistanceMeters, horizon, sampleMode, segments, timeline]);
+  }, [colorScheme, currentDistanceMeters, horizon, sampleMode, segments, timeline]);
 
   const renderItem = React.useCallback<ListRenderItem<TimelineListItem>>(
-    ({ item }) => {
-      if (item.type === "section") return <TimelineSectionHeader label={item.label} />;
+    ({ item, index }) => {
+      if (item.type === "day") return <TimelineDayHeader label={item.label} />;
+      if (item.type === "section") {
+        return <TimelineSectionHeader label={item.label} color={item.color} />;
+      }
+      const nextItem = listData[index + 1];
       return (
         <WeatherRow
           point={item.point}
           temperatureMode={temperatureMode}
           visibleMetrics={visibleMetrics}
+          showDivider={nextItem?.type === "weather"}
         />
       );
     },
-    [temperatureMode, visibleMetrics],
+    [listData, temperatureMode, visibleMetrics],
   );
 
   return (

@@ -30,6 +30,7 @@ interface ClimbListItemProps {
   onSaveEditIntentStart?: () => void;
   ordinal?: { current: number; total: number } | null;
   snappedPositionPresent?: boolean;
+  showDivider?: boolean;
 }
 
 function ClimbListItem({
@@ -47,6 +48,7 @@ function ClimbListItem({
   onSaveEditIntentStart,
   ordinal,
   snappedPositionPresent = false,
+  showDivider = true,
 }: ClimbListItemProps) {
   const colors = useThemeColors();
   const units = useSettingsStore((s) => s.units);
@@ -212,7 +214,7 @@ function ClimbListItem({
           <MetricValue key={metric.key} value={metric.value} />
         ))}
       </View>
-      <ListDivider className="absolute bottom-0 left-4 right-0" />
+      {showDivider ? <ListDivider className="absolute bottom-0 left-4 right-0" /> : null}
     </TouchableOpacity>
   );
 }

@@ -1,8 +1,9 @@
 import React, { useMemo, useState, useCallback, useDeferredValue, useEffect, useRef } from "react";
-import { View, FlatList } from "react-native";
+import { View, FlatList, type ListRenderItem } from "react-native";
 import Animated, { useAnimatedStyle, interpolate, Extrapolation } from "react-native-reanimated";
 import type { SharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useColorScheme } from "nativewind";
 import { Text } from "@/components/ui/text";
 import { MapPin } from "lucide-react-native";
 import { useThemeColors } from "@/theme";
@@ -11,18 +12,29 @@ import { useRouteStore } from "@/store/routeStore";
 import { usePoiStore } from "@/store/poiStore";
 import { usePanelStore } from "@/store/panelStore";
 import { useEtaStore } from "@/store/etaStore";
-import { POI_CATEGORIES, POI_BEHIND_THRESHOLD_M } from "@/constants";
+import {
+  POI_CATEGORIES,
+  POI_BEHIND_THRESHOLD_M,
+  SEGMENT_COLORS_DARK,
+  SEGMENT_COLORS_LIGHT,
+} from "@/constants";
 import { horizonWindow } from "@/utils/horizon";
 import POIFilterBar from "@/components/map/POIFilterBar";
 import PanelSearchInput from "@/components/map/PanelSearchInput";
 import { hasExpandablePoiDetails } from "@/utils/poiActions";
-import type { ActiveRouteData, POI, PlaceViewModel } from "@/types";
+import type { ActiveRouteData, POI, PlaceViewModel, StitchedSegmentInfo } from "@/types";
 import { usePlaceStore } from "@/store/placeStore";
 import { useStarredStore } from "@/store/starredStore";
 import PlaceListItem from "@/components/place/PlaceListItem";
 import { filterPlacesByFoodAvailability } from "@/utils/placeAdapter";
 
 const DISTANCE_BUCKET_M = 100;
+const SEGMENT_SECTION_TINT_ALPHA = "1A";
+
+type POIListDataItem =
+  | { type: "place"; key: string; place: PlaceViewModel }
+  | { type: "day"; key: string; label: string }
+  | { type: "section"; key: string; label: string; color?: string };
 
 interface POITabContentProps {
   activeData: ActiveRouteData | null;
@@ -36,6 +48,7 @@ export default function POITabContent({
   compactOffset,
 }: POITabContentProps) {
   const colors = useThemeColors();
+  const { colorScheme } = useColorScheme();
   const { bottom: safeBottom } = useSafeAreaInsets();
   const snappedPosition = useRouteStore((s) => s.snappedPosition);
   const starredKeys = useStarredStore((s) => s.starredKeys);
@@ -47,6 +60,7 @@ export default function POITabContent({
   const foodAvailabilityCustomTime = usePoiStore((s) => s.foodAvailabilityCustomTime);
   const showPOIsOnMap = useMapStore((s) => s.showPOIs);
   const getETAToPOI = useEtaStore((s) => s.getETAToPOI);
+  const getETAToDistance = useEtaStore((s) => s.getETAToDistance);
   const etaRouteId = useEtaStore((s) => s.routeId);
   const etaCacheVersion = useEtaStore((s) => s.cacheVersion);
   const etaCachedPointsLength = useEtaStore((s) => s.cachedPoints?.length ?? 0);
@@ -208,20 +222,83 @@ export default function POITabContent({
     });
   }, [selectedPlace, selectedPOI]);
 
-  const renderItem = useCallback(
-    ({ item }: { item: PlaceViewModel }) => (
-      <PlaceListItem
-        place={item}
-        currentDistAlongRoute={bucketedCurrentDist}
-        segmentName={segmentNameByRouteId.get(item.routeId) ?? null}
-        showAbsoluteDistance={segments != null}
-        onPress={handlePlacePress}
-        expanded={expandedPlaceIds.has(item.placeId)}
-        onToggleExpansion={handleTogglePlaceExpansion}
-      />
-    ),
+  const finalPlaces = isExpanded ? deferredSearchFilteredPlaces : deferredAvailabilityFilteredPlaces;
+  const listData = useMemo<POIListDataItem[]>(() => {
+    void etaCacheKey;
+    const segmentColors = colorScheme === "dark" ? SEGMENT_COLORS_DARK : SEGMENT_COLORS_LIGHT;
+    const items: POIListDataItem[] = [];
+    let currentSegmentId: string | null = null;
+    let hasSeenRouteSegment = false;
+    let currentDayKey: string | null = null;
+    const dayKeyCounts = new Map<string, number>();
+
+    const pushDayHeader = (etaDate: Date | null | undefined) => {
+      if (!etaDate || Number.isNaN(etaDate.getTime())) return;
+      const dayKey = etaDayKey(etaDate);
+      if (dayKey === currentDayKey) return;
+      if (currentDayKey === null) {
+        dayKeyCounts.set(dayKey, (dayKeyCounts.get(dayKey) ?? 0) + 1);
+        currentDayKey = dayKey;
+        return;
+      }
+      const occurrence = dayKeyCounts.get(dayKey) ?? 0;
+      dayKeyCounts.set(dayKey, occurrence + 1);
+      items.push({
+        type: "day",
+        key: occurrence === 0 ? `poi-day-${dayKey}` : `poi-day-${dayKey}-${occurrence + 1}`,
+        label: etaDayLabel(etaDate),
+      });
+      currentDayKey = dayKey;
+    };
+
+    for (const place of finalPlaces) {
+      const etaResult = getETAToDistance(place.effectiveDistanceAlongRouteMeters);
+      pushDayHeader(etaResult?.eta);
+
+      const segment = segmentForDistance(place.effectiveDistanceAlongRouteMeters, segments);
+      if (segment && segment.routeId !== currentSegmentId) {
+        if (hasSeenRouteSegment) {
+          items.push({
+            type: "section",
+            key: `poi-segment-${segment.position}-${segment.routeId}`,
+            label: segmentDividerLabel(segment),
+            color: segmentColors[segment.position % SEGMENT_COLORS_LIGHT.length],
+          });
+        }
+        currentSegmentId = segment.routeId;
+        hasSeenRouteSegment = true;
+      }
+
+      items.push({ type: "place", key: `poi-place-${place.placeId}`, place });
+    }
+
+    return items;
+  }, [colorScheme, etaCacheKey, finalPlaces, getETAToDistance, segments]);
+
+  const renderItem = useCallback<ListRenderItem<POIListDataItem>>(
+    ({ item, index }) => {
+      if (item.type === "day") return <TimelineDayHeader label={item.label} />;
+      if (item.type === "section") {
+        return <TimelineSectionHeader label={item.label} color={item.color} />;
+      }
+
+      const nextItem = listData[index + 1];
+      return (
+        <PlaceListItem
+          place={item.place}
+          currentDistAlongRoute={bucketedCurrentDist}
+          segmentName={segmentNameByRouteId.get(item.place.routeId) ?? null}
+          showAbsoluteDistance={segments != null}
+          onPress={handlePlacePress}
+          expanded={expandedPlaceIds.has(item.place.placeId)}
+          onToggleExpansion={handleTogglePlaceExpansion}
+          showDivider={nextItem?.type === "place"}
+        />
+      );
+    },
     [
       bucketedCurrentDist,
+      listData,
       segmentNameByRouteId,
       segments,
       handlePlacePress,
@@ -270,10 +347,9 @@ export default function POITabContent({
     );
   }
 
-  const listData = isExpanded ? deferredSearchFilteredPlaces : deferredAvailabilityFilteredPlaces;
   const showEmptySavedCopy = showSavedOnly && !hasSavedOnRoute;
   const statusText = buildPOIStatusText({
-    listCount: listData.length,
+    listCount: finalPlaces.length,
     showSavedOnly,
     isCategoryFilterActive,
     showPOIsOnMap,
@@ -311,10 +387,10 @@ export default function POITabContent({
             during the ride.
           </Text>
         </View>
-      ) : listData.length > 0 ? (
+      ) : finalPlaces.length > 0 ? (
         <FlatList
           data={listData}
-          keyExtractor={(item) => item.placeId}
+          keyExtractor={(item) => item.key}
           renderItem={renderItem}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingBottom: isExpanded ? 8 : safeBottom }}
@@ -331,6 +407,71 @@ export default function POITabContent({
           </Text>
         </View>
       )}
+    </View>
+  );
+}
+
+function segmentForDistance(
+  distanceMeters: number,
+  segments: StitchedSegmentInfo[] | null | undefined,
+): StitchedSegmentInfo | null {
+  if (!segments || segments.length <= 1 || !Number.isFinite(distanceMeters)) return null;
+  return (
+    segments.find((segment, index) => {
+      const start = segment.distanceOffsetMeters;
+      const end = start + segment.segmentDistanceMeters;
+      return distanceMeters >= start && (distanceMeters < end || index === segments.length - 1);
+    }) ?? null
+  );
+}
+
+function segmentDividerLabel(segment: StitchedSegmentInfo): string {
+  return `Segment ${segment.position + 1} · ${segment.routeName}`;
+}
+
+function etaDayKey(date: Date): string {
+  return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+}
+
+function etaDayLabel(date: Date): string {
+  return date.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+}
+
+function TimelineSectionHeader({ label, color }: { label: string; color?: string }) {
+  const tintColor = color ? `${color}${SEGMENT_SECTION_TINT_ALPHA}` : undefined;
+  return (
+    <View className="px-3 pt-1.5 pb-1 bg-surface items-center" accessibilityRole="header">
+      {color ? (
+        <View
+          className="rounded-full border px-2.5 py-0.5"
+          style={{ backgroundColor: tintColor, borderColor: color }}
+        >
+          <Text
+            className="text-[10px] font-barlow-sc-semibold uppercase tracking-wide"
+            style={{ color }}
+            numberOfLines={1}
+          >
+            {label}
+          </Text>
+        </View>
+      ) : (
+        <Text
+          className="text-[10px] font-barlow-medium uppercase tracking-wide text-muted-foreground"
+          numberOfLines={1}
+        >
+          {label}
+        </Text>
+      )}
+    </View>
+  );
+}
+
+function TimelineDayHeader({ label }: { label: string }) {
+  return (
+    <View className="px-3 pt-2 pb-0.5 bg-surface items-center" accessibilityRole="header">
+      <Text className="text-[11px] font-barlow-semibold text-muted-foreground" numberOfLines={1}>
+        {label}
+      </Text>
     </View>
   );
 }

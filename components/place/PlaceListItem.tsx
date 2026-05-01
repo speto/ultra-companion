@@ -40,6 +40,7 @@ interface PlaceListItemProps {
   onToggleExpansion?: (place: PlaceViewModel) => void;
   segmentName?: string | null;
   showAbsoluteDistance?: boolean;
+  showDivider?: boolean;
 }
 
 function PlaceListItem({
@@ -50,6 +51,7 @@ function PlaceListItem({
   onToggleExpansion,
   segmentName = null,
   showAbsoluteDistance = false,
+  showDivider = true,
 }: PlaceListItemProps) {
   const colors = useThemeColors();
   const units = useSettingsStore((s) => s.units);
@@ -387,7 +389,7 @@ function PlaceListItem({
           )}
         </View>
       )}
-      <ListDivider className="absolute bottom-0 left-[60px] right-0" />
+      {showDivider ? <ListDivider className="absolute bottom-0 left-[60px] right-0" /> : null}
     </View>
   );
 }

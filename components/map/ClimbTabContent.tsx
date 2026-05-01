@@ -6,8 +6,10 @@ import {
   FlatList,
   TouchableOpacity,
   type AccessibilityActionEvent,
+  type ListRenderItem,
 } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { useColorScheme } from "nativewind";
 import Animated, {
   Extrapolation,
   interpolate,
@@ -31,27 +33,37 @@ import { useThemeColors } from "@/theme";
 import { useSettingsStore } from "@/store/settingsStore";
 import { useRouteStore } from "@/store/routeStore";
 import { useClimbStore } from "@/store/climbStore";
+import { useEtaStore } from "@/store/etaStore";
 import { usePanelStore } from "@/store/panelStore";
 import { extractRouteSlice } from "@/utils/geo";
 import ElevationProfile from "@/components/elevation/ElevationProfile";
 import ClimbListItem from "@/components/climb/ClimbListItem";
 import PanelSearchInput from "@/components/map/PanelSearchInput";
 import { getAdjacentClimb, resolveActiveClimb } from "@/utils/climbSelect";
+import { SEGMENT_COLORS_DARK, SEGMENT_COLORS_LIGHT } from "@/constants";
 import { CLIMB_DIFFICULTY_LABELS, getClimbDifficulty } from "@/constants/climbHelpers";
 import { formatDistance, formatElevation } from "@/utils/formatters";
-import type { Climb, ActiveRouteData, ClimbGraphSize } from "@/types";
+import type { Climb, ActiveRouteData, ClimbGraphSize, StitchedSegmentInfo } from "@/types";
 import type { DistanceMarkerInterval } from "@/utils/routeMarkers";
 
 const EXPANDED_LIST_MOUNT_DELAY_MS = 180;
 const SWIPE_HINT_HIDE_DELAY_MS = 7000;
 const DISTANCE_BUCKET_M = 100;
 const CLIMB_ROW_HEIGHT = 72;
+const CLIMB_DAY_HEADER_HEIGHT = 26;
+const CLIMB_SECTION_HEADER_HEIGHT = 30;
 const CLIMB_SEARCH_HEIGHT = 49;
+const SEGMENT_SECTION_TINT_ALPHA = "1A";
 const CLIMB_GRAPH_HEIGHT: Record<ClimbGraphSize, { min: number; ratio: number }> = {
   small: { min: 132, ratio: 0.34 },
   medium: { min: 184, ratio: 0.48 },
   large: { min: 264, ratio: 0.68 },
 };
+
+type ClimbListDataItem =
+  | { type: "climb"; key: string; climb: Climb }
+  | { type: "day"; key: string; label: string }
+  | { type: "section"; key: string; label: string; color?: string };
 
 interface ClimbTabContentProps {
   activeData: ActiveRouteData | null;
@@ -69,6 +81,7 @@ export default function ClimbTabContent({
   compactOffset,
 }: ClimbTabContentProps) {
   const colors = useThemeColors();
+  const { colorScheme } = useColorScheme();
   const { bottom: safeBottom } = useSafeAreaInsets();
   const units = useSettingsStore((s) => s.units);
   const climbGraphSize = useSettingsStore((s) => s.climbGraphSize);
@@ -81,6 +94,12 @@ export default function ClimbTabContent({
   const snappedPointIndex = useRouteStore((s) => s.snappedPosition?.pointIndex ?? null);
   const getClimbsForDisplay = useClimbStore((s) => s.getClimbsForDisplay);
   const allClimbs = useClimbStore((s) => s.climbs);
+  const getETAToDistance = useEtaStore((s) => s.getETAToDistance);
+  const etaRouteId = useEtaStore((s) => s.routeId);
+  const etaCacheVersion = useEtaStore((s) => s.cacheVersion);
+  const etaCachedPointsLength = useEtaStore((s) => s.cachedPoints?.length ?? 0);
+  const etaCumulativeTimeLength = useEtaStore((s) => s.cumulativeTime?.length ?? 0);
+  const etaCacheKey = `${etaRouteId ?? ""}:${etaCacheVersion}:${etaCachedPointsLength}:${etaCumulativeTimeLength}`;
   const selectedClimb = useClimbStore((s) => s.selectedClimb);
   const setSelectedClimb = useClimbStore((s) => s.setSelectedClimb);
   const renameClimb = useClimbStore((s) => s.renameClimb);
@@ -104,7 +123,7 @@ export default function ClimbTabContent({
   const [searchQuery, setSearchQuery] = useState("");
   const [showSwipeHintThisVisit, setShowSwipeHintThisVisit] = useState(true);
   const deferredSearchQuery = useDeferredValue(searchQuery.trim().toLowerCase());
-  const listRef = useRef<FlatList<Climb>>(null);
+  const listRef = useRef<FlatList<ClimbListDataItem>>(null);
   const lastCommittedEditKeyRef = useRef<string | null>(null);
   const consumeNextEditDismissActionRef = useRef(false);
   const saveEditIntentRef = useRef(false);
@@ -317,6 +336,71 @@ export default function ClimbTabContent({
       .map((item) => item.climb);
   }, [deferredSearchQuery, searchableClimbs, showClimbSearch, sortedClimbs]);
 
+  const expandedListData = useMemo<ClimbListDataItem[]>(() => {
+    void etaCacheKey;
+    const segmentColors = colorScheme === "dark" ? SEGMENT_COLORS_DARK : SEGMENT_COLORS_LIGHT;
+    const items: ClimbListDataItem[] = [];
+    let currentSegmentId: string | null = null;
+    let hasSeenRouteSegment = false;
+    let currentDayKey: string | null = null;
+    const dayKeyCounts = new Map<string, number>();
+
+    const pushDayHeader = (etaDate: Date | null | undefined) => {
+      if (!etaDate || Number.isNaN(etaDate.getTime())) return;
+      const dayKey = etaDayKey(etaDate);
+      if (dayKey === currentDayKey) return;
+      if (currentDayKey === null) {
+        dayKeyCounts.set(dayKey, (dayKeyCounts.get(dayKey) ?? 0) + 1);
+        currentDayKey = dayKey;
+        return;
+      }
+      const occurrence = dayKeyCounts.get(dayKey) ?? 0;
+      dayKeyCounts.set(dayKey, occurrence + 1);
+      items.push({
+        type: "day",
+        key: occurrence === 0 ? `climb-day-${dayKey}` : `climb-day-${dayKey}-${occurrence + 1}`,
+        label: etaDayLabel(etaDate),
+      });
+      currentDayKey = dayKey;
+    };
+
+    for (const climbItem of filteredClimbs) {
+      const etaResult = getETAToDistance(climbItem.startDistanceMeters);
+      pushDayHeader(etaResult?.eta);
+
+      const segment = segmentForDistance(climbItem.startDistanceMeters, segments);
+      if (segment && segment.routeId !== currentSegmentId) {
+        if (hasSeenRouteSegment) {
+          items.push({
+            type: "section",
+            key: `climb-segment-${segment.position}-${segment.routeId}`,
+            label: segmentDividerLabel(segment),
+            color: segmentColors[segment.position % SEGMENT_COLORS_LIGHT.length],
+          });
+        }
+        currentSegmentId = segment.routeId;
+        hasSeenRouteSegment = true;
+      }
+
+      items.push({
+        type: "climb",
+        key: `climb-row-${climbItem.routeId}-${climbItem.id}-${Math.round(climbItem.startDistanceMeters)}`,
+        climb: climbItem,
+      });
+    }
+
+    return items;
+  }, [colorScheme, etaCacheKey, filteredClimbs, getETAToDistance, segments]);
+
+  const expandedListOffsets = useMemo(() => {
+    let offset = 0;
+    return expandedListData.map((item) => {
+      const itemOffset = offset;
+      offset += climbListItemHeight(item);
+      return itemOffset;
+    });
+  }, [expandedListData]);
+
   const previousClimb = useMemo(() => {
     if (!climb) return null;
     return getAdjacentClimb(sortedClimbs, climb.id, "prev");
@@ -379,8 +463,8 @@ export default function ClimbTabContent({
 
   const selectedClimbIndex = useMemo(() => {
     if (!climb) return -1;
-    return filteredClimbs.findIndex((item) => item.id === climb.id);
-  }, [climb, filteredClimbs]);
+    return expandedListData.findIndex((item) => item.type === "climb" && item.climb.id === climb.id);
+  }, [climb, expandedListData]);
 
   const cycleGraphSize = useCallback(() => {
     if (cancelEditIfNeeded()) return;
@@ -516,31 +600,30 @@ export default function ClimbTabContent({
   }, [shouldShowSwipeHint]);
 
   const getItemLayout = useCallback(
-    (_: ArrayLike<Climb> | null | undefined, index: number) => ({
-      length: CLIMB_ROW_HEIGHT,
-      offset: CLIMB_ROW_HEIGHT * index,
+    (_: ArrayLike<ClimbListDataItem> | null | undefined, index: number) => ({
+      length: climbListItemHeight(expandedListData[index]),
+      offset: expandedListOffsets[index] ?? 0,
       index,
     }),
-    [],
+    [expandedListData, expandedListOffsets],
   );
 
   const handleScrollToIndexFailed = useCallback(
     (info: { index: number; averageItemLength: number }) => {
-      if (info.averageItemLength > 0) {
-        listRef.current?.scrollToOffset({
-          offset: Math.max(0, info.averageItemLength * info.index),
-          animated: false,
-        });
-      }
+      const fallbackOffset = info.averageItemLength > 0 ? info.averageItemLength * info.index : 0;
+      listRef.current?.scrollToOffset({
+        offset: Math.max(0, expandedListOffsets[info.index] ?? fallbackOffset),
+        animated: false,
+      });
       setTimeout(() => {
         listRef.current?.scrollToIndex({ index: info.index, animated: false, viewPosition: 0 });
       }, 80);
     },
-    [],
+    [expandedListOffsets],
   );
 
-  const renderClimbListItem = useCallback(
-    ({ item }: { item: Climb }) => {
+  const renderClimbRow = useCallback(
+    (item: Climb, showDivider = true) => {
       const rawRouteClimbs = allClimbs[item.routeId] ?? [];
       const editableSource = item.sourceClimbs?.[0] ?? item;
       const editableSourceClimbs = allClimbs[editableSource.routeId] ?? rawRouteClimbs;
@@ -561,6 +644,7 @@ export default function ClimbTabContent({
           onSaveEditIntentStart={handleSaveEditIntentStart}
           ordinal={ordinalByClimbId.get(item.id) ?? null}
           snappedPositionPresent={snappedPositionPresent}
+          showDivider={showDivider}
         />
       );
     },
@@ -580,6 +664,25 @@ export default function ClimbTabContent({
       ordinalByClimbId,
       snappedPositionPresent,
     ],
+  );
+
+  const renderClimbListItem = useCallback<ListRenderItem<ClimbListDataItem>>(
+    ({ item, index }) => {
+      if (item.type === "day") {
+        return <TimelineDayHeader label={item.label} height={CLIMB_DAY_HEADER_HEIGHT} />;
+      }
+      if (item.type === "section") {
+        return (
+          <TimelineSectionHeader
+            label={item.label}
+            color={item.color}
+            height={CLIMB_SECTION_HEADER_HEIGHT}
+          />
+        );
+      }
+      return renderClimbRow(item.climb, expandedListData[index + 1]?.type === "climb");
+    },
+    [expandedListData, renderClimbRow],
   );
 
   // Empty state
@@ -710,8 +813,8 @@ export default function ClimbTabContent({
         filteredClimbs.length > 0 ? (
           <FlatList
             ref={listRef}
-            data={filteredClimbs}
-            keyExtractor={(item) => item.id}
+            data={expandedListData}
+            keyExtractor={(item) => item.key}
             renderItem={renderClimbListItem}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
@@ -733,8 +836,96 @@ export default function ClimbTabContent({
           </View>
         )
       ) : (
-        <View>{renderClimbListItem({ item: climb })}</View>
+        <View>{renderClimbRow(climb)}</View>
       )}
+    </View>
+  );
+}
+
+function climbListItemHeight(item: ClimbListDataItem | undefined): number {
+  if (!item) return CLIMB_ROW_HEIGHT;
+  if (item.type === "day") return CLIMB_DAY_HEADER_HEIGHT;
+  if (item.type === "section") return CLIMB_SECTION_HEADER_HEIGHT;
+  return CLIMB_ROW_HEIGHT;
+}
+
+function segmentForDistance(
+  distanceMeters: number,
+  segments: StitchedSegmentInfo[] | null | undefined,
+): StitchedSegmentInfo | null {
+  if (!segments || segments.length <= 1 || !Number.isFinite(distanceMeters)) return null;
+  return (
+    segments.find((segment, index) => {
+      const start = segment.distanceOffsetMeters;
+      const end = start + segment.segmentDistanceMeters;
+      return distanceMeters >= start && (distanceMeters < end || index === segments.length - 1);
+    }) ?? null
+  );
+}
+
+function segmentDividerLabel(segment: StitchedSegmentInfo): string {
+  return `Segment ${segment.position + 1} · ${segment.routeName}`;
+}
+
+function etaDayKey(date: Date): string {
+  return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+}
+
+function etaDayLabel(date: Date): string {
+  return date.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+}
+
+function TimelineSectionHeader({
+  label,
+  color,
+  height,
+}: {
+  label: string;
+  color?: string;
+  height?: number;
+}) {
+  const tintColor = color ? `${color}${SEGMENT_SECTION_TINT_ALPHA}` : undefined;
+  return (
+    <View
+      className="px-3 pt-1.5 pb-1 bg-surface items-center"
+      style={height == null ? undefined : { height }}
+      accessibilityRole="header"
+    >
+      {color ? (
+        <View
+          className="rounded-full border px-2.5 py-0.5"
+          style={{ backgroundColor: tintColor, borderColor: color }}
+        >
+          <Text
+            className="text-[10px] font-barlow-sc-semibold uppercase tracking-wide"
+            style={{ color }}
+            numberOfLines={1}
+          >
+            {label}
+          </Text>
+        </View>
+      ) : (
+        <Text
+          className="text-[10px] font-barlow-medium uppercase tracking-wide text-muted-foreground"
+          numberOfLines={1}
+        >
+          {label}
+        </Text>
+      )}
+    </View>
+  );
+}
+
+function TimelineDayHeader({ label, height }: { label: string; height?: number }) {
+  return (
+    <View
+      className="px-3 pt-2 pb-0.5 bg-surface items-center"
+      style={height == null ? undefined : { height }}
+      accessibilityRole="header"
+    >
+      <Text className="text-[11px] font-barlow-semibold text-muted-foreground" numberOfLines={1}>
+        {label}
+      </Text>
     </View>
   );
 }
