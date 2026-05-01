@@ -239,11 +239,61 @@ describe("serializeCollectionToGPX", () => {
     });
 
     expect(gpx.indexOf("  <wpt")).toBeLessThan(gpx.indexOf("  <trk>"));
-    expect(gpx).toContain(`  <wpt lat="48.22" lon="16.39">
-    <name>Cafe &quot;Gravel&quot;</name>
-    <type>groceries</type>
-    <desc>Source: osm; Category: groceries; Note: Starred stop &amp; resupply; Phone: +43 9 876; Distance from route: 28 m; Distance along route: 7890 m</desc>
+    expect(gpx).not.toContain("<cmt>");
+    expect(gpx).toContain(`  <wpt lat="48.2" lon="16.2">
+    <name>Cafe &quot;Gravel&quot; (28 m off route)</name>
+    <desc></desc>
+    <sym>Food</sym>
+    <type>Food</type>
   </wpt>`);
+  });
+
+  it("maps POIs to the same waypoint shape used by imported route waypoints", () => {
+    const gpx = serializeRouteToGPX(baseRoute, {
+      poisAsWaypoints: [
+        {
+          ...starredPoi,
+          category: "water",
+          distanceAlongRouteMeters: 617,
+          distanceFromRouteMeters: 120,
+          tags: {},
+        },
+      ],
+    });
+
+    expect(gpx).toContain(`  <wpt lat="48.20875" lon="16.37279">
+    <name>Cafe &quot;Gravel&quot; (120 m off route)</name>
+    <desc></desc>
+    <sym>Water</sym>
+    <type>Water</type>
+  </wpt>`);
+  });
+
+  it("uses confirmed Karoo-importable labels for starred POI categories", () => {
+    const gpx = serializeRouteToGPX(baseRoute, {
+      poisAsWaypoints: [
+        { ...starredPoi, id: "restaurant", category: "restaurant", distanceAlongRouteMeters: 0 },
+        { ...starredPoi, id: "camp", category: "camp_site", distanceAlongRouteMeters: 100 },
+        { ...starredPoi, id: "shelter", category: "shelter", distanceAlongRouteMeters: 200 },
+        { ...starredPoi, id: "bus", category: "bus_stop", distanceAlongRouteMeters: 300 },
+        { ...starredPoi, id: "cemetery", category: "cemetery", distanceAlongRouteMeters: 400 },
+        { ...starredPoi, id: "school", category: "school", distanceAlongRouteMeters: 500 },
+        { ...starredPoi, id: "sports", category: "sports", distanceAlongRouteMeters: 600 },
+        { ...starredPoi, id: "bar", category: "bar_pub", distanceAlongRouteMeters: 700 },
+        { ...starredPoi, id: "bike", category: "bike_shop", distanceAlongRouteMeters: 800 },
+      ],
+    });
+
+    expect(gpx).toContain("<sym>Restaurant</sym>");
+    expect(gpx).toContain("<type>Restaurant</type>");
+    expect(gpx).toContain("<sym>Camping</sym>");
+    expect(gpx).toContain("<type>Camping</type>");
+    expect(gpx.match(/<sym>Camping<\/sym>/g)).toHaveLength(5);
+    expect(gpx.match(/<type>Camping<\/type>/g)).toHaveLength(5);
+    expect(gpx.match(/<sym>Water<\/sym>/g)).toHaveLength(2);
+    expect(gpx.match(/<type>Water<\/type>/g)).toHaveLength(2);
+    expect(gpx).toContain("<sym>Generic</sym>");
+    expect(gpx).toContain("<type>Generic</type>");
   });
 
   it("omits GPX waypoints from collections when none are supplied", () => {

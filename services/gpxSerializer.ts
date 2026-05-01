@@ -1,4 +1,11 @@
-import type { POI, RoutePoint, RouteWaypoint, RouteWithPoints, StitchedCollection } from "@/types";
+import type {
+  POI,
+  POICategory,
+  RoutePoint,
+  RouteWaypoint,
+  RouteWithPoints,
+  StitchedCollection,
+} from "@/types";
 
 export interface GPXSerializerOptions {
   routeWaypoints?: RouteWaypoint[];
@@ -14,8 +21,12 @@ function escapeXml(value: string): string {
     .replaceAll("'", "&apos;");
 }
 
+function formatCoordinate(value: number): string {
+  return Number(value.toFixed(6)).toString();
+}
+
 function serializeTrackPoint(point: RoutePoint): string {
-  const attributes = `lat="${point.latitude}" lon="${point.longitude}"`;
+  const attributes = `lat="${formatCoordinate(point.latitude)}" lon="${formatCoordinate(point.longitude)}"`;
 
   if (point.elevationMeters === null) {
     return `      <trkpt ${attributes} />`;
@@ -24,45 +35,72 @@ function serializeTrackPoint(point: RoutePoint): string {
   return `      <trkpt ${attributes}>\n        <ele>${point.elevationMeters}</ele>\n      </trkpt>`;
 }
 
-function getPoiTag(poi: POI, keys: string[]): string | null {
-  for (const key of keys) {
-    const value = poi.tags[key];
+function interpolateRoutePointAtDistance(points: RoutePoint[], distanceMeters: number): RoutePoint {
+  if (distanceMeters <= points[0].distanceFromStartMeters) return points[0];
 
-    if (value) {
-      return value;
-    }
+  for (let i = 1; i < points.length; i++) {
+    const prev = points[i - 1];
+    const next = points[i];
+
+    if (distanceMeters > next.distanceFromStartMeters) continue;
+
+    const spanMeters = next.distanceFromStartMeters - prev.distanceFromStartMeters;
+    if (spanMeters <= 0) return next;
+
+    const ratio = (distanceMeters - prev.distanceFromStartMeters) / spanMeters;
+    const elevationMeters =
+      prev.elevationMeters != null && next.elevationMeters != null
+        ? prev.elevationMeters + (next.elevationMeters - prev.elevationMeters) * ratio
+        : null;
+
+    return {
+      latitude: prev.latitude + (next.latitude - prev.latitude) * ratio,
+      longitude: prev.longitude + (next.longitude - prev.longitude) * ratio,
+      elevationMeters,
+      distanceFromStartMeters: distanceMeters,
+      idx: prev.idx,
+    };
   }
 
-  return null;
+  return points[points.length - 1];
 }
 
-function buildPOIWaypointDescription(poi: POI): string {
-  const parts = [`Source: ${poi.source}`, `Category: ${poi.category}`];
-  const description = getPoiTag(poi, ["description", "desc"]);
-  const note = getPoiTag(poi, ["note"]);
-  const phone = getPoiTag(poi, ["phone", "contact:phone"]);
-  const openingHours = getPoiTag(poi, ["opening_hours", "openingHours"]);
+const POI_WAYPOINT_METADATA: Record<POICategory, { fallbackName: string; karooLabel: string }> = {
+  water: { fallbackName: "Water", karooLabel: "Water" },
+  groceries: { fallbackName: "Groceries", karooLabel: "Food" },
+  gas_station: { fallbackName: "Gas Station", karooLabel: "Food" },
+  bakery: { fallbackName: "Bakery", karooLabel: "Food" },
+  coffee: { fallbackName: "Coffee", karooLabel: "Cafe" },
+  restaurant: { fallbackName: "Restaurant", karooLabel: "Restaurant" },
+  bar_pub: { fallbackName: "Bar / Pub", karooLabel: "Water" },
+  toilet_shower: { fallbackName: "WC", karooLabel: "Generic" },
+  shelter: { fallbackName: "Shelter", karooLabel: "Camping" },
+  bus_stop: { fallbackName: "Bus Shelter", karooLabel: "Camping" },
+  camp_site: { fallbackName: "Camp Site", karooLabel: "Camping" },
+  pharmacy: { fallbackName: "Pharmacy", karooLabel: "Generic" },
+  hospital_er: { fallbackName: "Hospital / ER", karooLabel: "Generic" },
+  defibrillator: { fallbackName: "Defibrillator", karooLabel: "Generic" },
+  emergency_phone: { fallbackName: "Emergency Phone", karooLabel: "Generic" },
+  ambulance_station: { fallbackName: "Ambulance", karooLabel: "Generic" },
+  bike_shop: { fallbackName: "Bike Shop", karooLabel: "Generic" },
+  repair_station: { fallbackName: "Repair Station", karooLabel: "Generic" },
+  pump_air: { fallbackName: "Pump / Air", karooLabel: "Generic" },
+  train_station: { fallbackName: "Train Station", karooLabel: "Generic" },
+  sports: { fallbackName: "Sports", karooLabel: "Camping" },
+  cemetery: { fallbackName: "Cemetery", karooLabel: "Water" },
+  school: { fallbackName: "School", karooLabel: "Camping" },
+};
 
-  if (description) {
-    parts.push(`Description: ${description}`);
+function getPOIWaypointMetadata(poi: POI) {
+  return POI_WAYPOINT_METADATA[poi.category];
+}
+
+function formatOffRouteDistance(distanceMeters: number): string {
+  if (distanceMeters >= 1000) {
+    return `${(distanceMeters / 1000).toFixed(1)} km off route`;
   }
 
-  if (note) {
-    parts.push(`Note: ${note}`);
-  }
-
-  if (phone) {
-    parts.push(`Phone: ${phone}`);
-  }
-
-  if (openingHours) {
-    parts.push(`Opening hours: ${openingHours}`);
-  }
-
-  parts.push(`Distance from route: ${poi.distanceFromRouteMeters} m`);
-  parts.push(`Distance along route: ${poi.distanceAlongRouteMeters} m`);
-
-  return parts.join("; ");
+  return `${Math.round(distanceMeters)} m off route`;
 }
 
 function buildRouteWaypointDescription(waypoint: RouteWaypoint): string {
@@ -79,7 +117,9 @@ function buildRouteWaypointDescription(waypoint: RouteWaypoint): string {
 }
 
 function serializeRouteWaypoint(waypoint: RouteWaypoint): string {
-  const lines = [`  <wpt lat="${waypoint.latitude}" lon="${waypoint.longitude}">`];
+  const lines = [
+    `  <wpt lat="${formatCoordinate(waypoint.latitude)}" lon="${formatCoordinate(waypoint.longitude)}">`,
+  ];
 
   if (waypoint.name) {
     lines.push(`    <name>${escapeXml(waypoint.name)}</name>`);
@@ -92,21 +132,25 @@ function serializeRouteWaypoint(waypoint: RouteWaypoint): string {
   return lines.join("\n");
 }
 
-function serializePOIWaypoint(poi: POI): string {
-  const lines = [`  <wpt lat="${poi.latitude}" lon="${poi.longitude}">`];
+function serializePOIWaypoint(poi: POI, points: RoutePoint[]): string {
+  const meta = getPOIWaypointMetadata(poi);
+  const cuePoint = interpolateRoutePointAtDistance(points, poi.distanceAlongRouteMeters);
+  const name =
+    poi.distanceFromRouteMeters > 0
+      ? `${poi.name ?? meta.fallbackName} (${formatOffRouteDistance(poi.distanceFromRouteMeters)})`
+      : (poi.name ?? meta.fallbackName);
 
-  if (poi.name) {
-    lines.push(`    <name>${escapeXml(poi.name)}</name>`);
-  }
-
-  lines.push(`    <type>${escapeXml(poi.category)}</type>`);
-  lines.push(`    <desc>${escapeXml(buildPOIWaypointDescription(poi))}</desc>`);
-  lines.push("  </wpt>");
-
-  return lines.join("\n");
+  return [
+    `  <wpt lat="${formatCoordinate(cuePoint.latitude)}" lon="${formatCoordinate(cuePoint.longitude)}">`,
+    `    <name>${escapeXml(name)}</name>`,
+    "    <desc></desc>",
+    `    <sym>${escapeXml(meta.karooLabel)}</sym>`,
+    `    <type>${escapeXml(meta.karooLabel)}</type>`,
+    "  </wpt>",
+  ].join("\n");
 }
 
-function serializeWaypoints(options: GPXSerializerOptions): string {
+function serializeWaypoints(points: RoutePoint[], options: GPXSerializerOptions): string {
   const routeWaypoints = options.routeWaypoints ?? [];
   const poisAsWaypoints = options.poisAsWaypoints ?? [];
   if (routeWaypoints.length === 0 && poisAsWaypoints.length === 0) {
@@ -115,7 +159,7 @@ function serializeWaypoints(options: GPXSerializerOptions): string {
 
   return `${[
     ...routeWaypoints.map(serializeRouteWaypoint),
-    ...poisAsWaypoints.map(serializePOIWaypoint),
+    ...poisAsWaypoints.map((poi) => serializePOIWaypoint(poi, points)),
   ].join("\n")}\n`;
 }
 
@@ -125,7 +169,7 @@ function serializeTrackGPX(
   options: GPXSerializerOptions = {},
 ): string {
   const trackPoints = points.map(serializeTrackPoint).join("\n");
-  const waypoints = serializeWaypoints(options);
+  const waypoints = serializeWaypoints(points, options);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <gpx version="1.1" creator="Ultra Companion" xmlns="http://www.topografix.com/GPX/1/1">

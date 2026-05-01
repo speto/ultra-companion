@@ -408,8 +408,14 @@ export async function deleteDownloadedPOIsForRoute(routeId: string): Promise<voi
     .run();
 }
 
-export async function deletePOIsBySource(routeId: string, source: POISource): Promise<void> {
-  deleteStarredEntityIds("downloadedPoi", poiIdsForRoute(routeId, source));
+export async function deletePOIsBySource(
+  routeId: string,
+  source: POISource,
+  options: { preserveStarred?: boolean } = {},
+): Promise<void> {
+  if (!options.preserveStarred) {
+    deleteStarredEntityIds("downloadedPoi", poiIdsForRoute(routeId, source));
+  }
   db.delete(pois)
     .where(and(eq(pois.routeId, routeId), eq(pois.source, source)))
     .run();

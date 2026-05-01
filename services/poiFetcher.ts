@@ -51,7 +51,7 @@ export async function fetchOsmPOIs(
   const classified = mapOverpassToPOIs(elements);
   onProgress?.("Processing", 0, 1);
   const pois = associateAndFilter(classified, routeId, routePoints, corridorWidthM, "osm");
-  await deletePOIsBySource(routeId, "osm");
+  await deletePOIsBySource(routeId, "osm", { preserveStarred: true });
   await insertPOIs(pois);
   onProgress?.("Done", 1, 1);
   return pois.length;
@@ -72,7 +72,7 @@ export async function fetchGooglePOIs(
   });
   onProgress?.("Processing", 0, 1);
   const pois = associateAndFilter(classified, routeId, routePoints, corridorWidthM, "google");
-  await deletePOIsBySource(routeId, "google");
+  await deletePOIsBySource(routeId, "google", { preserveStarred: true });
   await insertPOIs(pois);
   onProgress?.("Done", 1, 1);
   return pois.length;
