@@ -65,7 +65,7 @@ export const useMapStore = create<MapState>((set, get) => ({
   zoom: persisted.zoom,
   followUser: readPersistedBoolean("followUser", false),
   showDistanceMarkers: readPersistedBoolean("showDistanceMarkers", false),
-  showPOIs: readPersistedBoolean("showPOIs", true),
+  showPOIs: readPersistedBoolean("showPOIs", false),
   showWaypoints: readPersistedBoolean("showWaypoints", true),
   userPosition: null,
   isRefreshing: false,

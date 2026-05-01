@@ -139,10 +139,10 @@ export default function RootLayout() {
           <Stack.Screen
             name="poi-filters"
             options={{
-              presentation: "formSheet",
+              presentation: "transparentModal",
+              animation: "none",
               headerShown: false,
-              sheetAllowedDetents: "fitToContents",
-              sheetGrabberVisible: true,
+              contentStyle: { backgroundColor: "transparent" },
             }}
           />
           <Stack.Screen name="map-inspect" options={{ headerShown: false }} />

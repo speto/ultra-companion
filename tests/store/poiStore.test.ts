@@ -146,7 +146,7 @@ describe("POI store visible POI filtering", () => {
     ]);
   });
 
-  it("does not let starred known-closed POIs bypass Open now", async () => {
+  it("lets starred known-closed POIs bypass Open now", async () => {
     const usePoiStore = await loadPoiStore();
     const useStarredStore = await loadStarredStore();
     const pois = [
@@ -164,7 +164,41 @@ describe("POI store visible POI filtering", () => {
     useStarredStore.setState({ starredKeys: new Set(["downloadedPoi:starred-closed"]) });
     usePoiStore.getState().toggleShowOpenOnly();
 
-    expect(visibleIds(usePoiStore.getState().getVisiblePOIs(routeId))).toEqual(["known-open"]);
+    expect(visibleIds(usePoiStore.getState().getVisiblePOIs(routeId))).toEqual([
+      "known-open",
+      "starred-closed",
+    ]);
+  });
+
+  it("does not let starred POIs bypass category scope", async () => {
+    const usePoiStore = await loadPoiStore();
+    const useStarredStore = await loadStarredStore();
+    const pois = [
+      buildPoi("water", routeId, 100, { category: "water" }),
+      buildPoi("starred-bakery", routeId, 200, { category: "bakery" }),
+    ];
+
+    usePoiStore.setState({ pois: { [routeId]: pois } });
+    useStarredStore.setState({ starredKeys: new Set(["downloadedPoi:starred-bakery"]) });
+    usePoiStore.getState().setEnabledCategories(["water"]);
+
+    expect(visibleIds(usePoiStore.getState().getVisiblePOIs(routeId))).toEqual(["water"]);
+  });
+
+  it("keeps showOpenOnly derived from user-facing food availability mode", async () => {
+    const usePoiStore = await loadPoiStore();
+
+    usePoiStore.getState().setFoodAvailabilityMode("eta");
+    expect(usePoiStore.getState().foodAvailabilityMode).toBe("eta");
+    expect(usePoiStore.getState().showOpenOnly).toBe(false);
+
+    usePoiStore.getState().setFoodAvailabilityMode("now");
+    expect(usePoiStore.getState().foodAvailabilityMode).toBe("now");
+    expect(usePoiStore.getState().showOpenOnly).toBe(true);
+
+    usePoiStore.getState().setFoodAvailabilityMode("off");
+    expect(usePoiStore.getState().foodAvailabilityMode).toBe("off");
+    expect(usePoiStore.getState().showOpenOnly).toBe(false);
   });
 
   it("clears route POI cache state when deleting POIs for a route", async () => {

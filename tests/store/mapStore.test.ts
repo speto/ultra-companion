@@ -28,10 +28,10 @@ describe("map store preferences", () => {
     expect(useMapStore.getState().showDistanceMarkers).toBe(false);
   });
 
-  it("defaults POIs and waypoints to visible", async () => {
+  it("defaults bulk POIs off and waypoints visible", async () => {
     const useMapStore = await loadMapStore();
 
-    expect(useMapStore.getState().showPOIs).toBe(true);
+    expect(useMapStore.getState().showPOIs).toBe(false);
     expect(useMapStore.getState().showWaypoints).toBe(true);
   });
 
@@ -72,8 +72,8 @@ describe("map store preferences", () => {
 
     useMapStore.getState().togglePOIs();
 
-    expect(useMapStore.getState().showPOIs).toBe(false);
-    expect(reactNativeMmkvMocks.set).toHaveBeenCalledWith("showPOIs", "false");
+    expect(useMapStore.getState().showPOIs).toBe(true);
+    expect(reactNativeMmkvMocks.set).toHaveBeenCalledWith("showPOIs", "true");
   });
 
   it("toggles and persists waypoint visibility", async () => {

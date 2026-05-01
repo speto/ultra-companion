@@ -59,7 +59,7 @@ export const POI_CATEGORIES: POICategoryMeta[] = [
   { key: "groceries", label: "Groceries", color: "#22C55E", iconName: "ShoppingCart" },
   { key: "gas_station", label: "Gas Station", color: "#F97316", iconName: "Fuel" },
   { key: "bakery", label: "Bakery", color: "#EAB308", iconName: "Croissant" },
-  { key: "toilet_shower", label: "WC", color: "#6366F1", iconName: "ShowerHead" },
+  { key: "toilet_shower", label: "WC", color: "#6366F1", iconName: "Toilet" },
   { key: "shelter", label: "Shelter", color: "#8B5CF6", iconName: "Tent" },
   { key: "bus_stop", label: "Bus", color: "#0EA5E9", iconName: "Bus" },
   { key: "sports", label: "Sports", color: "#84CC16", iconName: "Dumbbell" },

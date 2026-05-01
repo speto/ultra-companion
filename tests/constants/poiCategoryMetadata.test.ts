@@ -12,7 +12,7 @@ vi.mock("lucide-react-native", () => {
     Landmark: () => null,
     School: () => null,
     ShoppingCart: () => null,
-    ShowerHead: () => null,
+    Toilet: () => null,
     Tent: () => null,
   };
 });

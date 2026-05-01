@@ -28,6 +28,7 @@ function readString(key: string): string | undefined {
 }
 
 const allPoiCategories = (): POICategory[] => POI_CATEGORIES.map((c) => c.key);
+const legacyShowOpenOnly = readString("showOpenOnly") === "true";
 
 function parseCategories(raw: string | undefined): POICategory[] {
   if (raw === undefined) return allPoiCategories();
@@ -226,9 +227,9 @@ export const usePoiStore = create<POIState>((set, get) => ({
   pois: {},
   enabledCategories: parseCategories(readString("enabledCategories")),
   corridorWidthM: Number(readString("corridorWidthM")) || DEFAULT_CORRIDOR_WIDTH_M,
-  showOpenOnly: readString("showOpenOnly") === "true",
+  showOpenOnly: legacyShowOpenOnly,
   showSavedOnly: false,
-  foodAvailabilityMode: readString("showOpenOnly") === "true" ? "now" : "off",
+  foodAvailabilityMode: legacyShowOpenOnly ? "now" : "off",
   foodAvailabilityCustomTime: null,
   sourceInfo: {},
   selectedPOI: null,
@@ -373,14 +374,22 @@ export const usePoiStore = create<POIState>((set, get) => ({
     try {
       getStorage().set("showOpenOnly", String(next));
     } catch {}
-    set({ showOpenOnly: next, foodAvailabilityMode: next ? "now" : "off" });
+    set({
+      showOpenOnly: next,
+      foodAvailabilityMode: next ? "now" : "off",
+      foodAvailabilityCustomTime: null,
+    });
   },
 
   setShowOpenOnly: (show) => {
     try {
       getStorage().set("showOpenOnly", String(show));
     } catch {}
-    set({ showOpenOnly: show, foodAvailabilityMode: show ? "now" : "off" });
+    set({
+      showOpenOnly: show,
+      foodAvailabilityMode: show ? "now" : "off",
+      foodAvailabilityCustomTime: null,
+    });
   },
 
   toggleShowSavedOnly: () => set((s) => ({ showSavedOnly: !s.showSavedOnly })),
@@ -391,7 +400,11 @@ export const usePoiStore = create<POIState>((set, get) => ({
     try {
       getStorage().set("showOpenOnly", String(showOpenOnly));
     } catch {}
-    set({ foodAvailabilityMode: mode, showOpenOnly });
+    set((state) => ({
+      foodAvailabilityMode: mode,
+      showOpenOnly,
+      foodAvailabilityCustomTime: mode === "custom" ? state.foodAvailabilityCustomTime : null,
+    }));
   },
   setFoodAvailabilityCustomTime: (isoTime) => set({ foodAvailabilityCustomTime: isoTime }),
 
@@ -431,8 +444,9 @@ export const usePoiStore = create<POIState>((set, get) => ({
     const enabled = new Set(state.enabledCategories);
     return all.filter((p) => {
       const isStarred = useStarredStore.getState().isStarred("downloadedPoi", p.id);
-      if (!enabled.has(p.category) && !isStarred) return false;
-      if (state.showOpenOnly && isFoodShopCategory(p.category)) {
+      if (!enabled.has(p.category)) return false;
+      if (state.showSavedOnly && !isStarred) return false;
+      if (!isStarred && state.showOpenOnly && isFoodShopCategory(p.category)) {
         return !isConfirmedClosedNow(p.tags.opening_hours);
       }
       return true;
