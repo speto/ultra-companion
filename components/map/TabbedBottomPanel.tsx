@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text } from "@/components/ui/text";
 import { useThemeColors } from "@/theme";
 import { usePanelStore } from "@/store/panelStore";
+import { useMapViewportStore } from "@/store/mapViewportStore";
 import { SHEET_COMPACT_RATIO, SHEET_EXPANDED_RATIO } from "@/constants";
 import ProfileTabContent from "./ProfileTabContent";
 import WeatherPanel from "./WeatherPanel";
@@ -89,13 +90,33 @@ export default function TabbedBottomPanel({
   const setPanelTab = usePanelStore((s) => s.setPanelTab);
   const setIsExpanded = usePanelStore((s) => s.setIsExpanded);
   const isExpanded = usePanelStore((s) => s.isExpanded);
+  const setViewportOverlayInsets = useMapViewportStore((s) => s.setOverlayInsets);
+  const clearViewportOverlayInsets = useMapViewportStore((s) => s.clearOverlayInsets);
   const reportedIsExpanded = useSharedValue(isExpanded);
+
+  const reportBottomPanelObstruction = React.useCallback(
+    (height: number) => {
+      setViewportOverlayInsets("bottomPanel", { bottom: height });
+    },
+    [setViewportOverlayInsets],
+  );
 
   React.useEffect(() => {
     const nextOffset = isExpanded ? 0 : compactOffset;
     sheetTranslateY.value = withSpring(nextOffset, SPRING_CONFIG);
     reportedIsExpanded.value = isExpanded;
   }, [compactOffset, isExpanded, reportedIsExpanded, sheetTranslateY]);
+
+  React.useLayoutEffect(() => {
+    reportBottomPanelObstruction(isExpanded ? expandedHeight : compactHeight);
+  }, [compactHeight, expandedHeight, isExpanded, reportBottomPanelObstruction]);
+
+  React.useEffect(
+    () => () => {
+      clearViewportOverlayInsets("bottomPanel");
+    },
+    [clearViewportOverlayInsets],
+  );
 
   const panGesture = Gesture.Pan()
     .activeOffsetY([-10, 10])
@@ -121,11 +142,13 @@ export default function TabbedBottomPanel({
       }
 
       const target = snapToExpanded ? 0 : compactOffset;
+      const settledHeight = snapToExpanded ? expandedHeight : compactHeight;
 
       if (reportedIsExpanded.value !== snapToExpanded) {
         reportedIsExpanded.value = snapToExpanded;
         runOnJS(setIsExpanded)(snapToExpanded);
       }
+      runOnJS(reportBottomPanelObstruction)(settledHeight);
       sheetTranslateY.value = withSpring(target, SPRING_CONFIG);
     });
 

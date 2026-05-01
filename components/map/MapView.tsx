@@ -1,19 +1,19 @@
 import React, { useRef, useCallback, useEffect, useState, useMemo } from "react";
-import { View, AppState, useWindowDimensions } from "react-native";
+import { View, AppState } from "react-native";
 import { useIsFocused } from "@react-navigation/native";
 import { Camera, MapView as MapboxMapView, LocationPuck } from "@rnmapbox/maps";
 import { Easing, useSharedValue, withTiming } from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useMapStore } from "@/store/mapStore";
 import { useRouteStore } from "@/store/routeStore";
 import { useCollectionStore } from "@/store/collectionStore";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { usePanelStore } from "@/store/panelStore";
+import { useMapViewportStore } from "@/store/mapViewportStore";
 import {
   ACTIVE_ROUTE_POLISHED,
   ACTIVE_ROUTE_POLISHED_DARK,
   SEGMENT_COLORS_DARK,
   SEGMENT_COLORS_LIGHT,
-  SHEET_COMPACT_RATIO,
 } from "@/constants";
 import { useThemeColors } from "@/theme";
 import { useColorScheme } from "nativewind";
@@ -57,6 +57,21 @@ const COMPASS_FOLLOW_MIN_UPDATE_MS = 60;
 const COMPASS_FOLLOW_ACTIVATION_ANIMATION_MS = 200;
 const RESET_NORTH_ANIMATION_MS = 200;
 const RESET_NORTH_VISUAL_HOLD_MS = 260;
+const MAP_CONTROL_SCREEN_INSET = 16;
+const MAP_CONTROL_BUTTON_SIZE = 52;
+const MAP_CONTROL_CORNER_GAP = 8;
+const FIT_BOUNDS_SIDE_CONTROL_CLEARANCE =
+  MAP_CONTROL_SCREEN_INSET + MAP_CONTROL_BUTTON_SIZE + MAP_CONTROL_CORNER_GAP;
+type FitBoundsPadding = [number, number, number, number];
+
+function getFitBoundsPadding(safeTop: number, bottomInset: number): FitBoundsPadding {
+  return [
+    safeTop + 8,
+    FIT_BOUNDS_SIDE_CONTROL_CLEARANCE,
+    bottomInset + 8,
+    FIT_BOUNDS_SIDE_CONTROL_CLEARANCE,
+  ];
+}
 
 function signedHeadingDelta(fromHeading: number, toHeading: number): number {
   const from = normalizeHeading(fromHeading);
@@ -109,6 +124,7 @@ export default function MapScreen() {
   const { colorScheme } = useColorScheme();
   const mapStyle = useMapStyle();
   const isFocused = useIsFocused();
+  const { top: safeTop } = useSafeAreaInsets();
   const cameraRef = useRef<Camera>(null);
   const mapRef = useRef<MapboxMapView>(null);
   const [hasGpsFix, setHasGpsFix] = useState(false);
@@ -123,8 +139,6 @@ export default function MapScreen() {
   );
   const [isCompassMode, setIsCompassMode] = useState(false);
   const [isResettingNorth, setIsResettingNorth] = useState(false);
-  const { height: screenHeight } = useWindowDimensions();
-  const { bottom: safeBottom } = useSafeAreaInsets();
 
   const { followUser, setFollowUser } = useMapStore();
   const showDistanceMarkers = useMapStore((s) => s.showDistanceMarkers);
@@ -152,7 +166,20 @@ export default function MapScreen() {
   const setHorizonFromZoom = usePanelStore((s) => s.setHorizonFromZoom);
   const setHorizonFromCamera = usePanelStore((s) => s.setHorizonFromCamera);
   const setHorizonPopoverOpen = usePanelStore((s) => s.setHorizonPopoverOpen);
-  const compactPanelHeight = Math.round(screenHeight * SHEET_COMPACT_RATIO) + safeBottom;
+  const viewportInsets = useMapViewportStore((s) => s.insets);
+  const pointFocusPadding = useMemo(
+    () => ({
+      paddingTop: safeTop,
+      paddingLeft: 0,
+      paddingRight: 0,
+      paddingBottom: viewportInsets.bottom,
+    }),
+    [safeTop, viewportInsets.bottom],
+  );
+  const fitBoundsPadding = useMemo(
+    () => getFitBoundsPadding(safeTop, viewportInsets.bottom),
+    [safeTop, viewportInsets.bottom],
+  );
 
   const routes = useRouteStore((s) => s.routes);
   const visibleRoutePoints = useRouteStore((s) => s.visibleRoutePoints);
@@ -399,11 +426,12 @@ export default function MapScreen() {
       cameraRef.current?.setCamera({
         centerCoordinate: [target.longitude, target.latitude],
         zoomLevel: 14,
+        padding: pointFocusPadding,
         animationDuration: 500,
       });
       setHorizonFromCamera(zoomToHorizon(14));
     }
-  }, [selectedPOI, selectedPlace, setFollowUser, setHorizonFromCamera]);
+  }, [pointFocusPadding, selectedPOI, selectedPlace, setFollowUser, setHorizonFromCamera]);
 
   const setLastCameraCenter = useCallback((point: MapFocusPoint, zoom: number) => {
     lastCamera.current = {
@@ -426,6 +454,7 @@ export default function MapScreen() {
           centerCoordinate: [currentPos.longitude, currentPos.latitude],
           zoomLevel,
           heading: lastCamera.current.heading,
+          padding: pointFocusPadding,
           animationMode: "easeTo",
           animationDuration,
         });
@@ -454,13 +483,21 @@ export default function MapScreen() {
           centerCoordinate: [position.longitude, position.latitude],
           zoomLevel,
           heading: lastCamera.current.heading,
+          padding: pointFocusPadding,
           animationMode: "easeTo",
           animationDuration,
         });
       }
       return currentPos != null || position != null;
     },
-    [setFollowUser, refreshPosition, snapAfterRefresh, hasGpsFix, setLastCameraCenter],
+    [
+      pointFocusPadding,
+      setFollowUser,
+      refreshPosition,
+      snapAfterRefresh,
+      hasGpsFix,
+      setLastCameraCenter,
+    ],
   );
 
   useEffect(() => {
@@ -495,6 +532,7 @@ export default function MapScreen() {
         centerCoordinate: [position.longitude, position.latitude],
         zoomLevel,
         heading: lastCamera.current.heading,
+        padding: pointFocusPadding,
         animationMode: "easeTo",
         animationDuration: 500,
       });
@@ -517,6 +555,7 @@ export default function MapScreen() {
     };
   }, [
     advancedFocusMode,
+    pointFocusPadding,
     isFocused,
     setFollowUser,
     setLastCameraCenter,
@@ -630,6 +669,7 @@ export default function MapScreen() {
         cameraRef.current?.setCamera({
           centerCoordinate: [point.longitude, point.latitude],
           zoomLevel,
+          padding: pointFocusPadding,
           animationMode: "easeTo",
           animationDuration: 500,
         });
@@ -641,11 +681,12 @@ export default function MapScreen() {
       cameraRef.current?.setCamera({
         centerCoordinate: [center.longitude, center.latitude],
         zoomLevel,
+        padding: pointFocusPadding,
         animationMode: "easeTo",
         animationDuration: 500,
       });
     },
-    [focusStart, focusFinish, setFollowUser, setLastCameraCenter],
+    [pointFocusPadding, focusStart, focusFinish, setFollowUser, setLastCameraCenter],
   );
 
   const handleLocate = useCallback(async () => {
@@ -828,6 +869,7 @@ export default function MapScreen() {
       cameraRef.current?.setCamera({
         centerCoordinate: [bounds.minLon, bounds.minLat],
         zoomLevel: 14,
+        padding: pointFocusPadding,
         animationDuration: 500,
         animationMode: "easeTo",
       });
@@ -837,7 +879,7 @@ export default function MapScreen() {
     cameraRef.current?.fitBounds(
       [bounds.maxLon, bounds.maxLat],
       [bounds.minLon, bounds.minLat],
-      [60, 40, 40, 40],
+      fitBoundsPadding,
       500,
     );
   }, [
@@ -850,6 +892,8 @@ export default function MapScreen() {
     snappedPosition?.distanceFromRouteMeters,
     snappedPosition?.pointIndex,
     snappedPosition?.routeId,
+    pointFocusPadding,
+    fitBoundsPadding,
     setFollowUser,
   ]);
 
@@ -886,6 +930,7 @@ export default function MapScreen() {
           cameraRef.current?.setCamera({
             centerCoordinate: [bounds.minLon, bounds.minLat],
             zoomLevel: 14,
+            padding: pointFocusPadding,
             animationDuration: 500,
             animationMode: "easeTo",
           });
@@ -893,7 +938,7 @@ export default function MapScreen() {
           cameraRef.current?.fitBounds(
             [bounds.maxLon, bounds.maxLat],
             [bounds.minLon, bounds.minLat],
-            [60, 40, 40, 40],
+            fitBoundsPadding,
             500,
           );
         }
@@ -974,6 +1019,7 @@ export default function MapScreen() {
             cameraRef.current?.setCamera({
               centerCoordinate: [bounds.minLon, bounds.minLat],
               zoomLevel: 14,
+              padding: pointFocusPadding,
               animationDuration: 500,
               animationMode: "easeTo",
             });
@@ -981,7 +1027,7 @@ export default function MapScreen() {
             cameraRef.current?.fitBounds(
               [bounds.maxLon, bounds.maxLat],
               [bounds.minLon, bounds.minLat],
-              [60, 40, 40, 40],
+              fitBoundsPadding,
               500,
             );
           }
@@ -1013,13 +1059,14 @@ export default function MapScreen() {
       cameraRef.current?.setCamera({
         centerCoordinate: [minLon, minLat],
         zoomLevel: 14,
+        padding: pointFocusPadding,
         animationDuration: 500,
         animationMode: "easeTo",
       });
       return;
     }
 
-    cameraRef.current?.fitBounds([maxLon, maxLat], [minLon, minLat], [60, 40, 40, 40], 500);
+    cameraRef.current?.fitBounds([maxLon, maxLat], [minLon, minLat], fitBoundsPadding, 500);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     selectedClimb,
@@ -1033,18 +1080,10 @@ export default function MapScreen() {
     activeData?.segments,
     snappedPosition?.distanceAlongRouteMeters,
     allClimbData,
+    pointFocusPadding,
+    fitBoundsPadding,
     setFollowUser,
   ]);
-
-  const cameraPadding = useMemo(
-    () => ({
-      paddingTop: 0,
-      paddingLeft: 0,
-      paddingRight: 0,
-      paddingBottom: compactPanelHeight,
-    }),
-    [compactPanelHeight],
-  );
 
   const pulsingConfig = useMemo(
     () => ({ isEnabled: true, color: themeColors.accent, radius: 40 }),
@@ -1143,7 +1182,6 @@ export default function MapScreen() {
             zoomLevel: initialCamera.current.zoom,
           }}
           animationDuration={500}
-          padding={cameraPadding}
         />
         {renderedRoutes.map((route) => {
           const styledRoute = route.isActive ? route : { ...route, isActive: true };

@@ -41,14 +41,10 @@ import Animated, {
 } from "react-native-reanimated";
 import type { SharedValue } from "react-native-reanimated";
 import { Text } from "@/components/ui/text";
-import {
-  GPS_STALE_THRESHOLD_MS,
-  POSITION_AGE_VISIBLE_THRESHOLD_MS,
-  SHEET_COMPACT_RATIO,
-  SHEET_EXPANDED_RATIO,
-} from "@/constants";
+import { GPS_STALE_THRESHOLD_MS, POSITION_AGE_VISIBLE_THRESHOLD_MS } from "@/constants";
 import { cn } from "@/lib/cn";
 import { useMapStore } from "@/store/mapStore";
+import { useMapViewportStore } from "@/store/mapViewportStore";
 import { usePanelStore } from "@/store/panelStore";
 import { useSettingsStore } from "@/store/settingsStore";
 import { useThemeColors } from "@/theme";
@@ -127,6 +123,7 @@ function getMapDisplayMenuMetrics({
   screenHeight,
   safeTop,
   safeBottom,
+  bottomInset,
   isPanelExpanded,
   screenWidth,
   menuHeight = MENU_HEIGHT,
@@ -135,15 +132,13 @@ function getMapDisplayMenuMetrics({
   screenHeight: number;
   safeTop: number;
   safeBottom: number;
+  bottomInset: number;
   isPanelExpanded: boolean;
   screenWidth?: number;
   menuHeight?: number;
   collapsedCenterHeight?: number;
 }) {
-  const sheetHeight =
-    Math.round(screenHeight * (isPanelExpanded ? SHEET_EXPANDED_RATIO : SHEET_COMPACT_RATIO)) +
-    safeBottom;
-  const controlsTop = screenHeight - sheetHeight - FLOATING_CONTROLS_HEIGHT;
+  const controlsTop = screenHeight - bottomInset - FLOATING_CONTROLS_HEIGHT;
   const buttonTop = FLOATING_CONTROLS_HEIGHT - MAP_BUTTON_BOTTOM_OFFSET - MAP_BUTTON_SIZE;
   const preferredMenuTop = isPanelExpanded
     ? buttonTop - MENU_GROUP_GAP - menuHeight
@@ -433,6 +428,7 @@ export default function MapSheetControls({
   const setDisplayMenuOpen = usePanelStore((s) => s.setHorizonPopoverOpen);
   const isPanelExpanded = usePanelStore((s) => s.isExpanded);
   const panelTab = usePanelStore((s) => s.panelTab);
+  const bottomInset = useMapViewportStore((s) => s.insets.bottom);
   const [isScrubOverlayVisible, setScrubOverlayVisible] = useState(false);
   const previewIndex = useSharedValue(-1);
   const activePillPulse = useSharedValue(1);
@@ -445,6 +441,7 @@ export default function MapSheetControls({
     screenWidth,
     safeTop,
     safeBottom,
+    bottomInset,
     isPanelExpanded,
   });
 
@@ -1178,11 +1175,13 @@ function MapDisplayPopover({
   const isPanelExpanded = usePanelStore((s) => s.isExpanded);
   const panelTab = usePanelStore((s) => s.panelTab);
   const setPanelTabKeepingPopoverOpen = usePanelStore((s) => s.setPanelTabKeepingPopoverOpen);
+  const bottomInset = useMapViewportStore((s) => s.insets.bottom);
   const bucketMenuHeight = getBucketMenuHeight(bucketChoices.length);
   const { menuTop } = getMapDisplayMenuMetrics({
     screenHeight,
     safeTop,
     safeBottom,
+    bottomInset,
     isPanelExpanded,
     collapsedCenterHeight: bucketMenuHeight,
   });
