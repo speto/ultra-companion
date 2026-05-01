@@ -1,20 +1,32 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { stitchCollection, stitchPOIs } from "@/services/stitchingService";
+import {
+  getStitchedStarredPOIsForCollection,
+  stitchCollection,
+  stitchPOIs,
+} from "@/services/stitchingService";
 import type { POI, RouteWithPoints } from "@/types";
 
-const { mockGetCollectionSegments, mockGetRouteWithPoints } = vi.hoisted(() => ({
-  mockGetCollectionSegments: vi.fn(),
-  mockGetRouteWithPoints: vi.fn(),
-}));
+const { mockGetCollectionSegments, mockGetRouteWithPoints, mockGetStarredDownloadedPOIsForRoute } =
+  vi.hoisted(() => ({
+    mockGetCollectionSegments: vi.fn(),
+    mockGetRouteWithPoints: vi.fn(),
+    mockGetStarredDownloadedPOIsForRoute: vi.fn(),
+  }));
 
 vi.mock("@/db/database", () => ({
   getCollectionSegments: mockGetCollectionSegments,
   getRouteWithPoints: mockGetRouteWithPoints,
+  getStarredDownloadedPOIsForRoute: mockGetStarredDownloadedPOIsForRoute,
 }));
 
-const poi = (id: string, routeId: string, distanceAlongRouteMeters: number): POI => ({
+const poi = (
+  id: string,
+  routeId: string,
+  distanceAlongRouteMeters: number,
+  sourceId = id,
+): POI => ({
   id,
-  sourceId: id,
+  sourceId,
   source: "osm",
   name: id,
   category: "water",
@@ -60,6 +72,7 @@ describe("stitchingService", () => {
   beforeEach(() => {
     mockGetCollectionSegments.mockReset();
     mockGetRouteWithPoints.mockReset();
+    mockGetStarredDownloadedPOIsForRoute.mockReset();
   });
 
   it("stitches selected segments in position order", async () => {
@@ -136,6 +149,45 @@ describe("stitchingService", () => {
     });
 
     expect(combined.map((p) => p.id)).toEqual(["a", "b"]);
+    expect(combined.map((p) => p.distanceAlongRouteMeters)).toEqual([900, 1_010]);
+  });
+
+  it("loads starred POIs from the database for selected stitched collection segments", async () => {
+    mockGetStarredDownloadedPOIsForRoute.mockImplementation(async (routeId: string) => {
+      if (routeId === "r1") return [poi("r1-poi", "r1", 900, "same-real-world-poi")];
+      if (routeId === "r2") return [poi("r2-poi", "r2", 10, "same-real-world-poi")];
+      throw new Error(`Unexpected route ${routeId}`);
+    });
+
+    const combined = await getStitchedStarredPOIsForCollection([
+      {
+        routeId: "r1",
+        routeName: "r1",
+        position: 0,
+        startPointIndex: 0,
+        endPointIndex: 1,
+        distanceOffsetMeters: 0,
+        segmentDistanceMeters: 1_000,
+        segmentAscentMeters: 10,
+        segmentDescentMeters: 10,
+      },
+      {
+        routeId: "r2",
+        routeName: "r2",
+        position: 1,
+        startPointIndex: 2,
+        endPointIndex: 3,
+        distanceOffsetMeters: 1_000,
+        segmentDistanceMeters: 1_000,
+        segmentAscentMeters: 10,
+        segmentDescentMeters: 10,
+      },
+    ]);
+
+    expect(mockGetStarredDownloadedPOIsForRoute).toHaveBeenCalledWith("r1");
+    expect(mockGetStarredDownloadedPOIsForRoute).toHaveBeenCalledWith("r2");
+    expect(combined.map((p) => `${p.routeId}:${p.id}`)).toEqual(["r1:r1-poi", "r2:r2-poi"]);
+    expect(combined.map((p) => p.sourceId)).toEqual(["same-real-world-poi", "same-real-world-poi"]);
     expect(combined.map((p) => p.distanceAlongRouteMeters)).toEqual([900, 1_010]);
   });
 });

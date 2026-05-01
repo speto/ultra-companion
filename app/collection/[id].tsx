@@ -23,7 +23,7 @@ import { useMapStyle } from "@/hooks/useMapStyle";
 import { formatDistance, formatElevation } from "@/utils/formatters";
 import { computeBounds } from "@/utils/geo";
 import { profileSegmentsFromStitchedSegments } from "@/utils/profileSegments";
-import { stitchCollection } from "@/services/stitchingService";
+import { getStitchedStarredPOIsForCollection, stitchCollection } from "@/services/stitchingService";
 import ElevationProfile from "@/components/elevation/ElevationProfile";
 import RouteLayer from "@/components/map/RouteLayer";
 import StatBox from "@/components/common/StatBox";
@@ -257,11 +257,14 @@ export default function CollectionDetailScreen() {
   const handleExportGPX = async () => {
     if (!collection || !stitched) return;
     try {
+      const starredPOIs = await getStitchedStarredPOIsForCollection(stitched.segments);
       const gpx = serializeCollectionToGPX(collection.name, stitched, {
         routeWaypoints: collectionWaypoints.map((waypoint) => ({
           ...waypoint,
           distanceAlongRouteMeters: waypoint.effectiveDist,
         })),
+        // Duplicate real-world POIs across selected routes intentionally remain separate exports.
+        poisAsWaypoints: starredPOIs,
       });
       await shareGPXFile(gpx, collection.name);
     } catch (error) {

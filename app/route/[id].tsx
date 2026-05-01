@@ -31,6 +31,7 @@ import { getMapInspectHref } from "@/utils/mapInspect";
 import { Maximize2 } from "lucide-react-native";
 import { useWaypointStore } from "@/store/waypointStore";
 import { getWaypointCategoryMeta, WAYPOINT_ICON_MAP } from "@/constants/waypointCategories";
+import { getStarredDownloadedPOIsForRoute } from "@/db/database";
 
 const EMPTY_CLIMBS: Climb[] = [];
 
@@ -126,9 +127,10 @@ export default function RouteDetailScreen() {
   const handleExportGPX = async () => {
     if (!route) return;
     try {
+      const starredPOIs = await getStarredDownloadedPOIsForRoute(route.id);
       const gpx = serializeRouteToGPX(route, {
         routeWaypoints,
-        poisAsWaypoints: chartPOIs,
+        poisAsWaypoints: starredPOIs,
       });
       await shareGPXFile(gpx, route.name);
     } catch (error) {

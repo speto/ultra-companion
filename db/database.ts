@@ -371,6 +371,31 @@ export async function getPOIsForRoute(
     .all();
 }
 
+export async function getStarredDownloadedPOIsForRoute(routeId: string): Promise<POI[]> {
+  return db
+    .select({
+      id: pois.id,
+      sourceId: pois.sourceId,
+      source: pois.source,
+      routeId: pois.routeId,
+      name: pois.name,
+      category: pois.category,
+      latitude: pois.latitude,
+      longitude: pois.longitude,
+      tags: pois.tags,
+      distanceFromRouteMeters: pois.distanceFromRouteMeters,
+      distanceAlongRouteMeters: pois.distanceAlongRouteMeters,
+    })
+    .from(pois)
+    .innerJoin(
+      starredItems,
+      and(eq(starredItems.entityType, "downloadedPoi"), eq(starredItems.entityId, pois.id)),
+    )
+    .where(eq(pois.routeId, routeId))
+    .orderBy(asc(pois.distanceAlongRouteMeters))
+    .all();
+}
+
 export async function deletePOIsForRoute(routeId: string): Promise<void> {
   deleteStarredEntityIds("downloadedPoi", poiIdsForRoute(routeId));
   db.delete(pois).where(eq(pois.routeId, routeId)).run();

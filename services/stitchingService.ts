@@ -1,4 +1,8 @@
-import { getRouteWithPoints, getCollectionSegments } from "@/db/database";
+import {
+  getCollectionSegments,
+  getRouteWithPoints,
+  getStarredDownloadedPOIsForRoute,
+} from "@/db/database";
 import type { StitchedCollection, StitchedSegmentInfo, RoutePoint, POI } from "@/types";
 
 export async function stitchCollection(collectionId: string): Promise<StitchedCollection> {
@@ -86,4 +90,17 @@ export function stitchPOIs(
 
   combined.sort((a, b) => a.distanceAlongRouteMeters - b.distanceAlongRouteMeters);
   return combined;
+}
+
+export async function getStitchedStarredPOIsForCollection(
+  segments: StitchedSegmentInfo[],
+): Promise<POI[]> {
+  const entries = await Promise.all(
+    segments.map(
+      async (segment) =>
+        [segment.routeId, await getStarredDownloadedPOIsForRoute(segment.routeId)] as const,
+    ),
+  );
+
+  return stitchPOIs(segments, Object.fromEntries(entries));
 }
