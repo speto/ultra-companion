@@ -122,6 +122,9 @@ const SEARCHES: { textQuery: string; includedType?: string; category: POICategor
   { textQuery: "gas station", includedType: "gas_station", category: "gas_station" },
   { textQuery: "grocery store", category: "groceries" },
   { textQuery: "bakery", category: "bakery" },
+  { textQuery: "cafe", includedType: "cafe", category: "coffee" },
+  { textQuery: "restaurant", includedType: "restaurant", category: "restaurant" },
+  { textQuery: "bar or pub", includedType: "bar", category: "bar_pub" },
 ];
 
 /** Fetch all pages of a Text Search Along Route query (max 60 results) */

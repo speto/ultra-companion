@@ -1,7 +1,14 @@
 import { getOpeningHoursStatus, isOpenAt } from "@/services/openingHoursParser";
 import type { PlaceViewModel, POI, POICategory, RouteWaypoint, StitchedSegmentInfo } from "@/types";
 
-const FOOD_SHOP_CATEGORIES = new Set<POICategory>(["groceries", "bakery", "gas_station"]);
+const FOOD_SHOP_CATEGORIES = new Set<POICategory>([
+  "groceries",
+  "bakery",
+  "gas_station",
+  "coffee",
+  "restaurant",
+  "bar_pub",
+]);
 
 // --- Adapters: entity -> PlaceViewModel ---
 

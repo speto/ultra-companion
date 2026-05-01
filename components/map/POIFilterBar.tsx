@@ -52,22 +52,54 @@ interface POIFilterBarProps {
 }
 
 const WATER_CATEGORIES: POICategory[] = ["water", "cemetery"];
-const FOOD_CATEGORIES: POICategory[] = ["groceries", "bakery", "gas_station"];
-const REST_CATEGORIES: POICategory[] = ["shelter", "bus_stop", "sports", "school"];
+const FOOD_CATEGORIES: POICategory[] = [
+  "groceries",
+  "bakery",
+  "gas_station",
+  "coffee",
+  "restaurant",
+  "bar_pub",
+];
+const REST_CATEGORIES: POICategory[] = ["shelter", "bus_stop", "camp_site", "sports", "school"];
 const WC_CATEGORIES: POICategory[] = ["toilet_shower"];
 const PRIMARY_GROUPS = [WATER_CATEGORIES, FOOD_CATEGORIES, REST_CATEGORIES, WC_CATEGORIES];
+const HELP_CATEGORIES: POICategory[] = [
+  "pharmacy",
+  "hospital_er",
+  "defibrillator",
+  "emergency_phone",
+  "ambulance_station",
+];
+const REPAIR_CATEGORIES: POICategory[] = ["bike_shop", "repair_station", "pump_air"];
+const ESCAPE_CATEGORIES: POICategory[] = ["train_station"];
+const MORE_ONLY_CATEGORIES = [...HELP_CATEGORIES, ...REPAIR_CATEGORIES, ...ESCAPE_CATEGORIES];
 
 const SHEET_SECTIONS: Array<{ label: string; rows: POICategory[][] }> = [
   { label: "Water", rows: [["water", "cemetery"]] },
-  { label: "Food", rows: [["groceries", "bakery", "gas_station"]] },
+  {
+    label: "Food",
+    rows: [
+      ["groceries", "bakery", "gas_station"],
+      ["coffee", "restaurant", "bar_pub"],
+    ],
+  },
   {
     label: "Rest",
     rows: [
-      ["shelter", "bus_stop"],
+      ["shelter", "bus_stop", "camp_site"],
       ["sports", "school"],
     ],
   },
   { label: "WC", rows: [["toilet_shower"]] },
+  {
+    label: "Help",
+    rows: [
+      ["pharmacy", "hospital_er"],
+      ["defibrillator", "emergency_phone", "ambulance_station"],
+    ],
+  },
+  { label: "Repair", rows: [["bike_shop", "repair_station", "pump_air"]] },
+  { label: "Escape / Transport", rows: [["train_station"]] },
 ];
 
 export default function POIFilterBar({ routeIds }: POIFilterBarProps) {
@@ -103,7 +135,9 @@ export default function POIFilterBar({ routeIds }: POIFilterBarProps) {
       return selectedCount > 0 && selectedCount < group.length;
     });
   }, [enabledSet, isCategoryFilterActive]);
-  const moreActive = hasPartialPrimaryGroup || foodAvailabilityMode === "custom";
+  const hasMoreOnlyCategory =
+    isCategoryFilterActive && MORE_ONLY_CATEGORIES.some((category) => enabledSet.has(category));
+  const moreActive = hasPartialPrimaryGroup || hasMoreOnlyCategory || foodAvailabilityMode === "custom";
   const foodAvailabilityPillLabel =
     foodEnabled && foodAvailabilityMode !== "off"
       ? getFoodAvailabilityButtonPillLabel(foodAvailabilityMode, foodAvailabilityCustomTime)

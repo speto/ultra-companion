@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { POI_CATEGORIES } from "@/constants";
 import { buildPoi } from "@/tests/fixtures/poi";
 import { createMockMMKV, reactNativeMmkvMocks } from "@/tests/mocks/reactNativeMmkv";
 import type { POI } from "@/types";
@@ -88,18 +89,7 @@ describe("POI store visible POI filtering", () => {
     const categoryThenOpen = visibleIds(usePoiStore.getState().getVisiblePOIs(routeId));
 
     usePoiStore.setState({
-      enabledCategories: [
-        "water",
-        "groceries",
-        "gas_station",
-        "bakery",
-        "toilet_shower",
-        "shelter",
-        "bus_stop",
-        "sports",
-        "cemetery",
-        "school",
-      ],
+      enabledCategories: POI_CATEGORIES.map((category) => category.key),
       showOpenOnly: false,
     });
     usePoiStore.getState().toggleShowOpenOnly();
@@ -130,6 +120,10 @@ describe("POI store visible POI filtering", () => {
       buildPoi("unsupported-hours", routeId, 500, {
         category: "bakery",
         tags: { opening_hours: "Mo-Fr 09:00-17:00" },
+      }),
+      buildPoi("closed-restaurant", routeId, 550, {
+        category: "restaurant",
+        tags: { opening_hours: mondayClosedHours },
       }),
       buildPoi("water", routeId, 600, { category: "water" }),
     ];

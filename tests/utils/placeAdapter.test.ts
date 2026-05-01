@@ -155,6 +155,14 @@ describe("placeAdapter", () => {
           tags: { opening_hours: closedNowHours },
         }),
         downloadedPoiToPlace({
+          ...makePoi("closed-restaurant", "r1", 465, "restaurant"),
+          tags: { opening_hours: closedNowHours },
+        }),
+        downloadedPoiToPlace({
+          ...makePoi("open-coffee", "r1", 466, "coffee"),
+          tags: { opening_hours: alwaysOpenHours },
+        }),
+        downloadedPoiToPlace({
           ...makePoi("unknown-bakery", "r1", 470, "bakery"),
           tags: {},
         }),
@@ -166,6 +174,7 @@ describe("placeAdapter", () => {
         "missing-hours",
         "malformed-hours",
         "open-bakery",
+        "open-coffee",
         "unknown-bakery",
         "waypoint",
       ]);
@@ -186,9 +195,13 @@ describe("placeAdapter", () => {
         ...makePoi("closed-water", "r1", 300, "water"),
         tags: { opening_hours: closedNowHours },
       });
+      const closedRestaurant = downloadedPoiToPlace({
+        ...makePoi("closed-restaurant", "r1", 400, "restaurant"),
+        tags: { opening_hours: closedNowHours },
+      });
 
       const filtered = filterPlacesByFoodAvailability(
-        [closedBakery, openBakery, closedWater],
+        [closedBakery, openBakery, closedWater, closedRestaurant],
         "now",
         {
           customTime: null,

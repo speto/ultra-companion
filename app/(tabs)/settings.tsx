@@ -290,6 +290,10 @@ export default function SettingsScreen() {
         value={String(corridorWidthM)}
         onChange={(v) => setCorridorWidth(Number(v))}
       />
+      <Text className="text-[12px] font-barlow text-muted-foreground mt-2">
+        Used as a fallback. Emergency, repair, rest, and transport POIs use built-in route
+        distance defaults tuned for ride logistics.
+      </Text>
 
       <Text className="text-[22px] font-barlow-semibold text-foreground mt-6 mb-3">Weather</Text>
       <View className="bg-card rounded-xl p-4">

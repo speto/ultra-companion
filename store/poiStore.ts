@@ -28,13 +28,30 @@ function readString(key: string): string | undefined {
 }
 
 const allPoiCategories = (): POICategory[] => POI_CATEGORIES.map((c) => c.key);
+const LEGACY_DEFAULT_CATEGORIES: POICategory[] = [
+  "water",
+  "groceries",
+  "gas_station",
+  "bakery",
+  "toilet_shower",
+  "shelter",
+  "bus_stop",
+  "sports",
+  "cemetery",
+  "school",
+];
 const legacyShowOpenOnly = readString("showOpenOnly") === "true";
 
 function parseCategories(raw: string | undefined): POICategory[] {
   if (raw === undefined) return allPoiCategories();
   try {
     const valid = new Set<string>(POI_CATEGORIES.map((c) => c.key));
-    return (JSON.parse(raw) as string[]).filter((c) => valid.has(c)) as POICategory[];
+    const parsed = (JSON.parse(raw) as string[]).filter((c) => valid.has(c)) as POICategory[];
+    const parsedSet = new Set(parsed);
+    if (LEGACY_DEFAULT_CATEGORIES.every((category) => parsedSet.has(category))) {
+      return allPoiCategories();
+    }
+    return parsed;
   } catch {
     return allPoiCategories();
   }

@@ -1,5 +1,10 @@
 import type { RoutePoint } from "@/types";
-import { OVERPASS_API_URLS, OVERPASS_SEGMENT_LENGTH_M, OVERPASS_RETRY_DELAYS } from "@/constants";
+import {
+  getMaxPoiCorridorWidthM,
+  OVERPASS_API_URLS,
+  OVERPASS_SEGMENT_LENGTH_M,
+  OVERPASS_RETRY_DELAYS,
+} from "@/constants";
 
 let _nextServerIndex = 0;
 
@@ -103,14 +108,52 @@ export function buildOverpassQuery(
   node["natural"="spring"](around:${r},${coords});
   node["man_made"="water_tap"](around:${r},${coords});
   node["amenity"~"^(toilets|shower)$"](around:${r},${coords});
+  node["amenity"="cafe"](around:${r},${coords});
+  way["amenity"="cafe"](around:${r},${coords});
+  node["amenity"="restaurant"](around:${r},${coords});
+  way["amenity"="restaurant"](around:${r},${coords});
+  node["amenity"~"^(bar|pub)$"](around:${r},${coords});
+  way["amenity"~"^(bar|pub)$"](around:${r},${coords});
+  node["shop"~"^(supermarket|convenience|grocery)$"](around:${r},${coords});
+  way["shop"~"^(supermarket|convenience|grocery)$"](around:${r},${coords});
+  node["shop"="bakery"](around:${r},${coords});
+  way["shop"="bakery"](around:${r},${coords});
+  node["amenity"="fuel"](around:${r},${coords});
+  way["amenity"="fuel"](around:${r},${coords});
   node["amenity"="shelter"]["shelter_type"!="public_transport"](around:${r},${coords});
   way["amenity"="shelter"]["shelter_type"!="public_transport"](around:${r},${coords});
+  node["amenity"="shelter"]["shelter_type"="public_transport"](around:${r},${coords});
+  way["amenity"="shelter"]["shelter_type"="public_transport"](around:${r},${coords});
   node["tourism"="wilderness_hut"](around:${r},${coords});
   way["tourism"="wilderness_hut"](around:${r},${coords});
   node["tourism"="alpine_hut"](around:${r},${coords});
   way["tourism"="alpine_hut"](around:${r},${coords});
-  node["highway"="bus_stop"](around:${r},${coords});
-  node["public_transport"~"^(platform|stop_position)$"]["bus"="yes"](around:${r},${coords});
+  node["highway"="bus_stop"]["shelter"="yes"](around:${r},${coords});
+  node["public_transport"~"^(platform|stop_position)$"]["bus"="yes"]["shelter"="yes"](around:${r},${coords});
+  node["tourism"="camp_site"](around:${r},${coords});
+  way["tourism"="camp_site"](around:${r},${coords});
+  node["amenity"="pharmacy"](around:${r},${coords});
+  way["amenity"="pharmacy"](around:${r},${coords});
+  node["healthcare"="pharmacy"](around:${r},${coords});
+  way["healthcare"="pharmacy"](around:${r},${coords});
+  node["amenity"="hospital"](around:${r},${coords});
+  way["amenity"="hospital"](around:${r},${coords});
+  node["healthcare"="hospital"](around:${r},${coords});
+  way["healthcare"="hospital"](around:${r},${coords});
+  node["emergency"="defibrillator"](around:${r},${coords});
+  node["emergency"="phone"](around:${r},${coords});
+  node["emergency"="ambulance_station"](around:${r},${coords});
+  way["emergency"="ambulance_station"](around:${r},${coords});
+  node["shop"="bicycle"](around:${r},${coords});
+  way["shop"="bicycle"](around:${r},${coords});
+  node["amenity"="bicycle_repair_station"](around:${r},${coords});
+  node["amenity"="compressed_air"](around:${r},${coords});
+  node["service:bicycle:pump"="yes"](around:${r},${coords});
+  way["service:bicycle:pump"="yes"](around:${r},${coords});
+  node["railway"~"^(station|halt)$"](around:${r},${coords});
+  way["railway"~"^(station|halt)$"](around:${r},${coords});
+  node["public_transport"="station"]["train"="yes"](around:${r},${coords});
+  way["public_transport"="station"]["train"="yes"](around:${r},${coords});
   node["leisure"="pitch"]["sport"="soccer"](around:${r},${coords});
   way["leisure"="pitch"]["sport"="soccer"](around:${r},${coords});
   node["leisure"="sports_centre"](around:${r},${coords});
@@ -208,7 +251,7 @@ export async function fetchAllPOIs(
 
     // Downsample segment points to ~1 per km for the query
     const downsampled = downsampleByDistance(segments[i], 1000);
-    const query = buildOverpassQuery(downsampled, corridorWidthM);
+    const query = buildOverpassQuery(downsampled, getMaxPoiCorridorWidthM(corridorWidthM));
     const elements = await fetchOverpassSegment(query);
 
     for (const el of elements) {
