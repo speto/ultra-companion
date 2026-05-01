@@ -151,6 +151,7 @@ export type POICategory =
 export type POICategoryGroup =
   | "water"
   | "food"
+  | "eat_drink"
   | "wc"
   | "rest"
   | "help"

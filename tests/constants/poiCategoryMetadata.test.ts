@@ -11,6 +11,7 @@ vi.mock("lucide-react-native", () => {
     Bus: () => null,
     AlertTriangle: () => null,
     Ambulance: () => null,
+    Beer: () => null,
     Bike: () => null,
     CircleDot: () => null,
     Coffee: () => null,
@@ -82,6 +83,18 @@ describe("POI category metadata", () => {
   it("keeps category visual signatures unique", () => {
     const signatures = POI_CATEGORIES.map((category) => `${category.color}:${category.iconName}`);
     expect(new Set(signatures).size).toBe(signatures.length);
+  });
+
+  it("keeps food supplies separate from eat/drink stops", () => {
+    const byKey = Object.fromEntries(POI_CATEGORIES.map((category) => [category.key, category]));
+
+    expect(byKey.groceries?.group).toBe("food");
+    expect(byKey.bakery?.group).toBe("food");
+    expect(byKey.gas_station?.group).toBe("food");
+    expect(byKey.coffee?.group).toBe("eat_drink");
+    expect(byKey.restaurant?.group).toBe("eat_drink");
+    expect(byKey.bar_pub?.group).toBe("eat_drink");
+    expect(byKey.bar_pub?.iconName).toBe("Beer");
   });
 
   it("defines a default corridor for every POI category", () => {

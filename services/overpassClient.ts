@@ -1,6 +1,6 @@
-import type { RoutePoint } from "@/types";
+import type { POICategory, RoutePoint } from "@/types";
 import {
-  getMaxPoiCorridorWidthM,
+  getPoiCategoryCorridorWidthM,
   OVERPASS_API_URLS,
   OVERPASS_SEGMENT_LENGTH_M,
   OVERPASS_RETRY_DELAYS,
@@ -99,71 +99,77 @@ export function buildOverpassQuery(
   corridorWidthM: number,
 ): string {
   const coords = coordString(points);
-  const r = corridorWidthM;
+  const q = (category: POICategory, selector: string) => {
+    const radius = getPoiCategoryCorridorWidthM(category, corridorWidthM);
+    return `  ${selector}(around:${radius},${coords});`;
+  };
 
-  // Each line queries one OSM tag pattern using the around filter
+  const clauses = [
+    q("water", 'node["amenity"="drinking_water"]'),
+    q("water", 'node["natural"="spring"]'),
+    q("water", 'node["man_made"="water_tap"]'),
+    q("toilet_shower", 'node["amenity"~"^(toilets|shower)$"]'),
+    q("coffee", 'node["amenity"="cafe"]'),
+    q("coffee", 'way["amenity"="cafe"]'),
+    q("restaurant", 'node["amenity"="restaurant"]'),
+    q("restaurant", 'way["amenity"="restaurant"]'),
+    q("bar_pub", 'node["amenity"~"^(bar|pub)$"]'),
+    q("bar_pub", 'way["amenity"~"^(bar|pub)$"]'),
+    q("groceries", 'node["shop"~"^(supermarket|convenience|grocery)$"]'),
+    q("groceries", 'way["shop"~"^(supermarket|convenience|grocery)$"]'),
+    q("bakery", 'node["shop"="bakery"]'),
+    q("bakery", 'way["shop"="bakery"]'),
+    q("gas_station", 'node["amenity"="fuel"]'),
+    q("gas_station", 'way["amenity"="fuel"]'),
+    q("shelter", 'node["amenity"="shelter"]["shelter_type"!="public_transport"]'),
+    q("shelter", 'way["amenity"="shelter"]["shelter_type"!="public_transport"]'),
+    q("bus_stop", 'node["amenity"="shelter"]["shelter_type"="public_transport"]'),
+    q("bus_stop", 'way["amenity"="shelter"]["shelter_type"="public_transport"]'),
+    q("shelter", 'node["tourism"="wilderness_hut"]'),
+    q("shelter", 'way["tourism"="wilderness_hut"]'),
+    q("shelter", 'node["tourism"="alpine_hut"]'),
+    q("shelter", 'way["tourism"="alpine_hut"]'),
+    q("bus_stop", 'node["highway"="bus_stop"]["shelter"="yes"]'),
+    q("bus_stop", 'node["public_transport"~"^(platform|stop_position)$"]["bus"="yes"]["shelter"="yes"]'),
+    q("camp_site", 'node["tourism"="camp_site"]'),
+    q("camp_site", 'way["tourism"="camp_site"]'),
+    q("pharmacy", 'node["amenity"="pharmacy"]'),
+    q("pharmacy", 'way["amenity"="pharmacy"]'),
+    q("pharmacy", 'node["healthcare"="pharmacy"]'),
+    q("pharmacy", 'way["healthcare"="pharmacy"]'),
+    q("hospital_er", 'node["amenity"="hospital"]'),
+    q("hospital_er", 'way["amenity"="hospital"]'),
+    q("hospital_er", 'node["healthcare"="hospital"]'),
+    q("hospital_er", 'way["healthcare"="hospital"]'),
+    q("defibrillator", 'node["emergency"="defibrillator"]'),
+    q("emergency_phone", 'node["emergency"="phone"]'),
+    q("ambulance_station", 'node["emergency"="ambulance_station"]'),
+    q("ambulance_station", 'way["emergency"="ambulance_station"]'),
+    q("bike_shop", 'node["shop"="bicycle"]'),
+    q("bike_shop", 'way["shop"="bicycle"]'),
+    q("repair_station", 'node["amenity"="bicycle_repair_station"]'),
+    q("pump_air", 'node["amenity"="compressed_air"]'),
+    q("pump_air", 'node["service:bicycle:pump"="yes"]'),
+    q("pump_air", 'way["service:bicycle:pump"="yes"]'),
+    q("train_station", 'node["railway"~"^(station|halt)$"]'),
+    q("train_station", 'way["railway"~"^(station|halt)$"]'),
+    q("train_station", 'node["public_transport"="station"]["train"="yes"]'),
+    q("train_station", 'way["public_transport"="station"]["train"="yes"]'),
+    q("sports", 'node["leisure"="pitch"]["sport"="soccer"]'),
+    q("sports", 'way["leisure"="pitch"]["sport"="soccer"]'),
+    q("sports", 'node["leisure"="sports_centre"]'),
+    q("sports", 'way["leisure"="sports_centre"]'),
+    q("cemetery", 'node["amenity"="grave_yard"]'),
+    q("cemetery", 'way["amenity"="grave_yard"]'),
+    q("cemetery", 'node["landuse"="cemetery"]'),
+    q("cemetery", 'way["landuse"="cemetery"]'),
+    q("school", 'node["amenity"="school"]'),
+    q("school", 'way["amenity"="school"]'),
+  ];
+
   return `[out:json][timeout:30];
 (
-  node["amenity"="drinking_water"](around:${r},${coords});
-  node["natural"="spring"](around:${r},${coords});
-  node["man_made"="water_tap"](around:${r},${coords});
-  node["amenity"~"^(toilets|shower)$"](around:${r},${coords});
-  node["amenity"="cafe"](around:${r},${coords});
-  way["amenity"="cafe"](around:${r},${coords});
-  node["amenity"="restaurant"](around:${r},${coords});
-  way["amenity"="restaurant"](around:${r},${coords});
-  node["amenity"~"^(bar|pub)$"](around:${r},${coords});
-  way["amenity"~"^(bar|pub)$"](around:${r},${coords});
-  node["shop"~"^(supermarket|convenience|grocery)$"](around:${r},${coords});
-  way["shop"~"^(supermarket|convenience|grocery)$"](around:${r},${coords});
-  node["shop"="bakery"](around:${r},${coords});
-  way["shop"="bakery"](around:${r},${coords});
-  node["amenity"="fuel"](around:${r},${coords});
-  way["amenity"="fuel"](around:${r},${coords});
-  node["amenity"="shelter"]["shelter_type"!="public_transport"](around:${r},${coords});
-  way["amenity"="shelter"]["shelter_type"!="public_transport"](around:${r},${coords});
-  node["amenity"="shelter"]["shelter_type"="public_transport"](around:${r},${coords});
-  way["amenity"="shelter"]["shelter_type"="public_transport"](around:${r},${coords});
-  node["tourism"="wilderness_hut"](around:${r},${coords});
-  way["tourism"="wilderness_hut"](around:${r},${coords});
-  node["tourism"="alpine_hut"](around:${r},${coords});
-  way["tourism"="alpine_hut"](around:${r},${coords});
-  node["highway"="bus_stop"]["shelter"="yes"](around:${r},${coords});
-  node["public_transport"~"^(platform|stop_position)$"]["bus"="yes"]["shelter"="yes"](around:${r},${coords});
-  node["tourism"="camp_site"](around:${r},${coords});
-  way["tourism"="camp_site"](around:${r},${coords});
-  node["amenity"="pharmacy"](around:${r},${coords});
-  way["amenity"="pharmacy"](around:${r},${coords});
-  node["healthcare"="pharmacy"](around:${r},${coords});
-  way["healthcare"="pharmacy"](around:${r},${coords});
-  node["amenity"="hospital"](around:${r},${coords});
-  way["amenity"="hospital"](around:${r},${coords});
-  node["healthcare"="hospital"](around:${r},${coords});
-  way["healthcare"="hospital"](around:${r},${coords});
-  node["emergency"="defibrillator"](around:${r},${coords});
-  node["emergency"="phone"](around:${r},${coords});
-  node["emergency"="ambulance_station"](around:${r},${coords});
-  way["emergency"="ambulance_station"](around:${r},${coords});
-  node["shop"="bicycle"](around:${r},${coords});
-  way["shop"="bicycle"](around:${r},${coords});
-  node["amenity"="bicycle_repair_station"](around:${r},${coords});
-  node["amenity"="compressed_air"](around:${r},${coords});
-  node["service:bicycle:pump"="yes"](around:${r},${coords});
-  way["service:bicycle:pump"="yes"](around:${r},${coords});
-  node["railway"~"^(station|halt)$"](around:${r},${coords});
-  way["railway"~"^(station|halt)$"](around:${r},${coords});
-  node["public_transport"="station"]["train"="yes"](around:${r},${coords});
-  way["public_transport"="station"]["train"="yes"](around:${r},${coords});
-  node["leisure"="pitch"]["sport"="soccer"](around:${r},${coords});
-  way["leisure"="pitch"]["sport"="soccer"](around:${r},${coords});
-  node["leisure"="sports_centre"](around:${r},${coords});
-  way["leisure"="sports_centre"](around:${r},${coords});
-  node["amenity"="grave_yard"](around:${r},${coords});
-  way["amenity"="grave_yard"](around:${r},${coords});
-  node["landuse"="cemetery"](around:${r},${coords});
-  way["landuse"="cemetery"](around:${r},${coords});
-  node["amenity"="school"](around:${r},${coords});
-  way["amenity"="school"](around:${r},${coords});
+${clauses.join("\n")}
 );
 out center body;`;
 }
@@ -251,7 +257,7 @@ export async function fetchAllPOIs(
 
     // Downsample segment points to ~1 per km for the query
     const downsampled = downsampleByDistance(segments[i], 1000);
-    const query = buildOverpassQuery(downsampled, getMaxPoiCorridorWidthM(corridorWidthM));
+    const query = buildOverpassQuery(downsampled, corridorWidthM);
     const elements = await fetchOverpassSegment(query);
 
     for (const el of elements) {

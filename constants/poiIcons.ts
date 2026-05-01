@@ -1,6 +1,7 @@
 import {
   AlertTriangle,
   Ambulance,
+  Beer,
   Bike,
   Bus,
   CircleDot,
@@ -20,7 +21,6 @@ import {
   School,
   TrainFront,
   Utensils,
-  UtensilsCrossed,
   Wrench,
 } from "lucide-react-native";
 import type { ComponentType } from "react";
@@ -35,6 +35,7 @@ type POIIconComponent = ComponentType<{
 export const POI_ICON_MAP: Record<string, POIIconComponent> = {
   AlertTriangle,
   Ambulance,
+  Beer,
   Bike,
   Bus,
   CircleDot,
@@ -54,6 +55,5 @@ export const POI_ICON_MAP: Record<string, POIIconComponent> = {
   School,
   TrainFront,
   Utensils,
-  UtensilsCrossed,
   Wrench,
 };

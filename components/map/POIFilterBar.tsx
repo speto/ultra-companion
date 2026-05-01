@@ -5,7 +5,7 @@ import {
   Clock,
   Droplets,
   Flag,
-  UtensilsCrossed,
+  ShoppingCart,
   Tent,
   Toilet,
   SlidersHorizontal,
@@ -30,14 +30,9 @@ interface POIFilterBarProps {
 }
 
 const WATER_CATEGORIES: POICategory[] = ["water", "cemetery"];
-const FOOD_CATEGORIES: POICategory[] = [
-  "groceries",
-  "bakery",
-  "gas_station",
-  "coffee",
-  "restaurant",
-  "bar_pub",
-];
+const FOOD_CATEGORIES: POICategory[] = ["groceries", "bakery", "gas_station"];
+const EAT_DRINK_CATEGORIES: POICategory[] = ["coffee", "restaurant", "bar_pub"];
+const FOOD_AVAILABILITY_CATEGORIES: POICategory[] = [...FOOD_CATEGORIES, ...EAT_DRINK_CATEGORIES];
 const REST_CATEGORIES: POICategory[] = ["shelter", "bus_stop", "camp_site", "sports", "school"];
 const WC_CATEGORIES: POICategory[] = ["toilet_shower"];
 const PRIMARY_GROUPS = [WATER_CATEGORIES, FOOD_CATEGORIES, REST_CATEGORIES, WC_CATEGORIES];
@@ -50,7 +45,12 @@ const HELP_CATEGORIES: POICategory[] = [
 ];
 const REPAIR_CATEGORIES: POICategory[] = ["bike_shop", "repair_station", "pump_air"];
 const ESCAPE_CATEGORIES: POICategory[] = ["train_station"];
-const MORE_ONLY_CATEGORIES = [...HELP_CATEGORIES, ...REPAIR_CATEGORIES, ...ESCAPE_CATEGORIES];
+const MORE_ONLY_CATEGORIES = [
+  ...EAT_DRINK_CATEGORIES,
+  ...HELP_CATEGORIES,
+  ...REPAIR_CATEGORIES,
+  ...ESCAPE_CATEGORIES,
+];
 
 export default function POIFilterBar({ routeIds }: POIFilterBarProps) {
   const colors = useThemeColors();
@@ -78,6 +78,7 @@ export default function POIFilterBar({ routeIds }: POIFilterBarProps) {
   const waterEnabled = groupActive(WATER_CATEGORIES);
   const wcEnabled = groupActive(WC_CATEGORIES);
   const foodEnabled = groupActive(FOOD_CATEGORIES);
+  const foodAvailabilityScopeEnabled = groupActive(FOOD_AVAILABILITY_CATEGORIES);
   const restEnabled = groupActive(REST_CATEGORIES);
 
   const hasPartialPrimaryGroup = useMemo(() => {
@@ -92,7 +93,7 @@ export default function POIFilterBar({ routeIds }: POIFilterBarProps) {
   const moreActive =
     hasPartialPrimaryGroup || hasMoreOnlyCategory || foodAvailabilityMode === "custom";
   const foodAvailabilityPillLabel =
-    foodEnabled && foodAvailabilityMode !== "off"
+    foodAvailabilityScopeEnabled && foodAvailabilityMode !== "off"
       ? getFoodAvailabilityButtonPillLabel(foodAvailabilityMode, foodAvailabilityCustomTime)
       : null;
 
@@ -135,11 +136,11 @@ export default function POIFilterBar({ routeIds }: POIFilterBarProps) {
 
   const cycleFoodAvailability = useCallback(() => {
     const startedAt = Date.now();
-    if (!foodEnabled) {
-      addGroup(FOOD_CATEGORIES);
+    if (!foodAvailabilityScopeEnabled) {
+      addGroup(FOOD_AVAILABILITY_CATEGORIES);
       setFoodAvailabilityMode("eta");
     } else if (foodAvailabilityMode === "off") {
-      addGroup(FOOD_CATEGORIES);
+      addGroup(FOOD_AVAILABILITY_CATEGORIES);
       setFoodAvailabilityMode("eta");
     } else if (foodAvailabilityMode === "eta") {
       setFoodAvailabilityMode("now");
@@ -152,7 +153,7 @@ export default function POIFilterBar({ routeIds }: POIFilterBarProps) {
         console.info(`[poi-filter] food long press -> next frame in ${Date.now() - startedAt}ms`);
       });
     }
-  }, [addGroup, foodAvailabilityMode, foodEnabled, setFoodAvailabilityMode]);
+  }, [addGroup, foodAvailabilityMode, foodAvailabilityScopeEnabled, setFoodAvailabilityMode]);
 
   const getQuickAccessibilityLabel = (label: string, isActive: boolean) => {
     if (!isCategoryFilterActive) return `Show ${label} POIs`;
@@ -184,14 +185,20 @@ export default function POIFilterBar({ routeIds }: POIFilterBarProps) {
             active={foodEnabled}
             onPress={() => handleQuickToggle(FOOD_CATEGORIES)}
             onLongPress={cycleFoodAvailability}
-            icon={
-              <UtensilsCrossed size={16} color={foodEnabled ? FOOD_COLOR : colors.textTertiary} />
-            }
+            icon={<ShoppingCart size={16} color={foodEnabled ? FOOD_COLOR : colors.textTertiary} />}
             label="Food"
             statusPillMode={foodAvailabilityMode !== "off" ? foodAvailabilityMode : null}
             statusPillLabel={foodAvailabilityPillLabel}
-            accessibilityLabel={getFoodAccessibilityLabel(foodEnabled, foodAvailabilityMode)}
-            accessibilityHint={getFoodAccessibilityHint(foodEnabled, foodAvailabilityMode)}
+            accessibilityLabel={getFoodAccessibilityLabel(
+              foodEnabled,
+              foodAvailabilityScopeEnabled,
+              foodAvailabilityMode,
+            )}
+            accessibilityHint={getFoodAccessibilityHint(
+              foodEnabled,
+              foodAvailabilityScopeEnabled,
+              foodAvailabilityMode,
+            )}
             accessibilityRoleOverride="button"
           />
         </PrimaryChipSlot>
@@ -355,16 +362,33 @@ function FilterChip({
   );
 }
 
-function getFoodAccessibilityLabel(foodEnabled: boolean, mode: FoodAvailabilityMode) {
-  if (!foodEnabled) return "Food filter off";
+function getFoodAccessibilityLabel(
+  foodEnabled: boolean,
+  foodAvailabilityScopeEnabled: boolean,
+  mode: FoodAvailabilityMode,
+) {
+  if (!foodEnabled && !foodAvailabilityScopeEnabled) return "Food filter off";
+  if (!foodEnabled && mode === "eta") return "Food and eat drink availability on, open at ETA";
+  if (!foodEnabled && mode === "now") return "Food and eat drink availability on, open now";
+  if (!foodEnabled && mode === "custom") return "Food and eat drink availability on, custom time";
+  if (!foodEnabled) return "Food filter off, eat drink filter on";
   if (mode === "eta") return "Food filter on, open at ETA";
   if (mode === "now") return "Food filter on, open now";
   if (mode === "custom") return "Food filter on, custom availability time";
   return "Food filter on, all food";
 }
 
-function getFoodAccessibilityHint(foodEnabled: boolean, mode: FoodAvailabilityMode) {
-  if (!foodEnabled) return "Double tap to show all food. Long press to show food open at ETA.";
+function getFoodAccessibilityHint(
+  foodEnabled: boolean,
+  foodAvailabilityScopeEnabled: boolean,
+  mode: FoodAvailabilityMode,
+) {
+  if (!foodEnabled && !foodAvailabilityScopeEnabled) {
+    return "Double tap to show all food. Long press to show food and eat drink open at ETA.";
+  }
+  if (!foodEnabled) {
+    return "Double tap to show food supplies. Long press to cycle food and eat drink availability.";
+  }
   if (mode === "eta") return "Double tap to hide food. Long press to show food open now.";
   if (mode === "now") return "Double tap to hide food. Long press to clear food availability.";
   if (mode === "custom") return "Double tap to hide food. Long press to show food open at ETA.";

@@ -10,6 +10,7 @@ vi.mock("lucide-react-native", () => {
   return {
     AlertTriangle: Icon,
     Bed: Icon,
+    Beer: Icon,
     Bike: Icon,
     CircleDot: Icon,
     Coffee: Icon,
@@ -29,6 +30,12 @@ describe("map badge icons", () => {
       expect(svgs[`poi-${category.key}`]).toBeDefined();
       expect(svgs[`poi-${category.key}-starred`]).toContain(COLORS.light.starred);
     }
+  });
+
+  it("uses the beer glyph for bar/pub POI badges", () => {
+    const svgs = buildPoiBadgeSvgs();
+
+    expect(svgs["poi-bar_pub"]).toContain("M17 11h1a3 3 0 0 1 0 6h-1");
   });
 
   it("builds base and starred variants for every waypoint category", () => {

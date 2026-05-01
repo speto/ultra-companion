@@ -48,7 +48,7 @@ What's implemented. For the "why" behind these, see `usage-context.md`.
 ## POI Search
 
 - Along-route search with configurable global fallback radius and category-appropriate default corridors
-- Categories: water, food stops, toilets/showers, shelter/rest, emergency help, bicycle repair, and train escape points
+- Categories: water, fast food/supply stops, served eat/drink stops, toilets/showers, shelter/rest, emergency help, bicycle repair, and train escape points
 - Two data sources: Overpass/OSM for most categories, Google Places for gas stations and food stops (better opening hours)
 - POI markers on map and elevation profile
 - POI list sortable by distance along route

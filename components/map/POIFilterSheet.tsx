@@ -29,24 +29,12 @@ const AvailabilityTimePickerSheet = React.lazy(() => import("./AvailabilityTimeP
 const SPRING_CONFIG = { damping: 28, stiffness: 300, overshootClamping: true };
 const SHEET_TRANSLATE_Y = 420;
 
-const FOOD_CATEGORIES: POICategory[] = [
-  "groceries",
-  "bakery",
-  "gas_station",
-  "coffee",
-  "restaurant",
-  "bar_pub",
-];
+const FOOD_CATEGORIES: POICategory[] = ["groceries", "bakery", "gas_station"];
+const EAT_DRINK_CATEGORIES: POICategory[] = ["coffee", "restaurant", "bar_pub"];
+const FOOD_AVAILABILITY_CATEGORIES: POICategory[] = [...FOOD_CATEGORIES, ...EAT_DRINK_CATEGORIES];
 
 const SHEET_SECTIONS: Array<{ label: string; rows: POICategory[][] }> = [
   { label: "Water", rows: [["water", "cemetery"]] },
-  {
-    label: "Food",
-    rows: [
-      ["groceries", "bakery", "gas_station"],
-      ["coffee", "restaurant", "bar_pub"],
-    ],
-  },
   {
     label: "Rest",
     rows: [
@@ -187,10 +175,10 @@ export function POIFilterSheetContent({ onClose }: { onClose: () => void }) {
 
   const ensureFoodScope = useCallback(() => {
     if (!isCategoryFilterActive) {
-      setEnabledCategories(FOOD_CATEGORIES);
+      setEnabledCategories(FOOD_AVAILABILITY_CATEGORIES);
       return;
     }
-    setEnabledCategories([...new Set([...enabledCategories, ...FOOD_CATEGORIES])]);
+    setEnabledCategories([...new Set([...enabledCategories, ...FOOD_AVAILABILITY_CATEGORIES])]);
   }, [enabledCategories, isCategoryFilterActive, setEnabledCategories]);
 
   const handleToggleLeaf = useCallback(
@@ -278,9 +266,7 @@ export function POIFilterSheetContent({ onClose }: { onClose: () => void }) {
         <CategoryFilterButton
           key={key}
           label={meta.label}
-          icon={
-            IconComp && <IconComp size={16} color={isEnabled ? meta.color : colors.textTertiary} />
-          }
+          icon={IconComp && <IconComp size={16} color={isEnabled ? meta.color : colors.textTertiary} />}
           active={isEnabled}
           onPress={() => handleToggleLeaf(key)}
           accessibilityLabel={getLeafAccessibilityLabel(key, meta.label)}
@@ -329,6 +315,16 @@ export function POIFilterSheetContent({ onClose }: { onClose: () => void }) {
         contentContainerClassName="px-4 pt-1 pb-3"
         showsVerticalScrollIndicator={false}
       >
+        <FoodEatDrinkFilterGroup
+          renderCategoryButton={renderCategoryFilterButton}
+          availabilityControl={
+            <FoodAvailabilityControl
+              mode={foodAvailabilityMode}
+              customTime={foodAvailabilityCustomTime}
+              onPress={handleAvailabilityPress}
+            />
+          }
+        />
         {SHEET_SECTIONS.map((section) => (
           <View key={section.label} className="mb-4">
             <Text className="mb-2 text-[12px] font-barlow-semibold uppercase tracking-wider text-muted-foreground">
@@ -337,13 +333,6 @@ export function POIFilterSheetContent({ onClose }: { onClose: () => void }) {
             <View className="flex-row flex-wrap gap-2">
               {section.rows.flat().map(renderCategoryFilterButton)}
             </View>
-            {section.label === "Food" && (
-              <FoodAvailabilityControl
-                mode={foodAvailabilityMode}
-                customTime={foodAvailabilityCustomTime}
-                onPress={handleAvailabilityPress}
-              />
-            )}
           </View>
         ))}
       </ScrollView>
@@ -357,6 +346,36 @@ export function POIFilterSheetContent({ onClose }: { onClose: () => void }) {
           />
         </Suspense>
       )}
+    </View>
+  );
+}
+
+function FoodEatDrinkFilterGroup({
+  renderCategoryButton,
+  availabilityControl,
+}: {
+  renderCategoryButton: (key: POICategory) => React.ReactNode;
+  availabilityControl: React.ReactNode;
+}) {
+  return (
+    <View className="mb-4">
+      <View className="flex-row gap-3">
+        <View className="flex-1">
+          <Text className="mb-2 text-[12px] font-barlow-semibold uppercase tracking-wider text-muted-foreground">
+            Food / Supplies
+          </Text>
+          <View className="flex-row flex-wrap gap-2">{FOOD_CATEGORIES.map(renderCategoryButton)}</View>
+        </View>
+        <View className="flex-1">
+          <Text className="mb-2 text-[12px] font-barlow-semibold uppercase tracking-wider text-muted-foreground">
+            Eat / Drink
+          </Text>
+          <View className="flex-row flex-wrap gap-2">
+            {EAT_DRINK_CATEGORIES.map(renderCategoryButton)}
+          </View>
+        </View>
+      </View>
+      {availabilityControl}
     </View>
   );
 }
