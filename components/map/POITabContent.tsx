@@ -1,45 +1,26 @@
-import React, { useMemo, useState, useCallback, useDeferredValue } from "react";
-import {
-  View,
-  FlatList,
-  ScrollView,
-  TouchableOpacity,
-  Linking,
-} from "react-native";
+import React, { useMemo, useState, useCallback, useDeferredValue, useEffect, useRef } from "react";
+import { View, FlatList } from "react-native";
 import Animated, { useAnimatedStyle, interpolate, Extrapolation } from "react-native-reanimated";
 import type { SharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text } from "@/components/ui/text";
-import { Button } from "@/components/ui/button";
-import { Star, MapPin, Clock, ChevronLeft, Phone } from "lucide-react-native";
+import { MapPin } from "lucide-react-native";
 import { useThemeColors } from "@/theme";
-import { useSettingsStore } from "@/store/settingsStore";
+import { useMapStore } from "@/store/mapStore";
 import { useRouteStore } from "@/store/routeStore";
 import { usePoiStore } from "@/store/poiStore";
 import { usePanelStore } from "@/store/panelStore";
 import { useEtaStore } from "@/store/etaStore";
-import { useActiveRouteData } from "@/hooks/useActiveRouteData";
 import { POI_CATEGORIES, POI_BEHIND_THRESHOLD_M } from "@/constants";
-import { POI_ICON_MAP } from "@/constants/poiIcons";
-import { ohStatusColorKey } from "@/constants/poiHelpers";
-import { formatDistance, formatDuration, formatETA } from "@/utils/formatters";
 import { horizonWindow } from "@/utils/horizon";
-import { getOpeningHoursStatus, isOpenAt, getDaySchedules } from "@/services/openingHoursParser";
 import POIFilterBar from "@/components/map/POIFilterBar";
 import PanelSearchInput from "@/components/map/PanelSearchInput";
-import {
-  buildAppleMapsUrl,
-  buildGoogleMapsUrl,
-  buildMapyActionLabel,
-  buildMapyUrl,
-  buildPhoneUrl,
-  shouldPromoteMapy,
-} from "@/utils/poiActions";
+import { hasExpandablePoiDetails } from "@/utils/poiActions";
 import type { ActiveRouteData, POI, PlaceViewModel } from "@/types";
 import { usePlaceStore } from "@/store/placeStore";
 import { useStarredStore } from "@/store/starredStore";
 import PlaceListItem from "@/components/place/PlaceListItem";
-import { isFoodShopCategory } from "@/utils/placeAdapter";
+import { filterPlacesByFoodAvailability } from "@/utils/placeAdapter";
 
 const DISTANCE_BUCKET_M = 100;
 
@@ -59,13 +40,12 @@ export default function POITabContent({
   const snappedPosition = useRouteStore((s) => s.snappedPosition);
   const starredKeys = useStarredStore((s) => s.starredKeys);
   const selectedPOI = usePoiStore((s) => s.selectedPOI);
-  const setSelectedPOI = usePoiStore((s) => s.setSelectedPOI);
   const allPois = usePoiStore((s) => s.pois);
   const enabledCategories = usePoiStore((s) => s.enabledCategories);
-  const showOpenOnly = usePoiStore((s) => s.showOpenOnly);
   const showSavedOnly = usePoiStore((s) => s.showSavedOnly);
   const foodAvailabilityMode = usePoiStore((s) => s.foodAvailabilityMode);
   const foodAvailabilityCustomTime = usePoiStore((s) => s.foodAvailabilityCustomTime);
+  const showPOIsOnMap = useMapStore((s) => s.showPOIs);
   const getETAToPOI = useEtaStore((s) => s.getETAToPOI);
   const etaRouteId = useEtaStore((s) => s.routeId);
   const etaCacheVersion = useEtaStore((s) => s.cacheVersion);
@@ -76,6 +56,17 @@ export default function POITabContent({
   const horizon = usePanelStore((s) => s.horizon);
 
   const [searchQuery, setSearchQuery] = useState("");
+  const [expandedPlaceIds, setExpandedPlaceIds] = useState<Set<string>>(() => new Set());
+  const listPressedPlaceIdRef = useRef<string | null>(null);
+  const starredPoiIds = useMemo(
+    () =>
+      new Set(
+        [...starredKeys]
+          .filter((key) => key.startsWith("downloadedPoi:"))
+          .map((key) => key.slice("downloadedPoi:".length)),
+      ),
+    [starredKeys],
+  );
 
   const routeIds = useMemo(() => activeData?.routeIds ?? [], [activeData?.routeIds]);
   const segments = activeData?.segments ?? null;
@@ -124,18 +115,9 @@ export default function POITabContent({
       );
     }
     return result;
-    // allPois/enabledCategories/showOpenOnly/starredKeys/allPlaces are reactivity triggers
+    // allPois/enabledCategories/starredKeys/allPlaces are reactivity triggers
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    routeIds,
-    segments,
-    allPois,
-    enabledCategories,
-    showOpenOnly,
-    showSavedOnly,
-    starredKeys,
-    allPlaces,
-  ]);
+  }, [routeIds, segments, allPois, enabledCategories, showSavedOnly, starredKeys, allPlaces]);
   const sortedVisiblePlaces = useMemo(
     () =>
       [...visiblePlaces].sort(
@@ -156,13 +138,19 @@ export default function POITabContent({
 
   const availabilityFilteredPlaces = useMemo(() => {
     void etaCacheKey;
-    return filterByFoodAvailability(
-      slicedPlaces,
-      foodAvailabilityMode,
-      foodAvailabilityCustomTime,
+    return filterPlacesByFoodAvailability(slicedPlaces, foodAvailabilityMode, {
+      customTime: foodAvailabilityCustomTime,
       getETAToPOI,
-    );
-  }, [foodAvailabilityCustomTime, foodAvailabilityMode, getETAToPOI, slicedPlaces, etaCacheKey]);
+      starredIds: starredPoiIds,
+    });
+  }, [
+    foodAvailabilityCustomTime,
+    foodAvailabilityMode,
+    getETAToPOI,
+    slicedPlaces,
+    etaCacheKey,
+    starredPoiIds,
+  ]);
 
   const searchFilteredPlaces = useMemo(() => {
     if (!searchQuery.trim()) return availabilityFilteredPlaces;
@@ -173,12 +161,52 @@ export default function POITabContent({
   const deferredSearchFilteredPlaces = useDeferredValue(searchFilteredPlaces);
   const deferredAvailabilityFilteredPlaces = useDeferredValue(availabilityFilteredPlaces);
 
+  const isCategoryFilterActive = enabledCategories.length < POI_CATEGORIES.length;
+
+  const hasSavedOnRoute = useMemo(() => {
+    for (const routeId of routeIds) {
+      if ((allPois[routeId] ?? []).some((poi) => starredPoiIds.has(poi.id))) return true;
+    }
+    return false;
+  }, [allPois, routeIds, starredPoiIds]);
+
   const handlePlacePress = useCallback(
     (place: PlaceViewModel) => {
+      listPressedPlaceIdRef.current = place.placeId;
       setSelectedPlace(place);
     },
     [setSelectedPlace],
   );
+
+  const handleTogglePlaceExpansion = useCallback((place: PlaceViewModel) => {
+    setExpandedPlaceIds((current) => {
+      if (current.has(place.placeId)) {
+        return new Set([...current].filter((placeId) => placeId !== place.placeId));
+      }
+      return new Set([...current, place.placeId]);
+    });
+  }, []);
+
+  useEffect(() => {
+    const selectedDownloadedPlace =
+      selectedPlace?.entityType === "downloadedPoi" ? selectedPlace : null;
+    const selectedPoi = selectedDownloadedPlace?.raw as POI | undefined;
+    const poi = selectedPoi ?? selectedPOI;
+    if (!poi) return;
+
+    const placeId = selectedDownloadedPlace?.placeId ?? `downloadedPoi:${poi.id}`;
+    const listPressedPlaceId = listPressedPlaceIdRef.current;
+    if (listPressedPlaceId === placeId) {
+      listPressedPlaceIdRef.current = null;
+      return;
+    }
+    if (!hasExpandablePoiDetails(poi)) return;
+
+    setExpandedPlaceIds((current) => {
+      if (current.has(placeId)) return current;
+      return new Set([...current, placeId]);
+    });
+  }, [selectedPlace, selectedPOI]);
 
   const renderItem = useCallback(
     ({ item }: { item: PlaceViewModel }) => (
@@ -188,9 +216,18 @@ export default function POITabContent({
         segmentName={segmentNameByRouteId.get(item.routeId) ?? null}
         showAbsoluteDistance={segments != null}
         onPress={handlePlacePress}
+        expanded={expandedPlaceIds.has(item.placeId)}
+        onToggleExpansion={handleTogglePlaceExpansion}
       />
     ),
-    [bucketedCurrentDist, segmentNameByRouteId, segments, handlePlacePress],
+    [
+      bucketedCurrentDist,
+      segmentNameByRouteId,
+      segments,
+      handlePlacePress,
+      expandedPlaceIds,
+      handleTogglePlaceExpansion,
+    ],
   );
 
   const searchAnimatedStyle = useAnimatedStyle(() => {
@@ -218,22 +255,6 @@ export default function POITabContent({
     return { height, opacity, overflow: "hidden" };
   });
 
-  // Show inline detail when a place is selected
-  if (selectedPlace?.entityType === "downloadedPoi") {
-    const poi = selectedPOI ?? (selectedPlace.raw as POI | undefined);
-    if (poi) {
-      return (
-        <InlinePOIDetail
-          poi={poi}
-          onBack={() => {
-            setSelectedPlace(null);
-            setSelectedPOI(null);
-          }}
-        />
-      );
-    }
-  }
-
   // Empty state — no downloaded POI data at all
   if (totalPOICount === 0) {
     return (
@@ -250,6 +271,13 @@ export default function POITabContent({
   }
 
   const listData = isExpanded ? deferredSearchFilteredPlaces : deferredAvailabilityFilteredPlaces;
+  const showEmptySavedCopy = showSavedOnly && !hasSavedOnRoute;
+  const statusText = buildPOIStatusText({
+    listCount: listData.length,
+    showSavedOnly,
+    isCategoryFilterActive,
+    showPOIsOnMap,
+  });
 
   return (
     <View className="flex-1">
@@ -264,9 +292,26 @@ export default function POITabContent({
 
       <View style={{ borderBottomWidth: 1, borderBottomColor: colors.borderSubtle }}>
         <POIFilterBar routeIds={routeIds} />
+        <View className="px-4 pt-0.5 pb-1.5">
+          <View className="flex-row items-center justify-center">
+            <Text className="flex-1 text-center text-[12px] font-barlow-medium text-muted-foreground">
+              {statusText}
+            </Text>
+          </View>
+        </View>
       </View>
 
-      {listData.length > 0 ? (
+      {showEmptySavedCopy ? (
+        <View className="px-6 py-6 items-center">
+          <Text className="text-[14px] text-muted-foreground font-barlow-semibold text-center">
+            No saved POIs
+          </Text>
+          <Text className="text-[13px] text-muted-foreground font-barlow-medium text-center mt-2">
+            Tap a POI and use the star icon in its detail view to save it here for quick access
+            during the ride.
+          </Text>
+        </View>
+      ) : listData.length > 0 ? (
         <FlatList
           data={listData}
           keyExtractor={(item) => item.placeId}
@@ -290,259 +335,25 @@ export default function POITabContent({
   );
 }
 
-function filterByFoodAvailability(
-  places: PlaceViewModel[],
-  mode: string,
-  customTime: string | null,
-  getETAToPOI: (poi: POI) => { eta: Date } | null,
-) {
-  if (mode === "off" || mode === "now") return places;
+function buildPOIStatusText({
+  listCount,
+  showSavedOnly,
+  isCategoryFilterActive,
+  showPOIsOnMap,
+}: {
+  listCount: number;
+  showSavedOnly: boolean;
+  isCategoryFilterActive: boolean;
+  showPOIsOnMap: boolean;
+}) {
+  const listedLabel = `${listCount.toLocaleString()} ${showSavedOnly ? "saved " : ""}${pluralizePOI(listCount)} listed`;
 
-  const customDate = mode === "custom" && customTime ? new Date(customTime) : null;
-  if (mode === "custom" && (!customDate || Number.isNaN(customDate.getTime()))) return places;
-
-  return places.filter((place) => {
-    if (place.entityType !== "downloadedPoi") return true;
-    if (!isFoodShopCategory(place.category)) return true;
-    if (!place.openingHours) return true;
-
-    const targetTime = mode === "eta" ? getETAToPOI(place.raw as POI)?.eta : customDate;
-    if (!targetTime) return true;
-
-    return isOpenAt(place.openingHours, targetTime) !== false;
-  });
+  if (showSavedOnly) return `${listedLabel} · map showing saved/selected only`;
+  if (showPOIsOnMap) return `${listedLabel} · map showing all POIs`;
+  if (isCategoryFilterActive) return `${listedLabel} · map showing selected filters`;
+  return `${listedLabel} · map showing selected POI only`;
 }
 
-function InlinePOIDetail({ poi, onBack }: { poi: POI; onBack: () => void }) {
-  const colors = useThemeColors();
-  const units = useSettingsStore((s) => s.units);
-  const snappedPosition = useRouteStore((s) => s.snappedPosition);
-  const toggleStarred = useStarredStore((s) => s.toggleStarred);
-  const isStarred = useStarredStore((s) => s.starredKeys.has(`downloadedPoi:${poi.id}`));
-  const getETAToPOI = useEtaStore((s) => s.getETAToPOI);
-  const activeData = useActiveRouteData();
-
-  const catMeta = POI_CATEGORIES.find((c) => c.key === poi.category);
-  const IconComp = catMeta ? POI_ICON_MAP[catMeta.iconName] : null;
-
-  const distAhead = useMemo(() => {
-    if (!snappedPosition) return null;
-    let poiDist = poi.distanceAlongRouteMeters;
-    if (activeData?.segments) {
-      const seg = activeData.segments.find((s) => s.routeId === poi.routeId);
-      if (seg) poiDist += seg.distanceOffsetMeters;
-    }
-    return poiDist - snappedPosition.distanceAlongRouteMeters;
-  }, [poi, snappedPosition, activeData]);
-
-  const etaResult = useMemo(() => getETAToPOI(poi), [poi, getETAToPOI]);
-
-  const openingHoursRaw = poi.tags?.opening_hours;
-  const ohStatus = useMemo(
-    () => (openingHoursRaw ? getOpeningHoursStatus(openingHoursRaw) : null),
-    [openingHoursRaw],
-  );
-  const ohColor = useMemo(() => {
-    const key = ohStatusColorKey(ohStatus);
-    return key ? colors[key] : colors.textSecondary;
-  }, [ohStatus, colors]);
-  const ohText = useMemo(() => {
-    if (!ohStatus) return null;
-    if (ohStatus.detail === "24/7") return "Open 24/7";
-    return ohStatus.detail ? `${ohStatus.label} · ${ohStatus.detail}` : ohStatus.label;
-  }, [ohStatus]);
-
-  const daySchedules = useMemo(
-    () => (openingHoursRaw ? getDaySchedules(openingHoursRaw) : null),
-    [openingHoursRaw],
-  );
-
-  const etaOpenStatus = useMemo(() => {
-    if (!etaResult || !openingHoursRaw) return null;
-    return isOpenAt(openingHoursRaw, etaResult.eta);
-  }, [etaResult, openingHoursRaw]);
-
-  const address = useMemo(() => {
-    const t = poi.tags;
-    if (t.formatted_address) return t.formatted_address;
-    const parts: string[] = [];
-    if (t["addr:street"]) {
-      const num = t["addr:housenumber"] ? ` ${t["addr:housenumber"]}` : "";
-      parts.push(`${t["addr:street"]}${num}`);
-    }
-    if (t["addr:city"]) parts.push(t["addr:city"]);
-    return parts.length > 0 ? parts.join(", ") : null;
-  }, [poi]);
-
-  const phone = poi.tags?.phone ?? poi.tags?.["contact:phone"] ?? null;
-  const phoneUrl = phone ? buildPhoneUrl(phone) : null;
-  const mapyIsProminent = shouldPromoteMapy(poi);
-
-  const openUrl = useCallback(async (url: string) => {
-    await Linking.openURL(url);
-  }, []);
-
-  return (
-    <ScrollView className="flex-1 px-3 pt-1">
-      {/* Header: back + name + star */}
-      <View className="flex-row items-center">
-        <TouchableOpacity
-          className="w-[32px] h-[32px] items-center justify-center"
-          hitSlop={8}
-          onPress={onBack}
-          accessibilityLabel="Back to POI list"
-        >
-          <ChevronLeft size={20} color={colors.textSecondary} />
-        </TouchableOpacity>
-        <View className="flex-1 mx-1">
-          <Text className="text-[16px] font-barlow-semibold text-foreground" numberOfLines={1}>
-            {poi.name ?? catMeta?.label ?? "Unnamed"}
-          </Text>
-          {catMeta && (
-            <View className="flex-row items-center mt-1">
-              {IconComp && <IconComp size={12} color={catMeta.color} />}
-              <Text
-                className="ml-1 text-[11px] font-barlow-medium"
-                style={{ color: catMeta.color }}
-              >
-                {catMeta.label}
-              </Text>
-            </View>
-          )}
-        </View>
-        <TouchableOpacity
-          className="w-[32px] h-[32px] items-center justify-center"
-          hitSlop={8}
-          onPress={() => toggleStarred("downloadedPoi", poi.id)}
-          accessibilityLabel={isStarred ? "Unstar POI" : "Star POI"}
-        >
-          <Star
-            size={18}
-            color={isStarred ? colors.starred : colors.textTertiary}
-            fill={isStarred ? colors.starred : "none"}
-          />
-        </TouchableOpacity>
-      </View>
-
-      {/* Distance + ETA */}
-      <View className="flex-row items-center mt-2">
-        <MapPin size={13} color={colors.textSecondary} />
-        <Text className="ml-1.5 text-[13px] text-muted-foreground font-barlow">
-          {Math.round(poi.distanceFromRouteMeters)} m off route
-        </Text>
-        {distAhead != null && (
-          <Text className="ml-2 text-[13px] font-barlow-sc-semibold text-foreground">
-            {distAhead >= 0
-              ? `${formatDistance(distAhead, units)} ahead`
-              : `${formatDistance(Math.abs(distAhead), units)} behind`}
-          </Text>
-        )}
-      </View>
-
-      {etaResult && etaResult.ridingTimeSeconds > 0 && (
-        <View className="flex-row items-center mt-1">
-          <Clock size={13} color={colors.accent} />
-          <Text className="ml-1.5 text-[13px] font-barlow-sc-semibold text-foreground">
-            ~{formatDuration(etaResult.ridingTimeSeconds)}
-          </Text>
-          <Text className="ml-1.5 text-[13px] font-barlow-medium text-muted-foreground">
-            ETA {formatETA(etaResult.eta)}
-          </Text>
-        </View>
-      )}
-
-      {etaOpenStatus !== null && (
-        <Text
-          className="text-[12px] font-barlow ml-5 mt-1"
-          style={{ color: etaOpenStatus ? colors.positive : colors.destructive }}
-        >
-          {etaOpenStatus ? "Open when you arrive" : "Closed at ETA"}
-        </Text>
-      )}
-
-      {/* Opening hours */}
-      {ohText && (
-        <View className="flex-row items-center mt-2">
-          <Clock size={13} color={ohColor} />
-          <Text className="ml-1.5 text-[13px] font-barlow" style={{ color: ohColor }}>
-            {ohText}
-          </Text>
-        </View>
-      )}
-
-      {daySchedules && ohStatus?.detail !== "24/7" && (
-        <View className="ml-5 mt-1">
-          {daySchedules.map((ds) => (
-            <View key={ds.label} className="flex-row items-center">
-              <Text className="text-[12px] text-muted-foreground font-barlow-medium w-[60px]">
-                {ds.label}
-              </Text>
-              <Text className="text-[12px] text-muted-foreground font-barlow-sc-medium">
-                {ds.hours}
-              </Text>
-            </View>
-          ))}
-        </View>
-      )}
-
-      {address && (
-        <View className="flex-row items-center mt-2">
-          <MapPin size={13} color={colors.textSecondary} />
-          <Text className="ml-1.5 text-[13px] text-muted-foreground font-barlow">{address}</Text>
-        </View>
-      )}
-
-      {phone && (
-        <View className="flex-row items-center mt-2">
-          <Phone size={13} color={colors.textSecondary} />
-          <Text className="ml-1.5 text-[13px] text-muted-foreground font-barlow">{phone}</Text>
-        </View>
-      )}
-
-      <View className="mt-4">
-        <Text className="text-[12px] font-barlow-semibold text-muted-foreground mb-2">Actions</Text>
-        <Text className="text-[11px] text-muted-foreground font-barlow mb-2">
-          Mapy.com may include online-only place/photos context.
-        </Text>
-        <View className="gap-2">
-          <View className="flex-row gap-2">
-            <Button
-              className="flex-1"
-              variant="secondary"
-              label="Apple Maps"
-              onPress={() => openUrl(buildAppleMapsUrl(poi))}
-            />
-            <Button
-              className="flex-1"
-              variant="secondary"
-              label="Google Maps"
-              onPress={() => openUrl(buildGoogleMapsUrl(poi))}
-            />
-          </View>
-          <View className="flex-row gap-2">
-            <Button
-              className="flex-1"
-              variant={mapyIsProminent ? "default" : "secondary"}
-              label={buildMapyActionLabel()}
-              onPress={() => openUrl(buildMapyUrl(poi))}
-            />
-            {phoneUrl && (
-              <Button
-                className="flex-1"
-                variant="secondary"
-                label="Call"
-                onPress={() => openUrl(phoneUrl)}
-              />
-            )}
-          </View>
-        </View>
-      </View>
-
-      {poi.source === "google" && (
-        <Text className="text-[10px] text-muted-foreground font-barlow mt-3">
-          Powered by Google
-        </Text>
-      )}
-    </ScrollView>
-  );
+function pluralizePOI(count: number) {
+  return count === 1 ? "POI" : "POIs";
 }

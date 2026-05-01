@@ -1,4 +1,4 @@
-import { getOpeningHoursStatus } from "@/services/openingHoursParser";
+import { getOpeningHoursStatus, isOpenAt } from "@/services/openingHoursParser";
 import type { PlaceViewModel, POI, POICategory, RouteWaypoint, StitchedSegmentInfo } from "@/types";
 
 const FOOD_SHOP_CATEGORIES = new Set<POICategory>(["groceries", "bakery", "gas_station"]);
@@ -73,6 +73,39 @@ export function filterPlacesByOpenNow(places: PlaceViewModel[]): PlaceViewModel[
     if (p.entityType === "routeWaypoint") return true;
     if (!FOOD_SHOP_CATEGORIES.has(p.category as POICategory)) return true;
     return !isConfirmedClosedNow(p.openingHours);
+  });
+}
+
+export type FoodAvailabilityFilterMode = "off" | "now" | "eta" | "custom";
+
+export function filterPlacesByFoodAvailability(
+  places: PlaceViewModel[],
+  mode: FoodAvailabilityFilterMode,
+  options: {
+    customTime: string | null;
+    getETAToPOI: (poi: POI) => { eta: Date } | null;
+    starredIds?: Set<string>;
+  },
+): PlaceViewModel[] {
+  if (mode === "off") return places;
+
+  const customDate = mode === "custom" && options.customTime ? new Date(options.customTime) : null;
+  if (mode === "custom" && (!customDate || Number.isNaN(customDate.getTime()))) return places;
+
+  return places.filter((place) => {
+    if (place.entityType !== "downloadedPoi") return true;
+    if (options.starredIds?.has(place.entityId)) return true;
+    if (!isFoodShopCategory(place.category)) return true;
+    if (!place.openingHours) return true;
+
+    if (mode === "now") {
+      return !isConfirmedClosedNow(place.openingHours);
+    }
+
+    const targetTime = mode === "eta" ? options.getETAToPOI(place.raw as POI)?.eta : customDate;
+    if (!targetTime) return true;
+
+    return isOpenAt(place.openingHours, targetTime) !== false;
   });
 }
 

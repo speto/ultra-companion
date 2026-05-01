@@ -1,8 +1,7 @@
-import React, { useCallback } from "react";
-import { View, TouchableOpacity, ScrollView, Linking } from "react-native";
+import React from "react";
+import { View, TouchableOpacity, ScrollView } from "react-native";
 import { MapPin, ChevronLeft, Star } from "lucide-react-native";
 import { Text } from "@/components/ui/text";
-import { Button } from "@/components/ui/button";
 import { useThemeColors } from "@/theme";
 import { useSettingsStore } from "@/store/settingsStore";
 import { useRouteStore } from "@/store/routeStore";
@@ -29,14 +28,7 @@ export default function InlineWaypointDetail({ place, onBack }: InlineWaypointDe
       ? place.effectiveDistanceAlongRouteMeters - snappedPosition.distanceAlongRouteMeters
       : null;
 
-  const openUrl = useCallback(async (url: string) => {
-    await Linking.openURL(url);
-  }, []);
-
   const label = place.name ?? meta.label ?? "Waypoint";
-  const encodedLabel = encodeURIComponent(label);
-  const appleUrl = `https://maps.apple.com/?ll=${place.latitude},${place.longitude}&q=${encodedLabel}`;
-  const googleUrl = `https://www.google.com/maps/search/?api=1&query=${encodedLabel}%20${place.latitude},${place.longitude}`;
 
   return (
     <ScrollView className="flex-1 px-3 pt-1">
@@ -99,24 +91,6 @@ export default function InlineWaypointDetail({ place, onBack }: InlineWaypointDe
           {place.description}
         </Text>
       )}
-
-      <View className="mt-4 gap-2">
-        <Text className="text-[12px] font-barlow-semibold text-muted-foreground">Actions</Text>
-        <View className="flex-row gap-2">
-          <Button
-            className="flex-1"
-            variant="secondary"
-            label="Apple Maps"
-            onPress={() => openUrl(appleUrl)}
-          />
-          <Button
-            className="flex-1"
-            variant="secondary"
-            label="Google Maps"
-            onPress={() => openUrl(googleUrl)}
-          />
-        </View>
-      </View>
     </ScrollView>
   );
 }

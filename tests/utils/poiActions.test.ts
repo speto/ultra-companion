@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildAppleMapsUrl,
-  buildGoogleMapsUrl,
-  buildMapyActionLabel,
-  buildMapyUrl,
+  buildPoiMapLinkPayload,
   buildPhoneUrl,
-  getCuratedMapyUrl,
-  shouldPromoteMapy,
+  getPoiAddress,
+  getPoiExtraDetailFields,
+  getPoiPhone,
+  hasExpandablePoiDetails,
+  POI_MAP_APPS_WHITE_LIST,
 } from "@/utils/poiActions";
 import type { POI } from "@/types";
 
@@ -28,38 +28,34 @@ function poi(overrides: Partial<POI> = {}): POI {
 }
 
 describe("POI action helpers", () => {
-  it("builds Apple Maps URLs", () => {
-    expect(buildAppleMapsUrl(poi())).toBe(
-      "https://maps.apple.com/?ll=48.123,17.456&q=Spring%20Hut",
-    );
+  it("builds the installed-map chooser payload", () => {
+    expect(buildPoiMapLinkPayload(poi())).toEqual({
+      latitude: 48.123,
+      longitude: 17.456,
+      title: "Spring Hut",
+      dialogTitle: "Open in Maps",
+      dialogMessage: "Choose an installed map app for this POI.",
+      cancelText: "Cancel",
+      appsWhiteList: [...POI_MAP_APPS_WHITE_LIST],
+      googleForceLatLon: true,
+    });
   });
 
-  it("builds Google Maps search URLs", () => {
-    expect(buildGoogleMapsUrl(poi())).toBe(
-      "https://www.google.com/maps/search/?api=1&query=Spring%20Hut%2048.123%2C17.456",
-    );
-  });
-
-  it("uses curated Mapy URLs when available", () => {
-    const curated = "https://mapy.com/s/example-place";
-    expect(getCuratedMapyUrl({ mapy_url: curated })).toBe(curated);
-    expect(buildMapyUrl(poi({ tags: { website: curated } }))).toBe(curated);
-  });
-
-  it("generates Mapy search fallback URLs for named POIs", () => {
-    expect(buildMapyUrl(poi())).toBe(
-      "https://mapy.com/fnc/v1/search?query=Spring%20Hut&x=17.456&y=48.123&z=17",
-    );
-  });
-
-  it("generates Mapy showmap fallback URLs for unnamed POIs", () => {
-    expect(buildMapyUrl(poi({ name: null }))).toBe(
-      "https://mapy.com/fnc/v1/showmap?x=17.456&y=48.123&z=17",
-    );
-  });
-
-  it("labels every Mapy handoff as online", () => {
-    expect(buildMapyActionLabel()).toBe("Mapy (online)");
+  it("includes Google place IDs without bypassing the map picker", () => {
+    expect(
+      buildPoiMapLinkPayload(
+        poi({
+          source: "google",
+          sourceId: "places/ChIJN1t_tDeuEmsRUsoyG83frY4",
+          name: "Google Cafe",
+        }),
+      ),
+    ).toMatchObject({
+      title: "Google Cafe",
+      appsWhiteList: [...POI_MAP_APPS_WHITE_LIST],
+      googleForceLatLon: false,
+      googlePlaceId: "places/ChIJN1t_tDeuEmsRUsoyG83frY4",
+    });
   });
 
   it("formats tel URLs", () => {
@@ -67,11 +63,42 @@ describe("POI action helpers", () => {
     expect(buildPhoneUrl("  ")).toBeNull();
   });
 
-  it("promotes Mapy for shelters and springs", () => {
-    expect(shouldPromoteMapy(poi({ category: "shelter" }))).toBe(true);
-    expect(shouldPromoteMapy(poi({ category: "water", tags: { natural: "spring" } }))).toBe(true);
-    expect(shouldPromoteMapy(poi({ category: "water", tags: { amenity: "drinking_water" } }))).toBe(
-      false,
+  it("extracts address and phone details", () => {
+    expect(
+      getPoiAddress(
+        poi({
+          tags: {
+            "addr:street": "Main Road",
+            "addr:housenumber": "12",
+            "addr:postcode": "90000",
+            "addr:city": "Bratislava",
+          },
+        }),
+      ),
+    ).toBe("Main Road 12, 90000 Bratislava");
+    expect(getPoiPhone(poi({ tags: { "contact:phone": "+421 900 123 456" } }))).toBe(
+      "+421 900 123 456",
     );
+  });
+
+  it("keeps bare coordinate/category POIs collapsed", () => {
+    expect(
+      hasExpandablePoiDetails(poi({ category: "toilet_shower", tags: { amenity: "toilets" } })),
+    ).toBe(false);
+  });
+
+  it("expands POIs with meaningful extra detail", () => {
+    expect(hasExpandablePoiDetails(poi({ tags: { opening_hours: "Mo-Fr 07:00-18:00" } }))).toBe(
+      true,
+    );
+    expect(hasExpandablePoiDetails(poi({ tags: { phone: "+421 900 123 456" } }))).toBe(true);
+    expect(hasExpandablePoiDetails(poi({ tags: { operator: "Municipal water" } }))).toBe(true);
+  });
+
+  it("returns compact extra detail fields", () => {
+    expect(getPoiExtraDetailFields(poi({ tags: { operator: "Municipal", fee: "no" } }))).toEqual([
+      { label: "Operator", value: "Municipal" },
+      { label: "Fee", value: "no" },
+    ]);
   });
 });

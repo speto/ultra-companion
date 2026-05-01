@@ -1,9 +1,16 @@
 import React, { useCallback, useMemo } from "react";
-import { View, TouchableOpacity } from "react-native";
+import { Linking, Pressable, View, TouchableOpacity } from "react-native";
 import type { GestureResponderEvent } from "react-native";
 import { Text } from "@/components/ui/text";
 import { ListDivider } from "@/components/ui/list-divider";
-import { Clock, Star } from "lucide-react-native";
+import {
+  Clock,
+  ExternalLink as ExternalMapIcon,
+  Flag,
+  MapPin,
+  Phone,
+  Star,
+} from "lucide-react-native";
 import { useThemeColors } from "@/theme";
 import { useSettingsStore } from "@/store/settingsStore";
 import { useStarredStore } from "@/store/starredStore";
@@ -12,15 +19,25 @@ import { POI_ICON_MAP } from "@/constants/poiIcons";
 import { getWaypointCategoryMeta, WAYPOINT_ICON_MAP } from "@/constants/waypointCategories";
 import { ohStatusColorKey } from "@/constants/poiHelpers";
 import { formatDistance, formatDuration, formatETA, formatElevation } from "@/utils/formatters";
-import { getOpeningHoursStatus, isOpenAt } from "@/services/openingHoursParser";
+import { getDaySchedules, getOpeningHoursStatus, isOpenAt } from "@/services/openingHoursParser";
 import { useEtaStore } from "@/store/etaStore";
 import { isFoodShopCategory } from "@/utils/placeAdapter";
+import {
+  buildPhoneUrl,
+  getPoiAddress,
+  getPoiExtraDetailFields,
+  getPoiPhone,
+  hasExpandablePoiDetails,
+} from "@/utils/poiActions";
+import { openPoiInMaps } from "@/services/poiMapLink";
 import type { PlaceViewModel, POI } from "@/types";
 
 interface PlaceListItemProps {
   place: PlaceViewModel;
   currentDistAlongRoute: number | null;
   onPress: (place: PlaceViewModel) => void;
+  expanded?: boolean;
+  onToggleExpansion?: (place: PlaceViewModel) => void;
   segmentName?: string | null;
   showAbsoluteDistance?: boolean;
 }
@@ -29,6 +46,8 @@ function PlaceListItem({
   place,
   currentDistAlongRoute,
   onPress,
+  expanded = false,
+  onToggleExpansion,
   segmentName = null,
   showAbsoluteDistance = false,
 }: PlaceListItemProps) {
@@ -73,8 +92,7 @@ function PlaceListItem({
   const etaCachedPointsLength = useEtaStore((s) => s.cachedPoints?.length ?? 0);
   const etaCumulativeTimeLength = useEtaStore((s) => s.cumulativeTime?.length ?? 0);
   const etaCacheKey = `${etaRouteId ?? ""}:${etaCacheVersion}:${etaCachedPointsLength}:${etaCumulativeTimeLength}`;
-  const poiForETA =
-    place.raw && place.entityType === "downloadedPoi" ? (place.raw as POI) : null;
+  const poiForETA = place.raw && place.entityType === "downloadedPoi" ? (place.raw as POI) : null;
   const etaResult = useMemo(() => {
     void etaCacheKey;
     return poiForETA ? getETAToPOI(poiForETA) : null;
@@ -109,7 +127,7 @@ function PlaceListItem({
 
   const metadataParts = isWaypoint
     ? [categoryLabel, segmentName, elevationText, offRouteText]
-    : [segmentName, !ohStatus ? offRouteText : null];
+    : [!ohStatus ? offRouteText : null];
   const metadataText = metadataParts.filter(Boolean).join(" · ");
 
   const absoluteDistance = formatDistance(place.effectiveDistanceAlongRouteMeters, units);
@@ -136,113 +154,241 @@ function PlaceListItem({
   const etaAvailability = useMemo(() => {
     if (isWaypoint || !isFoodShopCategory(place.category) || !etaResult) return null;
 
+    const arrivalTime = formatETA(etaResult.eta);
+
     const tag = place.openingHours;
     if (!tag) {
-      return { label: "Hours unknown", color: colors.textTertiary };
+      return { label: `Hours unknown · ${arrivalTime}`, color: colors.textTertiary };
     }
 
     const openAtEta = isOpenAt(tag, etaResult.eta);
     if (openAtEta == null) {
-      return { label: "Hours unknown", color: colors.textTertiary };
+      return { label: `Hours unknown · ${arrivalTime}`, color: colors.textTertiary };
     }
 
     const statusAtEta = getOpeningHoursStatus(tag, etaResult.eta);
     if (openAtEta) {
-      const label = statusAtEta?.closingSoon ? "Tight" : "Open on arrival";
-      const detail = statusAtEta?.detail ? ` · ${statusAtEta.detail}` : "";
       return {
-        label: `${label}${detail}`,
+        label: `${statusAtEta?.closingSoon ? "Tight" : "Open"} at ${arrivalTime}`,
         color: statusAtEta?.closingSoon ? colors.warning : colors.positive,
       };
     }
 
     return {
-      label: statusAtEta?.detail
-        ? `Closed on arrival · ${statusAtEta.detail}`
-        : "Closed on arrival",
+      label: `Closed at ${arrivalTime}`,
       color: colors.textTertiary,
     };
   }, [colors, etaResult, isWaypoint, place.category, place.openingHours]);
 
-  return (
-    <TouchableOpacity
-      className="flex-row items-center px-4 py-3 relative"
-      onPress={() => onPress(place)}
-      accessibilityLabel={place.name ?? meta?.label ?? (isWaypoint ? "Waypoint" : "POI")}
-    >
-      <View
-        className="w-[32px] h-[32px] rounded-full items-center justify-center"
-        style={{ backgroundColor: displayColor + "1A" }}
-      >
-        {IconComp && <IconComp size={18} color={displayColor} />}
-      </View>
+  const openingHoursRaw = poiForETA?.tags.opening_hours ?? null;
+  const daySchedules = useMemo(
+    () => (openingHoursRaw ? getDaySchedules(openingHoursRaw) : null),
+    [openingHoursRaw],
+  );
+  const address = useMemo(() => (poiForETA ? getPoiAddress(poiForETA) : null), [poiForETA]);
+  const phone = useMemo(() => (poiForETA ? getPoiPhone(poiForETA) : null), [poiForETA]);
+  const phoneUrl = useMemo(() => (phone ? buildPhoneUrl(phone) : null), [phone]);
+  const extraDetailFields = useMemo(
+    () => (poiForETA ? getPoiExtraDetailFields(poiForETA) : []),
+    [poiForETA],
+  );
+  const hasExpandedInlineDetails = Boolean(
+    (daySchedules?.length && ohStatus?.detail !== "24/7") ||
+    address ||
+    phone ||
+    extraDetailFields.length > 0,
+  );
+  const canExpand = Boolean(
+    poiForETA && hasExpandablePoiDetails(poiForETA) && hasExpandedInlineDetails,
+  );
+  const isExpanded = canExpand && expanded;
 
-      <View className="flex-1 ml-3">
+  const handleRowPress = useCallback(() => {
+    onPress(place);
+    if (canExpand) onToggleExpansion?.(place);
+  }, [canExpand, onPress, onToggleExpansion, place]);
+
+  const handleMapPress = useCallback(
+    (event: GestureResponderEvent) => {
+      event.stopPropagation();
+      if (poiForETA) void openPoiInMaps(poiForETA);
+    },
+    [poiForETA],
+  );
+
+  const handlePhonePress = useCallback(
+    (event?: GestureResponderEvent) => {
+      event?.stopPropagation();
+      if (phoneUrl) void Linking.openURL(phoneUrl);
+    },
+    [phoneUrl],
+  );
+
+  return (
+    <View className="relative">
+      <Pressable
+        className={`px-4 pt-3 ${isExpanded ? "pb-0" : "pb-3"}`}
+        onPress={handleRowPress}
+        accessibilityLabel={place.name ?? meta?.label ?? (isWaypoint ? "Waypoint" : "POI")}
+        accessibilityRole={canExpand ? "button" : undefined}
+        accessibilityState={canExpand ? { expanded: isExpanded } : undefined}
+      >
         <View className="flex-row items-center">
-          <TouchableOpacity
-            className="w-[32px] h-[32px] items-center justify-center -ml-2 mr-0.5"
-            hitSlop={8}
-            onPress={handleStarPress}
-            activeOpacity={0.7}
-            accessibilityLabel={starredAccessibilityLabel}
-            accessibilityRole="switch"
-            accessibilityState={{ checked: isStarred }}
+          <View
+            className="w-[32px] h-[32px] rounded-full items-center justify-center"
+            style={{ backgroundColor: displayColor + "1A" }}
           >
-            <Star
-              size={17}
-              color={isStarred ? colors.starred : colors.textTertiary}
-              fill={isStarred ? colors.starred : "none"}
-            />
-          </TouchableOpacity>
-          <Text
-            className="text-[15px] font-barlow-medium text-foreground flex-shrink"
-            numberOfLines={1}
-          >
-            {place.name ?? meta?.label ?? "Unnamed"}
-          </Text>
-        </View>
-        <View className="flex-row items-center mt-1">
-          {ohStatus && (
+            {IconComp && <IconComp size={18} color={displayColor} />}
+          </View>
+
+          <View className="flex-1 ml-3">
             <View className="flex-row items-center">
-              <View className="w-[6px] h-[6px] rounded-full" style={{ backgroundColor: ohColor }} />
-              <Text className="ml-1 text-[12px] font-barlow-medium" style={{ color: ohColor }}>
-                {ohStatus.label}
-                {ohStatus.detail ? ` · ${ohStatus.detail}` : ""}
-                {metadataText ? ` · ${metadataText}` : ""}
+              <TouchableOpacity
+                className="w-[32px] h-[32px] items-center justify-center -ml-2 mr-0.5"
+                hitSlop={8}
+                onPress={handleStarPress}
+                activeOpacity={0.7}
+                accessibilityLabel={starredAccessibilityLabel}
+                accessibilityRole="switch"
+                accessibilityState={{ checked: isStarred }}
+              >
+                <Star
+                  size={17}
+                  color={isStarred ? colors.starred : colors.textTertiary}
+                  fill={isStarred ? colors.starred : "none"}
+                />
+              </TouchableOpacity>
+              <Text
+                className="text-[15px] font-barlow-medium text-foreground flex-shrink"
+                numberOfLines={1}
+              >
+                {place.name ?? meta?.label ?? "Unnamed"}
+              </Text>
+            </View>
+            <View className="flex-row items-center mt-1">
+              {ohStatus && (
+                <View className="flex-row items-center">
+                  <Clock size={11} color={ohColor} />
+                  <Text className="ml-1 text-[12px] font-barlow-medium" style={{ color: ohColor }}>
+                    {ohStatus.label}
+                    {ohStatus.detail ? ` · ${ohStatus.detail}` : ""}
+                    {metadataText ? ` · ${metadataText}` : ""}
+                  </Text>
+                </View>
+              )}
+              {!ohStatus && metadataText && (
+                <Text className="text-[11px] text-muted-foreground/60 font-barlow">
+                  {metadataText}
+                </Text>
+              )}
+            </View>
+            {etaAvailability && (
+              <View className="flex-row items-center mt-1">
+                <Flag size={11} color={etaAvailability.color} />
+                <Text
+                  className="ml-1 text-[11px] font-barlow-semibold"
+                  style={{ color: etaAvailability.color }}
+                >
+                  {etaAvailability.label}
+                </Text>
+              </View>
+            )}
+          </View>
+
+          <View className="flex-row items-center ml-2">
+            <View className="items-end">
+              {rightPrimaryText && (
+                <Text className="text-[15px] font-barlow-sc-semibold text-foreground">
+                  {rightPrimaryText}
+                </Text>
+              )}
+              {rightSecondaryText ? (
+                <Text className="text-[11px] text-muted-foreground font-barlow-sc-medium">
+                  {rightSecondaryText}
+                </Text>
+              ) : null}
+            </View>
+            {poiForETA && (
+              <TouchableOpacity
+                className="ml-3 h-[48px] w-[48px] items-center justify-center rounded-full bg-accent/10"
+                onPress={handleMapPress}
+                activeOpacity={0.72}
+                accessibilityLabel={`Open ${place.name ?? meta?.label ?? "POI"} in external map app`}
+                accessibilityRole="button"
+              >
+                <ExternalMapIcon size={19} color={colors.accent} />
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      </Pressable>
+
+      {isExpanded && poiForETA && (
+        <View className="ml-[60px] mr-4 mt-2 border-l border-border-subtle pl-3 pb-4">
+          {daySchedules && ohStatus?.detail !== "24/7" && (
+            <View className="pt-1">
+              {daySchedules.map((ds) => (
+                <View key={ds.label} className="flex-row items-center">
+                  <Text className="w-[60px] text-[12px] font-barlow-medium text-muted-foreground">
+                    {ds.label}
+                  </Text>
+                  <Text className="text-[12px] font-barlow-sc-medium text-muted-foreground">
+                    {ds.hours}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
+          {address && (
+            <View className="mt-2 flex-row items-center">
+              <MapPin size={13} color={colors.textSecondary} />
+              <Text
+                selectable
+                className="ml-1.5 flex-1 text-[13px] font-barlow text-muted-foreground"
+              >
+                {address}
               </Text>
             </View>
           )}
-          {!ohStatus && metadataText && (
-            <Text className="text-[11px] text-muted-foreground/60 font-barlow">{metadataText}</Text>
+          {phone && phoneUrl && (
+            <View className="mt-1 min-h-[48px] flex-row items-center py-2">
+              <Phone size={13} color={colors.textSecondary} />
+              <Text
+                selectable
+                className="ml-1.5 text-[13px] font-barlow-semibold text-accent"
+                onPress={handlePhonePress}
+                accessibilityRole="button"
+                accessibilityLabel={`Call ${phone}`}
+              >
+                {phone}
+              </Text>
+            </View>
+          )}
+          {phone && !phoneUrl && (
+            <View className="mt-2 flex-row items-center">
+              <Phone size={13} color={colors.textSecondary} />
+              <Text className="ml-1.5 text-[13px] font-barlow text-muted-foreground">{phone}</Text>
+            </View>
+          )}
+          {extraDetailFields.map((field) => (
+            <View key={`${field.label}:${field.value}`} className="mt-2 flex-row">
+              <Text className="w-[82px] text-[12px] font-barlow-semibold text-muted-foreground">
+                {field.label}
+              </Text>
+              <Text className="flex-1 text-[12px] font-barlow-medium text-foreground">
+                {field.value}
+              </Text>
+            </View>
+          ))}
+          {poiForETA.source === "google" && (
+            <Text className="mt-2 text-[10px] font-barlow text-muted-foreground" numberOfLines={1}>
+              Powered by Google
+            </Text>
           )}
         </View>
-        {etaAvailability && (
-          <View className="flex-row items-center mt-1">
-            <Clock size={11} color={etaAvailability.color} />
-            <Text
-              className="ml-1 text-[11px] font-barlow-semibold"
-              style={{ color: etaAvailability.color }}
-            >
-              {etaAvailability.label}
-            </Text>
-          </View>
-        )}
-      </View>
-
-      <View className="items-end ml-2">
-        {rightPrimaryText && (
-          <Text className="text-[15px] font-barlow-sc-semibold text-foreground">
-            {rightPrimaryText}
-          </Text>
-        )}
-        {rightSecondaryText ? (
-          <Text className="text-[11px] text-muted-foreground font-barlow-sc-medium">
-            {rightSecondaryText}
-          </Text>
-        ) : null}
-      </View>
+      )}
       <ListDivider className="absolute bottom-0 left-[60px] right-0" />
-    </TouchableOpacity>
+    </View>
   );
 }
 

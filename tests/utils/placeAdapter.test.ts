@@ -3,6 +3,7 @@ import {
   downloadedPoiToPlace,
   routeWaypointToPlace,
   filterPlacesByCategory,
+  filterPlacesByFoodAvailability,
   filterPlacesByOpenNow,
   getPlaceCategoryCounts,
   stitchPlaces,
@@ -168,6 +169,97 @@ describe("placeAdapter", () => {
         "unknown-bakery",
         "waypoint",
       ]);
+    });
+  });
+
+  describe("filterPlacesByFoodAvailability", () => {
+    it("removes only unstarred confirmed-closed food/shop POIs in now mode", () => {
+      const closedBakery = downloadedPoiToPlace({
+        ...makePoi("closed-bakery", "r1", 100, "bakery"),
+        tags: { opening_hours: closedNowHours },
+      });
+      const openBakery = downloadedPoiToPlace({
+        ...makePoi("open-bakery", "r1", 200, "bakery"),
+        tags: { opening_hours: alwaysOpenHours },
+      });
+      const closedWater = downloadedPoiToPlace({
+        ...makePoi("closed-water", "r1", 300, "water"),
+        tags: { opening_hours: closedNowHours },
+      });
+
+      const filtered = filterPlacesByFoodAvailability(
+        [closedBakery, openBakery, closedWater],
+        "now",
+        {
+          customTime: null,
+          getETAToPOI: () => null,
+        },
+      );
+
+      expect(filtered.map((place) => place.entityId)).toEqual(["open-bakery", "closed-water"]);
+    });
+
+    it("keeps unknown-hours and starred confirmed-closed food/shop POIs visible", () => {
+      const closedBakery = downloadedPoiToPlace({
+        ...makePoi("closed-bakery", "r1", 100, "bakery"),
+        tags: { opening_hours: closedNowHours },
+      });
+      const unknownBakery = downloadedPoiToPlace({
+        ...makePoi("unknown-bakery", "r1", 200, "bakery"),
+        tags: {},
+      });
+      const openBakery = downloadedPoiToPlace({
+        ...makePoi("open-bakery", "r1", 300, "bakery"),
+        tags: { opening_hours: alwaysOpenHours },
+      });
+
+      const filtered = filterPlacesByFoodAvailability(
+        [closedBakery, unknownBakery, openBakery],
+        "now",
+        {
+          customTime: null,
+          getETAToPOI: () => null,
+          starredIds: new Set(["closed-bakery"]),
+        },
+      );
+
+      expect(filtered.map((place) => place.entityId)).toEqual([
+        "closed-bakery",
+        "unknown-bakery",
+        "open-bakery",
+      ]);
+    });
+
+    it("uses ETA target times and leaves places visible when ETA is unavailable", () => {
+      const closedBakery = downloadedPoiToPlace({
+        ...makePoi("closed-bakery", "r1", 100, "bakery"),
+        tags: { opening_hours: closedNowHours },
+      });
+      const noEtaBakery = downloadedPoiToPlace({
+        ...makePoi("no-eta-bakery", "r1", 200, "bakery"),
+        tags: { opening_hours: closedNowHours },
+      });
+
+      const filtered = filterPlacesByFoodAvailability([closedBakery, noEtaBakery], "eta", {
+        customTime: null,
+        getETAToPOI: (poi) => (poi.id === "closed-bakery" ? { eta: new Date() } : null),
+      });
+
+      expect(filtered.map((place) => place.entityId)).toEqual(["no-eta-bakery"]);
+    });
+
+    it("returns unfiltered results for invalid custom time", () => {
+      const closedBakery = downloadedPoiToPlace({
+        ...makePoi("closed-bakery", "r1", 100, "bakery"),
+        tags: { opening_hours: closedNowHours },
+      });
+
+      const filtered = filterPlacesByFoodAvailability([closedBakery], "custom", {
+        customTime: "not-a-date",
+        getETAToPOI: () => null,
+      });
+
+      expect(filtered.map((place) => place.entityId)).toEqual(["closed-bakery"]);
     });
   });
 

@@ -43,6 +43,7 @@ const splashImage =
   process.env.EXPO_SPLASH_IMAGE ?? `./assets/images/splash-icon${variantConfig.assetSuffix}.png`;
 const splashBackgroundColor = process.env.EXPO_SPLASH_BACKGROUND_COLOR ?? "#0E0E0C";
 const easProjectId = process.env.EXPO_EAS_PROJECT_ID;
+const mapAppQuerySchemes = ["comgooglemaps", "szn-mapy", "waze"];
 
 function getAppVariant(): AppVariant {
   const variant = process.env.APP_VARIANT ?? "production";
@@ -87,6 +88,7 @@ export default (_: ConfigContext): ExpoConfig => ({
         "Ultra Companion needs your location to show your position on the map during rides.",
       NSLocationAlwaysAndWhenInUseUsageDescription:
         "Ultra Companion uses background location to track your position during ultra-distance rides.",
+      LSApplicationQueriesSchemes: mapAppQuerySchemes,
       CFBundleDocumentTypes: [
         {
           CFBundleTypeName: "GPX File",
@@ -150,6 +152,7 @@ export default (_: ConfigContext): ExpoConfig => ({
       },
     ],
     "@react-native-community/datetimepicker",
+    "react-native-map-link",
     "expo-sqlite",
     "./plugins/withShareSheetImport",
   ],

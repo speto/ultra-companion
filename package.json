@@ -51,6 +51,7 @@
     "react-native": "^0.83.5",
     "react-native-draggable-flatlist": "^4.0.3",
     "react-native-gesture-handler": "~2.30.0",
+    "react-native-map-link": "^3.11.0",
     "react-native-mmkv": "^4.3.0",
     "react-native-pager-view": "^8.0.1",
     "react-native-reanimated": "4.2.1",
