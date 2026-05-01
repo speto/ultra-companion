@@ -1,12 +1,5 @@
 import React, { Suspense, useCallback, useMemo, useState } from "react";
-import {
-  Modal,
-  Pressable,
-  ScrollView,
-  TouchableOpacity,
-  useWindowDimensions,
-  View,
-} from "react-native";
+import { Modal, Pressable, TouchableOpacity, useWindowDimensions, View } from "react-native";
 import Animated, {
   runOnJS,
   useAnimatedStyle,
@@ -52,6 +45,15 @@ const SHEET_SECTIONS: Array<{ label: string; rows: POICategory[][] }> = [
   },
   { label: "Repair", rows: [["bike_shop", "repair_station", "pump_air"]] },
   { label: "Escape / Transport", rows: [["train_station"]] },
+];
+
+const CATEGORY_GROUPS: Array<{ label: string; categories: POICategory[] }> = [
+  { label: "Food / Supplies", categories: FOOD_CATEGORIES },
+  { label: "Eat / Drink", categories: EAT_DRINK_CATEGORIES },
+  ...SHEET_SECTIONS.map((section) => ({
+    label: section.label,
+    categories: section.rows.flat(),
+  })),
 ];
 
 export default function POIFilterSheet({
@@ -128,13 +130,13 @@ export default function POIFilterSheet({
         </Animated.View>
 
         <Animated.View
-          className="absolute bottom-0 left-0 right-0 rounded-t-2xl border-t border-border bg-surface pt-3"
-          style={[{ paddingBottom: bottom + 12, maxHeight: height * 0.86 }, animatedStyle]}
+          className="absolute bottom-0 left-0 right-0 rounded-t-2xl border-t border-border bg-surface pt-2"
+          style={[{ paddingBottom: bottom + 8, maxHeight: height * 0.82 }, animatedStyle]}
           pointerEvents="auto"
         >
           <GestureDetector gesture={panGesture}>
             <Animated.View>
-              <View className="items-center pb-1" accessible={false}>
+              <View className="items-center pb-0.5" accessible={false}>
                 <View
                   className="rounded-full"
                   style={{
@@ -145,9 +147,9 @@ export default function POIFilterSheet({
                   }}
                 />
               </View>
+              <POIFilterSheetContent onClose={onClose} />
             </Animated.View>
           </GestureDetector>
-          <POIFilterSheetContent onClose={onClose} />
         </Animated.View>
       </View>
     </Modal>
@@ -156,7 +158,6 @@ export default function POIFilterSheet({
 
 export function POIFilterSheetContent({ onClose }: { onClose: () => void }) {
   const colors = useThemeColors();
-  const { height } = useWindowDimensions();
   const [timePickerOpen, setTimePickerOpen] = useState(false);
   const enabledCategories = usePoiStore((s) => s.enabledCategories);
   const setEnabledCategories = usePoiStore((s) => s.setEnabledCategories);
@@ -192,6 +193,27 @@ export function POIFilterSheetContent({ onClose }: { onClose: () => void }) {
       } else {
         setEnabledCategories([...enabledCategories, category]);
       }
+    },
+    [isCategoryFilterActive, enabledSet, enabledCategories, setEnabledCategories, setAllCategories],
+  );
+
+  const handleToggleGroup = useCallback(
+    (categories: POICategory[]) => {
+      if (!isCategoryFilterActive) {
+        setEnabledCategories(categories);
+        return;
+      }
+
+      const isGroupFullyEnabled = categories.every((category) => enabledSet.has(category));
+      if (isGroupFullyEnabled) {
+        const groupSet = new Set(categories);
+        const next = enabledCategories.filter((category) => !groupSet.has(category));
+        if (next.length === 0) setAllCategories(true);
+        else setEnabledCategories(next);
+        return;
+      }
+
+      setEnabledCategories([...new Set([...enabledCategories, ...categories])]);
     },
     [isCategoryFilterActive, enabledSet, enabledCategories, setEnabledCategories, setAllCategories],
   );
@@ -256,6 +278,14 @@ export function POIFilterSheetContent({ onClose }: { onClose: () => void }) {
     [enabledCategories.length, enabledSet, isCategoryFilterActive],
   );
 
+  const getGroupAccessibilityLabel = useCallback(
+    (label: string, isFullyEnabled: boolean) => {
+      if (!isCategoryFilterActive) return `Show only ${label} categories`;
+      return isFullyEnabled ? `Hide all ${label} categories` : `Show all ${label} categories`;
+    },
+    [isCategoryFilterActive],
+  );
+
   const renderCategoryFilterButton = useCallback(
     (key: POICategory) => {
       const meta = POI_CATEGORIES.find((category) => category.key === key);
@@ -266,7 +296,9 @@ export function POIFilterSheetContent({ onClose }: { onClose: () => void }) {
         <CategoryFilterButton
           key={key}
           label={meta.label}
-          icon={IconComp && <IconComp size={16} color={isEnabled ? meta.color : colors.textTertiary} />}
+          icon={
+            IconComp && <IconComp size={15} color={isEnabled ? meta.color : colors.textTertiary} />
+          }
           active={isEnabled}
           onPress={() => handleToggleLeaf(key)}
           accessibilityLabel={getLeafAccessibilityLabel(key, meta.label)}
@@ -284,7 +316,7 @@ export function POIFilterSheetContent({ onClose }: { onClose: () => void }) {
 
   return (
     <View style={{ backgroundColor: colors.surface }}>
-      <View className="flex-row items-center justify-between px-4 pt-4 pb-3">
+      <View className="flex-row items-center justify-between px-4 pt-1 pb-1">
         <View className="flex-1 min-h-[48px] justify-center">
           <Text className="text-lg font-barlow-semibold text-foreground">More filters</Text>
         </View>
@@ -310,32 +342,36 @@ export function POIFilterSheetContent({ onClose }: { onClose: () => void }) {
         </View>
       </View>
 
-      <ScrollView
-        style={{ maxHeight: height * 0.66 }}
-        contentContainerClassName="px-4 pt-1 pb-3"
-        showsVerticalScrollIndicator={false}
-      >
-        <FoodEatDrinkFilterGroup
-          renderCategoryButton={renderCategoryFilterButton}
-          availabilityControl={
-            <FoodAvailabilityControl
-              mode={foodAvailabilityMode}
-              customTime={foodAvailabilityCustomTime}
-              onPress={handleAvailabilityPress}
-            />
-          }
-        />
-        {SHEET_SECTIONS.map((section) => (
-          <View key={section.label} className="mb-4">
-            <Text className="mb-2 text-[12px] font-barlow-semibold uppercase tracking-wider text-muted-foreground">
-              {section.label}
-            </Text>
-            <View className="flex-row flex-wrap gap-2">
-              {section.rows.flat().map(renderCategoryFilterButton)}
-            </View>
-          </View>
-        ))}
-      </ScrollView>
+      <View className="px-4 pt-1 pb-1">
+        <View className="mb-1.5">
+          <Text className="mb-1 text-[12px] font-barlow-semibold uppercase tracking-wider text-muted-foreground">
+            Open hours
+          </Text>
+          <FoodAvailabilityControl
+            mode={foodAvailabilityMode}
+            customTime={foodAvailabilityCustomTime}
+            onPress={handleAvailabilityPress}
+          />
+        </View>
+        <View className="flex-row flex-wrap gap-1">
+          {CATEGORY_GROUPS.map((group) => {
+            const isGroupFullyEnabled =
+              isCategoryFilterActive &&
+              group.categories.every((category) => enabledSet.has(category));
+            return (
+              <React.Fragment key={group.label}>
+                <CategoryFilterGroupLabel
+                  label={group.label}
+                  active={isGroupFullyEnabled}
+                  onPress={() => handleToggleGroup(group.categories)}
+                  accessibilityLabel={getGroupAccessibilityLabel(group.label, isGroupFullyEnabled)}
+                />
+                {group.categories.map(renderCategoryFilterButton)}
+              </React.Fragment>
+            );
+          })}
+        </View>
+      </View>
       {timePickerOpen && (
         <Suspense fallback={null}>
           <AvailabilityTimePickerSheet
@@ -350,33 +386,40 @@ export function POIFilterSheetContent({ onClose }: { onClose: () => void }) {
   );
 }
 
-function FoodEatDrinkFilterGroup({
-  renderCategoryButton,
-  availabilityControl,
+function CategoryFilterGroupLabel({
+  label,
+  active,
+  onPress,
+  accessibilityLabel,
 }: {
-  renderCategoryButton: (key: POICategory) => React.ReactNode;
-  availabilityControl: React.ReactNode;
+  label: string;
+  active: boolean;
+  onPress: () => void;
+  accessibilityLabel: string;
 }) {
   return (
-    <View className="mb-4">
-      <View className="flex-row gap-3">
-        <View className="flex-1">
-          <Text className="mb-2 text-[12px] font-barlow-semibold uppercase tracking-wider text-muted-foreground">
-            Food / Supplies
-          </Text>
-          <View className="flex-row flex-wrap gap-2">{FOOD_CATEGORIES.map(renderCategoryButton)}</View>
-        </View>
-        <View className="flex-1">
-          <Text className="mb-2 text-[12px] font-barlow-semibold uppercase tracking-wider text-muted-foreground">
-            Eat / Drink
-          </Text>
-          <View className="flex-row flex-wrap gap-2">
-            {EAT_DRINK_CATEGORIES.map(renderCategoryButton)}
-          </View>
-        </View>
-      </View>
-      {availabilityControl}
-    </View>
+    <TouchableOpacity
+      className={cn(
+        "min-h-[36px] justify-center rounded-xl border px-2",
+        active ? "border-accent/30 bg-accent/10" : "border-border bg-surface",
+      )}
+      onPress={onPress}
+      activeOpacity={0.7}
+      hitSlop={{ top: 6, bottom: 6, left: 2, right: 2 }}
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole="switch"
+      accessibilityState={{ checked: active }}
+    >
+      <Text
+        className={cn(
+          "text-[10px] font-barlow-semibold uppercase tracking-wider",
+          active ? "text-accent" : "text-muted-foreground",
+        )}
+        numberOfLines={1}
+      >
+        {label}
+      </Text>
+    </TouchableOpacity>
   );
 }
 
@@ -396,11 +439,12 @@ function CategoryFilterButton({
   return (
     <TouchableOpacity
       className={cn(
-        "min-h-[48px] flex-row items-center rounded-xl border px-3 py-2.5",
+        "min-h-[36px] flex-row items-center rounded-xl border px-2.5 py-1",
         active ? "border-accent/30 bg-accent/10" : "border-border bg-muted",
       )}
       onPress={onPress}
       activeOpacity={0.7}
+      hitSlop={{ top: 6, bottom: 6, left: 2, right: 2 }}
       accessibilityLabel={accessibilityLabel}
       accessibilityRole="switch"
       accessibilityState={{ checked: active }}
@@ -408,7 +452,7 @@ function CategoryFilterButton({
       {icon}
       <Text
         className={cn(
-          "ml-1.5 flex-shrink text-[13px] font-barlow-medium",
+          "ml-1 flex-shrink text-[12px] font-barlow-medium",
           active ? "text-foreground" : "text-muted-foreground",
         )}
         numberOfLines={1}
@@ -439,7 +483,7 @@ function FoodAvailabilityControl({
   ];
 
   return (
-    <View className="mt-3 rounded-xl bg-muted p-1">
+    <View className="rounded-xl bg-muted p-1">
       <View className="flex-row items-center">
         {segments.map((segment) => (
           <AvailabilitySegment
@@ -469,10 +513,10 @@ function AvailabilitySegment({
       onPress={onPress}
       activeOpacity={0.7}
       className={cn(
-        "min-h-[48px] flex-1 flex-row items-center justify-center rounded-lg border px-2 py-2",
+        "min-h-[36px] flex-1 flex-row items-center justify-center rounded-lg border px-2 py-1",
         active ? "border-accent/30 bg-surface" : "border-transparent bg-transparent",
       )}
-      hitSlop={{ top: 4, bottom: 4, left: 2, right: 2 }}
+      hitSlop={{ top: 6, bottom: 6, left: 2, right: 2 }}
       accessibilityRole="button"
       accessibilityState={{ selected: active }}
       accessibilityLabel={active ? `Clear ${label} availability` : `Set availability ${label}`}
